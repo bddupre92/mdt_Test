@@ -12,15 +12,17 @@ from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import time
 import warnings
+import logging
 
 class MetaOptimizer:
-    def __init__(self, optimizers: Dict[str, Any], mode: str = 'bayesian'):
+    def __init__(self, optimizers: Dict[str, Any], mode: str = 'bayesian', gp_kwargs: Dict[str, Any] = None):
         """
         Initialize meta-optimizer
         
         Args:
             optimizers: Dictionary of optimizers to use
             mode: Selection mode ('bayesian' or 'bandit')
+            gp_kwargs: Additional arguments for Gaussian Process
         """
         self.optimizers = optimizers
         self.mode = mode
@@ -33,20 +35,22 @@ class MetaOptimizer:
             'discrete_vars',
             'multimodal',
             'runtime',
-            'score'
+            'score',
+            'iteration'
         ])
         
         # Initialize GP for Bayesian selection
         if mode == 'bayesian':
+            gp_kwargs = gp_kwargs or {}
             kernel = 1.0 * RBF(
                 length_scale=[1.0] * 3,
                 length_scale_bounds=(1e-1, 1e3)
             )
             self.gp = GaussianProcessRegressor(
                 kernel=kernel,
-                alpha=1e-6,
-                normalize_y=True,
-                n_restarts_optimizer=5,
+                alpha=gp_kwargs.get('alpha', 1e-6),
+                normalize_y=gp_kwargs.get('normalize_y', True),
+                n_restarts_optimizer=gp_kwargs.get('n_restarts_optimizer', 5),
                 random_state=42
             )
             self.scaler = StandardScaler()
@@ -54,235 +58,210 @@ class MetaOptimizer:
         # Performance tracking
         self.current_best = {name: float('inf') for name in optimizers}
         self.runtime_stats = {name: [] for name in optimizers}
+        self._current_iteration = 0
         
-    def select_optimizer(self, context: Dict[str, Any]) -> str:
-        """
-        Select best optimizer based on context and history.
+        # Initialize history storage
+        self.history = []
+        self.diversity_history = []
+        self.param_history = {
+            'exploitation_ratio': [],
+            'length_scale': []
+        }
         
-        Args:
-            context: Dictionary containing problem characteristics
-                    (dimension, discrete/continuous, multimodality, etc.)
-        """
-        if self.mode == 'bayesian':
-            return self._bayesian_selection(context)
-        elif self.mode == 'bandit':
-            return self._bandit_selection(context)
-        else:  # rule-based
-            return self._rule_based_selection(context)
-    
-    def _bayesian_selection(self, context: Dict[str, Any]) -> str:
-        """Use Gaussian Process to predict best optimizer"""
-        if len(self.performance_history) < len(self.optimizers) * 3:
-            # Not enough data, use round-robin
-            return list(self.optimizers.keys())[
-                len(self.performance_history) % len(self.optimizers)
-            ]
+        # Performance history
+        self._performance_history = pd.DataFrame(columns=['iteration', 'score', 'optimizer'])
         
-        try:
-            # Prepare features for GP
-            X = self.performance_history[[
-                'problem_dim', 'discrete_vars', 'multimodal'
-            ]].values
-            y = -self.performance_history['score'].values  # negative for maximization
-            
-            # Scale features
-            X_scaled = self.scaler.fit_transform(X)
-            
-            # Normalize scores
-            y_mean = np.mean(y)
-            y_std = np.std(y) if np.std(y) > 0 else 1.0
-            y_norm = (y - y_mean) / y_std
-            
-            # Fit GP with normalized data and increased max_iter
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                self.gp.fit(X_scaled, y_norm)
-            
-            # Predict performance for current context
-            context_features = np.array([[
-                context.get('dim', 2),
-                context.get('discrete_vars', 0),
-                context.get('multimodal', 0)
-            ]])
-            
-            context_scaled = self.scaler.transform(context_features)
-            
-            # Get predictions for each optimizer
-            predictions = []
-            for name in self.optimizers:
-                mean, std = self.gp.predict(context_scaled, return_std=True)
-                # Use UCB acquisition with adaptive exploration
-                beta = np.sqrt(2 * np.log(len(self.optimizers) * len(self.performance_history)))
-                score = mean + beta * std
-                predictions.append((name, score[0]))
-            
-            return max(predictions, key=lambda x: x[1])[0]
-            
-        except Exception as e:
-            print(f"Warning: GP prediction failed ({str(e)}), falling back to round-robin")
-            return list(self.optimizers.keys())[
-                len(self.performance_history) % len(self.optimizers)
-            ]
-    
-    def _bandit_selection(self, context: Dict[str, Any]) -> str:
-        """Thompson sampling for optimizer selection"""
-        if not self.performance_history.empty:
-            # Calculate success rate for each optimizer
-            success_rates = {}
-            for name in self.optimizers:
-                hist = self.performance_history[
-                    self.performance_history['optimizer'] == name
-                ]
-                if len(hist) > 0:
-                    # Beta distribution parameters
-                    successes = sum(hist['score'] < hist['score'].mean())
-                    failures = len(hist) - successes
-                    # Sample from beta distribution
-                    success_rates[name] = np.random.beta(successes + 1, failures + 1)
-                else:
-                    success_rates[name] = np.random.beta(1, 1)
-            
-            return max(success_rates.items(), key=lambda x: x[1])[0]
+    def get_performance_history(self) -> pd.DataFrame:
+        """Get optimizer performance history"""
+        return self._performance_history
         
-        return np.random.choice(list(self.optimizers.keys()))
-    
-    def _rule_based_selection(self, context: Dict[str, Any]) -> str:
-        """Use domain knowledge rules to select optimizer"""
-        dim = context['dim']
-        is_discrete = context.get('discrete_vars', 0) > 0
-        is_multimodal = context.get('multimodal', False)
+    def reset(self):
+        """Reset optimizer state"""
+        self.history = []
+        self.diversity_history = []
+        self.param_history = {
+            'exploitation_ratio': [],
+            'length_scale': []
+        }
+        self._performance_history = pd.DataFrame(columns=['iteration', 'score', 'optimizer'])
         
-        if is_discrete:
-            return 'AntColonyOptimizer'  # Best for discrete problems
-        elif is_multimodal and dim > 10:
-            return 'EvolutionStrategy'  # Good for multimodal high-dim
-        elif dim <= 10:
-            return 'GreyWolfOptimizer'  # Efficient for lower dimensions
-        else:
-            return 'DifferentialEvolution'  # Robust general-purpose
-    
-    def update_performance(self, optimizer_name: str, problem_dim: int, discrete_vars: int, multimodal: int, runtime: float, score: float):
-        """
-        Update performance history for an optimizer.
+    def _update_history(self, optimizer: str, context: Dict[str, Any], runtime: float, score: float):
+        """Update performance history with new result"""
+        new_record = pd.DataFrame({
+            'optimizer': [optimizer],
+            'problem_dim': [context.get('dim', self.dim)],
+            'discrete_vars': [context.get('discrete_vars', 0)],
+            'multimodal': [context.get('multimodal', 0)],
+            'runtime': [runtime],
+            'score': [score],
+            'iteration': [self._current_iteration]
+        })
         
-        Args:
-            optimizer_name: Name of the optimizer
-            problem_dim: Problem dimension
-            discrete_vars: Number of discrete variables
-            multimodal: Whether the problem is multimodal
-            runtime: Runtime in seconds
-            score: Final objective value achieved
-        """
-        # Update performance history
         self.performance_history = pd.concat([
             self.performance_history,
-            pd.DataFrame([{
-                'optimizer': optimizer_name,
-                'problem_dim': problem_dim,
-                'discrete_vars': discrete_vars,
-                'multimodal': multimodal,
-                'runtime': runtime,
-                'score': score
-            }])
+            new_record
         ], ignore_index=True)
         
-        # Update tracking
-        self.current_best[optimizer_name] = min(
-            self.current_best[optimizer_name],
-            score
-        )
-        self.runtime_stats[optimizer_name].append(runtime)
+        self._current_iteration += 1
+        
+        # Update optimizer stats
+        if score < self.current_best[optimizer]:
+            self.current_best[optimizer] = score
+        self.runtime_stats[optimizer].append(runtime)
     
-    def optimize(self, objective_func: Callable, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+    def _optimize(self,
+                objective_func: Callable,
+                max_evals: Optional[int] = None,
+                record_history: bool = True,
+                context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
+        """Internal optimization method"""
+        if max_evals is None:
+            max_evals = 1000
+            
+        if context is None:
+            context = {}
+            
+        best_solution = None
+        best_score = float('inf')
+        self._current_iteration = 0
+        n_evals = 0
+        
+        # Initialize tracking
+        self.current_best = {name: float('inf') for name in self.optimizers}
+        
+        while n_evals < max_evals:
+            # Select optimizer
+            selected_optimizer = self._select_optimizer(context)
+            optimizer = self.optimizers[selected_optimizer]
+            
+            # Reset optimizer state
+            if hasattr(optimizer, 'reset'):
+                optimizer.reset()
+            
+            # Calculate remaining evaluations
+            remaining_evals = max_evals - n_evals
+            
+            try:
+                # Run optimization
+                start_time = time.time()
+                solution = optimizer.optimize(
+                    objective_func,
+                    max_evals=remaining_evals,
+                    record_history=record_history,
+                    context=context
+                )
+                runtime = time.time() - start_time
+                
+                # Evaluate solution
+                if solution is not None:  # Check if solution exists
+                    score = objective_func(solution)
+                    
+                    # Update history
+                    self._update_history(selected_optimizer, context, runtime, score)
+                    
+                    # Update performance history
+                    self._performance_history = pd.concat([
+                        self._performance_history,
+                        pd.DataFrame([{
+                            'iteration': len(self._performance_history),
+                            'score': score,
+                            'optimizer': selected_optimizer
+                        }])
+                    ], ignore_index=True)
+                    
+                    # Update tracking
+                    self.current_best[selected_optimizer] = min(
+                        self.current_best[selected_optimizer],
+                        score
+                    )
+                    
+                    # Update best solution
+                    if score < best_score:
+                        best_score = score
+                        best_solution = solution.copy()
+                        
+                    # Early stopping if we found a good solution
+                    if best_score < 1e-4:
+                        break
+                        
+                # Update evaluations
+                if hasattr(optimizer, 'n_evals'):
+                    n_evals += optimizer.n_evals
+                else:
+                    n_evals = max_evals  # Conservative estimate
+                    
+            except Exception as e:
+                logging.error(f"Optimizer {selected_optimizer} failed: {str(e)}")
+                continue
+                
+            self._current_iteration += 1
+            
+        # If no solution found, return best from random search
+        if best_solution is None:
+            logging.warning("No solution found from optimizers, using random search")
+            X = np.random.uniform(
+                low=[b[0] for b in self.bounds],
+                high=[b[1] for b in self.bounds],
+                size=(100, self.dim)
+            )
+            scores = np.array([objective_func(x) for x in X])
+            best_idx = np.argmin(scores)
+            best_solution = X[best_idx]
+            best_score = scores[best_idx]
+            
+        return best_solution, best_score
+    
+    def optimize(self, objective_func: callable, context: Dict[str, Any] = None) -> np.ndarray:
         """
-        Run optimization using meta-learning to select and adapt optimizers.
+        Optimize using meta-learning framework.
         
         Args:
-            objective_func: Function to minimize
-            context: Optional problem context
+            objective_func: Function to optimize
+            context: Problem context (dimension, discrete/continuous, etc.)
             
         Returns:
             Best solution found
         """
-        if context is None:
-            context = {}
+        context = context or {'dim': self.dim}
+        best_solution, _ = self._optimize(objective_func, context=context)
+        return best_solution
+    
+    def _select_optimizer(self, context: Dict[str, Any]) -> str:
+        """Select optimizer based on context and history"""
+        if self.mode == 'bayesian':
+            return self._select_optimizer_bayesian(context)
+        else:
+            return self._select_optimizer_random()
             
-        # Ensure context has required fields
-        context = {
-            'dim': context.get('dim', self.dim),
-            'discrete_vars': context.get('discrete_vars', 0),
-            'multimodal': context.get('multimodal', 0)
-        }
+    def _select_optimizer_random(self) -> str:
+        """Random optimizer selection"""
+        return np.random.choice(list(self.optimizers.keys()))
         
-        # Wrap objective function to ensure numpy array input/output
-        def wrapped_objective(x):
-            x = np.asarray(x).reshape(-1)  # Ensure 1D array
-            return float(objective_func(x))  # Ensure scalar output
+    def _select_optimizer_bayesian(self, context: Dict[str, Any]) -> str:
+        """Bayesian optimizer selection"""
+        if self._performance_history.empty:
+            # Try each optimizer at least once
+            return np.random.choice(list(self.optimizers.keys()))
         
-        # Select best optimizer for current context
-        optimizer_name = self.select_optimizer(context)
-        optimizer = self.optimizers[optimizer_name]
-        
-        # Run optimization
-        start_time = time.time()
-        try:
-            solution = optimizer.optimize(wrapped_objective)
-            solution = np.asarray(solution).reshape(-1)  # Ensure 1D array
-            score = wrapped_objective(solution)
-        except Exception as e:
-            print(f"Optimization failed with {optimizer_name}: {str(e)}")
-            # Try another optimizer
-            remaining_optimizers = set(self.optimizers.keys()) - {optimizer_name}
-            for name in remaining_optimizers:
-                try:
-                    optimizer = self.optimizers[name]
-                    solution = optimizer.optimize(wrapped_objective)
-                    solution = np.asarray(solution).reshape(-1)
-                    score = wrapped_objective(solution)
-                    optimizer_name = name  # Update selected optimizer
-                    break
-                except Exception as e2:
-                    print(f"Backup optimization with {name} failed: {str(e2)}")
-                    continue
+        # Use best performing optimizer more frequently
+        best_scores = {}
+        for opt in self.optimizers:
+            opt_history = self._performance_history[
+                self._performance_history['optimizer'] == opt
+            ]
+            if not opt_history.empty:
+                best_scores[opt] = min(opt_history['score'].min(), 1e6)
             else:
-                raise RuntimeError("All optimizers failed")
-                
-        runtime = time.time() - start_time
+                best_scores[opt] = 1e6
         
-        # Update performance history
-        self.update_performance(
-            optimizer_name,
-            context['dim'],
-            context['discrete_vars'],
-            context['multimodal'],
-            runtime,
-            score
-        )
-        
-        return solution
-    
-    def get_optimizer_stats(self) -> Dict[str, Dict[str, float]]:
-        """Return performance statistics for each optimizer"""
-        stats = {}
-        for name in self.optimizers:
-            if self.runtime_stats[name]:
-                stats[name] = {
-                    'avg_runtime': np.mean(self.runtime_stats[name]),
-                    'best_score': self.current_best[name],
-                    'n_runs': len(self.runtime_stats[name])
-                }
-        return stats
-    
-    def get_convergence_curve(self) -> List[float]:
-        """Get convergence curve for the last optimization run"""
-        if hasattr(self, 'current_optimizer'):
-            return self.current_optimizer.get_convergence_curve()
-        return []
-    
-    def get_state(self) -> Dict[str, Any]:
-        """Get current state of the meta-optimizer"""
-        return {
-            'performance_history': self.performance_history,
-            'current_best': self.current_best,
-            'runtime_stats': self.runtime_stats
+        # Convert to probabilities (lower score = higher probability)
+        total = sum(1.0 / score for score in best_scores.values())
+        probs = {
+            opt: (1.0 / score) / total 
+            for opt, score in best_scores.items()
         }
+        
+        return np.random.choice(
+            list(probs.keys()),
+            p=list(probs.values())
+        )

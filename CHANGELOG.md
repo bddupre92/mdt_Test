@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.1] - 2025-02-24
+
+### Fixed
+- Fixed dimension mismatch error in `SurrogateOptimizer` by properly handling observation storage and GP model updates
+- Fixed indexing error in `MetaOptimizer`'s optimizer selection strategy
+- Improved normalization and error handling in both optimizers
+
+### Improved
+- Enhanced `MetaOptimizer`'s performance with better optimizer selection based on history
+- Optimized `SurrogateOptimizer`'s GP model configuration for better efficiency
+- Added early stopping conditions for faster convergence
+- Improved handling of performance history and logging
+
+### Performance
+- Reduced memory usage in `SurrogateOptimizer` by limiting GP model size
+- Improved convergence speed on both unimodal and multimodal functions
+- Enhanced stability of optimization process across all test functions
+
 ## [4.0.0] - 2025-02-24
 
 ### Added

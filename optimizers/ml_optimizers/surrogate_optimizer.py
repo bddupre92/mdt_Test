@@ -14,6 +14,8 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 from scipy.stats import norm
 from ..base_optimizer import BaseOptimizer
+import pandas as pd
+import warnings
 
 class SurrogateOptimizer(BaseOptimizer):
     """
@@ -33,6 +35,7 @@ class SurrogateOptimizer(BaseOptimizer):
         noise: Assumed noise level in observations
         length_scale: Length scale for the RBF kernel
         exploitation_ratio: Balance between exploration and exploitation (0-1)
+        max_gp_size: Maximum points to use in GP model
     """
     
     def __init__(self,
@@ -42,7 +45,8 @@ class SurrogateOptimizer(BaseOptimizer):
                  n_initial: int = 20,
                  noise: float = 1e-6,
                  length_scale: float = 1.0,
-                 exploitation_ratio: float = 0.5):
+                 exploitation_ratio: float = 0.5,
+                 max_gp_size: int = 100):
         super().__init__(dim, bounds)
         
         self.pop_size = pop_size
@@ -50,35 +54,37 @@ class SurrogateOptimizer(BaseOptimizer):
         self.noise = noise
         self.length_scale = length_scale
         self.exploitation_ratio = exploitation_ratio
+        self.max_gp_size = max_gp_size
         
-        # Initialize GP model with better configuration
-        kernel = C(1.0) * RBF(
-            length_scale=[length_scale] * dim,
-            length_scale_bounds=(1e-2, 1e2)
-        )
+        # Initialize GP model
+        kernel = RBF(length_scale=length_scale)
         self.model = GaussianProcessRegressor(
             kernel=kernel,
             alpha=noise,
             normalize_y=True,
-            n_restarts_optimizer=2,
-            random_state=42
+            n_restarts_optimizer=1
         )
         
         # Storage for observations
-        self.X_observed = None  # Observed points
-        self.y_observed = None  # Observed values
-        
-        # Initialize history storage
-        self.history = []
-        self.diversity_history = []
-        self.param_history = {
-            'exploitation_ratio': [],
-            'length_scale': []
-        }
-        
-        # For normalizing objective values
+        self.X_observed = np.zeros((0, dim))
+        self.y_observed = np.zeros(0)
         self.y_mean = 0
         self.y_std = 1
+        
+        # Performance history
+        self._performance_history = pd.DataFrame(columns=['iteration', 'score'])
+        self.history = []
+        
+    def get_performance_history(self) -> pd.DataFrame:
+        """Get optimizer performance history"""
+        return self._performance_history
+    
+    def reset(self):
+        """Reset optimizer state"""
+        self.X_observed = np.zeros((0, self.dim))
+        self.y_observed = np.zeros(0)
+        self.history = []
+        self._performance_history = pd.DataFrame(columns=['iteration', 'score'])
         
     def scale_point(self, x: np.ndarray) -> np.ndarray:
         """Scale point to [0, 1] range"""
@@ -102,126 +108,194 @@ class SurrogateOptimizer(BaseOptimizer):
         """Unscale multiple points from [0, 1] range"""
         return np.array([self.unscale_point(x) for x in X])
     
-    def latin_hypercube_sampling(self, n_samples: int) -> np.ndarray:
-        """Generate initial points using Latin Hypercube Sampling"""
-        # Generate the intervals
-        cut_points = np.linspace(0, 1, n_samples + 1)
-        
-        # Create the sampling points
-        points = np.zeros((n_samples, self.dim))
+    def latin_hypercube_sampling(self, n_points: int) -> np.ndarray:
+        """Generate points using Latin Hypercube Sampling"""
+        # Generate Latin Hypercube samples
+        points = np.zeros((n_points, self.dim))
         
         for i in range(self.dim):
-            # Generate points for each dimension
-            points[:, i] = cut_points[:-1] + np.random.rand(n_samples) * (cut_points[1] - cut_points[0])
-            # Shuffle the points
-            np.random.shuffle(points[:, i])
+            points[:, i] = np.random.permutation(n_points)
         
-        # Scale points to bounds
+        # Scale to [0, 1] and then to bounds
+        points = (points + np.random.uniform(0, 1, points.shape)) / n_points
+        
+        # Scale to bounds
         for i in range(self.dim):
             points[:, i] = points[:, i] * (self.bounds[i][1] - self.bounds[i][0]) + self.bounds[i][0]
             
         return points
     
-    def expected_improvement(self, X: np.ndarray) -> np.ndarray:
-        """
-        Calculate expected improvement
+    def select_next_points(self, n_points: int) -> np.ndarray:
+        """Select next points to evaluate using acquisition function"""
+        # Generate candidates using Latin Hypercube
+        n_candidates = min(100, 10 * n_points)  # Reduced candidate pool
+        X_candidates = self.latin_hypercube_sampling(n_candidates)
         
-        Args:
-            X: Points to evaluate
+        # Scale candidates
+        X_candidates_scaled = self.scale_points(X_candidates)
+        
+        # Get predictions and uncertainties
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            y_mean, y_std = self.model.predict(X_candidates_scaled, return_std=True)
+        
+        # Compute acquisition function values
+        acq_values = self.acquisition_function(y_mean, y_std)
+        
+        # Select points balancing exploration and exploitation
+        n_exploit = int(self.exploitation_ratio * n_points)
+        n_explore = n_points - n_exploit
+        
+        # Get indices for both strategies
+        exploit_indices = np.argsort(y_mean)[:n_exploit]
+        explore_indices = np.argsort(-y_std)[:n_explore]
+        
+        # Combine indices
+        selected_indices = np.concatenate([exploit_indices, explore_indices])
+        
+        return X_candidates[selected_indices]
+        
+    def acquisition_function(self, mean: np.ndarray, std: np.ndarray) -> np.ndarray:
+        """Expected Improvement acquisition function"""
+        # Current best value
+        y_best = np.min(self.y_observed) if len(self.y_observed) > 0 else 0
+        
+        # Compute z-score
+        with np.errstate(divide='ignore', invalid='ignore'):
+            z = (y_best - mean) / std
             
-        Returns:
-            Expected improvement values
-        """
-        # Scale points
-        X_scaled = self.scale_points(X)
-        
-        # Get mean and std predictions
-        mu, std = self.model.predict(X_scaled, return_std=True)
-        
-        # Current best (normalized)
-        y_best = np.min(self.normalize_y(self.y_observed))
-        
-        # Handle numerical stability
-        std = np.maximum(std, 1e-10)
-        
-        # Calculate improvement
-        z = (y_best - mu) / std
-        
-        # Calculate EI using more stable implementation
+        # Compute EI
         ei = std * (z * norm.cdf(z) + norm.pdf(z))
-        ei[std < 1e-10] = 0.0  # No improvement if uncertainty is too small
+        ei[std == 0] = 0  # Handle zero uncertainty
         
         return ei
     
-    def upper_confidence_bound(self, X: np.ndarray, beta: float = 2.0) -> np.ndarray:
+    def _optimize(self,
+                objective_func: Callable,
+                max_evals: Optional[int] = None,
+                record_history: bool = True,
+                context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
+        """Internal optimization method"""
+        if max_evals is None:
+            max_evals = 100  # Reduce default max evaluations
+            
+        # Reset storage
+        self.X_observed = np.zeros((0, self.dim))
+        self.y_observed = np.zeros(0)
+        self._performance_history = pd.DataFrame(columns=['iteration', 'score'])
+        self.history = []
+        
+        # Initial sampling
+        X_initial = self.latin_hypercube_sampling(self.n_initial)
+        y_initial = np.array([objective_func(x) for x in X_initial])
+        
+        # Store initial points
+        self.X_observed = X_initial
+        self.y_observed = y_initial
+        
+        # Update performance history
+        for i, y in enumerate(y_initial):
+            self._performance_history = pd.concat([
+                self._performance_history,
+                pd.DataFrame([{'iteration': i, 'score': y}])
+            ], ignore_index=True)
+        
+        # Normalize objective values
+        y_norm = self.normalize_y(self.y_observed)
+        
+        n_evals = self.n_initial
+        best_score = np.min(self.y_observed)
+        best_solution = self.X_observed[np.argmin(self.y_observed)]
+        
+        # Main optimization loop
+        while n_evals < max_evals:
+            # Early stopping if we've found a good solution
+            if best_score < 1e-4:  # Relaxed threshold
+                break
+                
+            # Select subset of points for GP if we exceed max_gp_size
+            if len(self.y_observed) > self.max_gp_size:
+                # Keep best points and some random points
+                n_best = self.max_gp_size // 2
+                best_indices = np.argsort(self.y_observed)[:n_best]
+                random_indices = np.random.choice(
+                    np.setdiff1d(np.arange(len(self.y_observed)), best_indices),
+                    size=self.max_gp_size - n_best,
+                    replace=False
+                )
+                indices = np.concatenate([best_indices, random_indices])
+                X_train = self.X_observed[indices]
+                y_train = y_norm[indices]
+            else:
+                X_train = self.X_observed
+                y_train = y_norm
+            
+            # Fit GP model
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                self.model.fit(self.scale_points(X_train), y_train)
+            
+            # Select next points (reduced batch size)
+            n_remaining = min(5, max_evals - n_evals)  # Process in very small batches
+            X_next = self.select_next_points(n_remaining)
+            
+            # Evaluate points
+            y_next = np.array([objective_func(x) for x in X_next])
+            
+            # Update observations
+            self.X_observed = np.vstack([self.X_observed, X_next])
+            self.y_observed = np.append(self.y_observed, y_next)
+            
+            # Update normalization
+            y_norm = self.normalize_y(self.y_observed)
+            
+            # Update performance history
+            for i, y in enumerate(y_next):
+                self._performance_history = pd.concat([
+                    self._performance_history,
+                    pd.DataFrame([{'iteration': n_evals + i, 'score': y}])
+                ], ignore_index=True)
+            
+            # Update best solution
+            if np.min(y_next) < best_score:
+                best_score = np.min(y_next)
+                best_solution = X_next[np.argmin(y_next)]
+            
+            # Record history (minimal)
+            if record_history:
+                self.history.append({
+                    'iteration': len(self.history),
+                    'best_score': best_score
+                })
+            
+            n_evals += n_remaining
+            
+            # Aggressive exploitation after initial exploration
+            if n_evals > max_evals // 3:
+                self.exploitation_ratio = 0.9
+            
+        return best_solution, best_score
+    
+    def optimize(self,
+                objective_func: Callable,
+                max_evals: Optional[int] = None,
+                record_history: bool = True,
+                context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         """
-        Calculate upper confidence bound
+        Run the optimization process
         
         Args:
-            X: Points to evaluate
-            beta: Exploration parameter
+            objective_func: Function to minimize
+            max_evals: Maximum number of function evaluations
+            record_history: Whether to record optimization history
+            context: Additional context for the objective function
             
         Returns:
-            UCB values
+            Best solution found
         """
-        # Scale points
-        X_scaled = self.scale_points(X)
-        
-        # Get predictions with uncertainty
-        mu, std = self.model.predict(X_scaled, return_std=True)
-        
-        # Handle numerical stability
-        std = np.maximum(std, 1e-10)
-        
-        # Calculate UCB (negative because we're minimizing)
-        return mu - beta * std
-    
-    def select_next_points(self, n_points: int) -> np.ndarray:
-        """
-        Select next points to evaluate
-        
-        Args:
-            n_points: Number of points to select
-            
-        Returns:
-            Selected points
-        """
-        # Generate candidates using LHS
-        n_candidates = self.pop_size * 2
-        candidates = self.latin_hypercube_sampling(n_candidates)
-        
-        # Calculate acquisition function values
-        if np.random.random() < self.exploitation_ratio:
-            scores = -self.expected_improvement(candidates)  # Negative because we want to minimize
-        else:
-            scores = self.upper_confidence_bound(candidates)
-        
-        # Select best points, ensuring some diversity
-        selected_points = []
-        remaining_candidates = candidates.copy()
-        remaining_scores = scores.copy()
-        
-        for _ in range(n_points):
-            if len(remaining_candidates) == 0:
-                # If we run out of candidates, generate new ones
-                remaining_candidates = self.latin_hypercube_sampling(n_candidates)
-                if np.random.random() < self.exploitation_ratio:
-                    remaining_scores = -self.expected_improvement(remaining_candidates)
-                else:
-                    remaining_scores = self.upper_confidence_bound(remaining_candidates)
-            
-            # Select best point
-            best_idx = np.argmin(remaining_scores)
-            selected_points.append(remaining_candidates[best_idx])
-            
-            # Remove points too close to the selected point
-            distances = np.linalg.norm(remaining_candidates - remaining_candidates[best_idx], axis=1)
-            mask = distances > 0.1  # Minimum distance threshold
-            remaining_candidates = remaining_candidates[mask]
-            remaining_scores = remaining_scores[mask]
-        
-        return np.array(selected_points)
-    
+        best_solution, _ = self._optimize(objective_func, max_evals, record_history, context)
+        return best_solution
+
     def normalize_y(self, y: np.ndarray) -> np.ndarray:
         """Normalize objective values"""
         if len(y) == 0:
@@ -233,98 +307,3 @@ class SurrogateOptimizer(BaseOptimizer):
     def denormalize_y(self, y: np.ndarray) -> np.ndarray:
         """Denormalize objective values"""
         return y * self.y_std + self.y_mean
-    
-    def _optimize(self,
-                objective_func: Callable,
-                max_evals: Optional[int] = None,
-                record_history: bool = True,
-                context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
-        """Internal optimization method"""
-        if max_evals is None:
-            max_evals = 1000
-            
-        # Initialize storage
-        self.X_observed = np.zeros((0, self.dim))
-        self.y_observed = np.zeros(0)
-        
-        # Initial sampling
-        X_initial = self.latin_hypercube_sampling(self.n_initial)
-        y_initial = np.array([objective_func(x) for x in X_initial])
-        
-        self.X_observed = np.vstack([self.X_observed, X_initial])
-        self.y_observed = np.append(self.y_observed, y_initial)
-        
-        # Normalize objective values
-        y_norm = self.normalize_y(self.y_observed)
-        
-        n_evals = self.n_initial
-        best_score = np.min(self.y_observed)
-        best_solution = self.X_observed[np.argmin(self.y_observed)]
-        
-        # Main optimization loop
-        while n_evals < max_evals:
-            # Fit GP model
-            self.model.fit(self.scale_points(self.X_observed), y_norm)
-            
-            # Select next points
-            n_remaining = min(self.pop_size, max_evals - n_evals)
-            X_next = self.select_next_points(n_remaining)
-            
-            # Evaluate points
-            y_next = np.array([objective_func(x) for x in X_next])
-            
-            # Update observations
-            self.X_observed = np.vstack([self.X_observed, X_next])
-            self.y_observed = np.append(self.y_observed, y_next)
-            
-            # Normalize all objective values
-            y_norm = self.normalize_y(self.y_observed)
-            
-            # Update best solution
-            if np.min(y_next) < best_score:
-                best_score = np.min(y_next)
-                best_solution = X_next[np.argmin(y_next)]
-            
-            # Record history
-            if record_history:
-                self.history.append({
-                    'iteration': len(self.history),
-                    'best_score': best_score,
-                    'population': X_next.copy(),
-                    'scores': y_next.copy(),
-                    'best_solution': best_solution.copy()
-                })
-                
-                # Calculate and record diversity
-                self.diversity_history.append(
-                    np.mean([np.linalg.norm(x - best_solution) for x in X_next])
-                )
-                
-                # Record parameters
-                self.param_history['exploitation_ratio'].append(self.exploitation_ratio)
-                self.param_history['length_scale'].append(
-                    self.model.kernel_.k2.length_scale.mean()  # Access RBF kernel length_scale
-                )
-            
-            n_evals += n_remaining
-            
-        return best_solution, best_score
-    
-    def optimize(self,
-                objective_func: Callable,
-                max_evals: Optional[int] = None,
-                record_history: bool = True,
-                context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
-        """
-        Run the optimization process
-        
-        Args:
-            objective_func: Function to minimize
-            max_evals: Maximum number of function evaluations
-            record_history: Whether to record optimization history
-            context: Additional context for the objective function
-            
-        Returns:
-            Tuple of (best_solution, best_score)
-        """
-        return self._optimize(objective_func, max_evals, record_history, context)

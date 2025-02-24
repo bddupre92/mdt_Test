@@ -7,6 +7,7 @@ and adaptive parameter management.
 
 import numpy as np
 import time
+import pandas as pd
 from typing import Tuple, List, Dict, Any, Optional, Callable
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
@@ -57,6 +58,10 @@ class BaseOptimizer(ABC):
         self.end_time = None
         self.history = []
         
+        # Performance tracking
+        self.performance_history = pd.DataFrame(columns=['iteration', 'score'])
+        self._current_iteration = 0
+        
     def reset(self):
         """Reset optimizer state"""
         self.evaluations = 0
@@ -70,6 +75,8 @@ class BaseOptimizer(ABC):
         self.start_time = None
         self.end_time = None
         self.history = []
+        self.performance_history = pd.DataFrame(columns=['iteration', 'score'])
+        self._current_iteration = 0
         
     def _random_solution(self) -> np.ndarray:
         """Generate random solution within bounds"""
@@ -112,7 +119,26 @@ class BaseOptimizer(ABC):
         # Record convergence
         self.convergence_curve.append(self.best_score)
         
+        # Update performance history
+        self._update_history(score)
+        
         return score
+    
+    def _update_history(self, score: float):
+        """Update performance history.
+        
+        Args:
+            score: Current objective function value
+        """
+        new_record = pd.DataFrame({
+            'iteration': [self._current_iteration],
+            'score': [score]
+        })
+        self.performance_history = pd.concat([
+            self.performance_history,
+            new_record
+        ], ignore_index=True)
+        self._current_iteration += 1
     
     def _calculate_diversity(self) -> float:
         """Calculate population diversity"""
@@ -187,6 +213,10 @@ class BaseOptimizer(ABC):
                 params[param_name] = history[-1]  # Get most recent value
                 
         return params
+    
+    def get_performance_history(self) -> pd.DataFrame:
+        """Get performance history"""
+        return self.performance_history
     
     def optimize(self,
                 objective_func: Callable,
