@@ -70,52 +70,64 @@ class MetaOptimizer:
 
     def _calculate_exploration_rate(self) -> float:
         """Calculate adaptive exploration rate based on progress and performance."""
-        # Base rate decays with iterations
-        base_rate = max(
-            self.min_exploration_rate,
-            1.0 - (self._current_iteration / 1000)  # Assuming max 1000 iterations
-        )
-        
+        # Get current performance metrics
         if not self.current_problem_type:
-            return base_rate
+            return self.min_exploration_rate
             
-        # Get selection statistics for current problem
         stats = self.selection_tracker.get_selection_stats(self.current_problem_type)
         if stats.empty:
-            return base_rate
+            return 0.5  # Start with balanced exploration
             
-        # If we have a highly successful optimizer, reduce exploration
+        # Calculate success-based rate
         max_success_rate = stats['success_rate'].max()
-        if max_success_rate > 0.8:
-            return base_rate * 0.5
-            
-        # If all optimizers performing poorly, increase exploration
-        if max_success_rate < 0.2:
-            return min(0.8, base_rate * 2.0)
-            
-        return base_rate
+        min_success_rate = stats['success_rate'].min()
+        success_gap = max_success_rate - min_success_rate
         
-    def _select_optimizer(self, context: Dict[str, Any]) -> str:
+        # Adjust exploration based on success distribution
+        if max_success_rate > 0.8:
+            # We have a very good optimizer, reduce exploration
+            base_rate = 0.1
+        elif success_gap > 0.4:
+            # Clear performance differences, focus on exploitation
+            base_rate = 0.2
+        elif max_success_rate < 0.3:
+            # All optimizers struggling, increase exploration
+            base_rate = 0.8
+        else:
+            # Balanced exploration/exploitation
+            base_rate = 0.4
+            
+        # Adjust for iteration progress
+        progress = min(1.0, self._current_iteration / 1000)
+        decay = np.exp(-3 * progress)  # Exponential decay
+        
+        # Combine factors
+        return max(self.min_exploration_rate, base_rate * decay)
+        
+    def _select_optimizer(self, context: Dict[str, Any]) -> List[str]:
         """
-        Select an optimizer based on problem features and history.
+        Select optimizers based on problem features and history.
         
         Args:
             context: Problem context
             
         Returns:
-            Name of selected optimizer
+            List of selected optimizer names
         """
         if self.current_features is None:
-            return np.random.choice(list(self.optimizers.keys()))
+            return list(np.random.choice(
+                list(self.optimizers.keys()),
+                size=self.n_parallel,
+                replace=False
+            ))
             
         # Calculate exploration rate
         exploration_rate = self._calculate_exploration_rate()
             
-        # Decide between exploration and exploitation
-        if np.random.random() < exploration_rate:
-            return np.random.choice(list(self.optimizers.keys()))
-            
-        # First try to use selection history if available
+        selected_optimizers = []
+        remaining_slots = self.n_parallel
+        
+        # First, try to use selection history
         if self.current_problem_type:
             correlations = self.selection_tracker.get_feature_correlations(self.current_problem_type)
             if correlations:
@@ -124,47 +136,90 @@ class MetaOptimizer:
                 for opt, feat_corrs in correlations.items():
                     score = 0.0
                     for feat, corr in feat_corrs.items():
-                        # Weight the feature by its correlation with success
-                        score += self.current_features[feat] * corr
+                        if feat in self.current_features:
+                            # Weight the feature by its correlation with success
+                            score += self.current_features[feat] * corr
                     scores[opt] = score
                     
                 if scores:
-                    # Select optimizer with highest score
-                    best_opt = max(scores.items(), key=lambda x: x[1])[0]
-                    return best_opt
-            
-        # Fallback to optimization history
-        similar_problems = self.history.find_similar_problems(self.current_features)
+                    # Select top performers based on scores
+                    sorted_opts = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+                    n_exploit = int(remaining_slots * (1 - exploration_rate))
+                    
+                    for opt, _ in sorted_opts[:n_exploit]:
+                        selected_optimizers.append(opt)
+                        remaining_slots -= 1
         
-        if similar_problems:
-            # Use historical performance to weight selection
-            optimizer_scores = {}
-            for sim_score, record in similar_problems:
-                if record['optimizer'] not in optimizer_scores:
-                    optimizer_scores[record['optimizer']] = 0.0
-                # Higher score is better (we minimize objective)
-                score = 1.0 / (1.0 + record['performance'])
-                optimizer_scores[record['optimizer']] += sim_score * score
-                
-            # Select best performing optimizer
-            best_optimizer = max(optimizer_scores.items(), key=lambda x: x[1])[0]
-            confidence = max(optimizer_scores.values()) / sum(optimizer_scores.values())
+        # If we still have slots, use optimization history
+        if remaining_slots > 0:
+            similar_problems = self.history.find_similar_problems(
+                self.current_features,
+                k=min(10, len(self.optimizers))
+            )
             
-            if confidence > self.confidence_threshold:
-                return best_optimizer
+            if similar_problems:
+                # Calculate success probabilities
+                optimizer_scores = {}
+                for sim_score, record in similar_problems:
+                    if record['optimizer'] not in optimizer_scores:
+                        optimizer_scores[record['optimizer']] = []
+                    # Higher score is better (we minimize objective)
+                    performance_score = 1.0 / (1.0 + record['performance'])
+                    optimizer_scores[record['optimizer']].append(
+                        (sim_score, performance_score)
+                    )
                 
-        # Fallback to feature-based selection
-        if self.current_features['modality'] > 1.5:
-            if self.current_features['ruggedness'] > 0.5:
-                return 'de'  # Good for rugged, multimodal problems
-            else:
-                return 'gwo'  # Good for smooth, multimodal problems
-        else:
-            if self.current_features['separability'] > 0.7:
-                return 'surrogate'  # Good for separable problems
-            else:
-                return 'aco'  # Good for non-separable problems
-    
+                # Aggregate scores with confidence
+                final_scores = {}
+                for opt, scores in optimizer_scores.items():
+                    if opt in selected_optimizers:
+                        continue
+                    # Weight recent results more heavily
+                    weights = np.exp(-np.arange(len(scores)) / 5)
+                    sim_scores = np.array([s[0] for s in scores])
+                    perf_scores = np.array([s[1] for s in scores])
+                    final_scores[opt] = np.average(
+                        perf_scores,
+                        weights=weights * sim_scores
+                    )
+                
+                if final_scores:
+                    # Select remaining optimizers probabilistically
+                    remaining_opts = list(final_scores.keys())
+                    probs = np.array(list(final_scores.values()))
+                    probs = probs / probs.sum()
+                    
+                    n_history = min(
+                        remaining_slots,
+                        int(remaining_slots * (1 - exploration_rate))
+                    )
+                    
+                    if n_history > 0:
+                        history_selections = np.random.choice(
+                            remaining_opts,
+                            size=n_history,
+                            p=probs,
+                            replace=False
+                        )
+                        selected_optimizers.extend(history_selections)
+                        remaining_slots -= n_history
+        
+        # Fill remaining slots with random exploration
+        if remaining_slots > 0:
+            available_opts = [
+                opt for opt in self.optimizers.keys()
+                if opt not in selected_optimizers
+            ]
+            if available_opts:
+                random_selections = np.random.choice(
+                    available_opts,
+                    size=remaining_slots,
+                    replace=False
+                )
+                selected_optimizers.extend(random_selections)
+        
+        return selected_optimizers
+
     def _run_single_optimizer(self, 
                             optimizer_name: str, 
                             optimizer,
@@ -235,11 +290,7 @@ class MetaOptimizer:
         
         while self.total_evaluations < max_evals:
             # Select optimizers to run in parallel
-            selected_optimizers = []
-            for _ in range(self.n_parallel):
-                opt_name = self._select_optimizer(context or {})
-                if opt_name not in [o[0] for o in selected_optimizers]:
-                    selected_optimizers.append((opt_name, self.optimizers[opt_name]))
+            selected_optimizers = self._select_optimizer(context or {})
             
             # Calculate remaining evaluations
             remaining_evals = max_evals - self.total_evaluations
@@ -252,12 +303,12 @@ class MetaOptimizer:
                     executor.submit(
                         self._run_single_optimizer,
                         opt_name,
-                        optimizer,
+                        self.optimizers[opt_name],
                         objective_func,
                         evals_per_optimizer,
                         record_history
                     ): opt_name
-                    for opt_name, optimizer in selected_optimizers
+                    for opt_name in selected_optimizers
                 }
                 
                 for future in concurrent.futures.as_completed(future_to_opt):

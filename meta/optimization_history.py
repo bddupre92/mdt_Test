@@ -63,30 +63,48 @@ class OptimizationHistory:
         if self.history_file:
             self.save_history()
     
-    def find_similar_problems(self, features: Dict[str, float], 
-                            n_neighbors: int = 3) -> Optional[List[Tuple[float, Dict]]]:
+    def find_similar_problems(self, features: Dict[str, float], k: int = None) -> List[Tuple[float, Dict]]:
         """
-        Find similar problems based on features.
+        Find similar problems in history based on features.
         
         Args:
             features: Problem features to match
-            n_neighbors: Number of similar problems to return
+            k: Optional number of similar problems to return
             
         Returns:
-            List of (similarity_score, record) tuples for most similar problems
+            List of (similarity_score, record) tuples
         """
         if not self.records:
-            return None
+            return []
             
-        # Calculate similarity scores
         similarities = []
         for record in self.records:
-            sim_score = self._calculate_similarity(features, record['features'])
-            similarities.append((sim_score, record))
-            
-        # Get top N similar problems
+            if 'features' not in record:
+                continue
+                
+            # Calculate similarity score
+            score = 0.0
+            count = 0
+            for feat, value in features.items():
+                if feat in record['features']:
+                    # Normalize difference by feature range
+                    feat_range = max(abs(value), abs(record['features'][feat])) + 1e-10
+                    diff = abs(value - record['features'][feat]) / feat_range
+                    score += 1.0 - diff
+                    count += 1
+                    
+            if count > 0:
+                similarity = score / count
+                similarities.append((similarity, record))
+                
+        # Sort by similarity score
         similarities.sort(key=lambda x: x[0], reverse=True)
-        return similarities[:n_neighbors]
+        
+        # Return top k if specified
+        if k is not None:
+            return similarities[:k]
+            
+        return similarities
     
     def get_optimizer_performance(self, optimizer: str) -> Dict[str, float]:
         """

@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.7] - 2025-02-24
+
+### Added
+- Improved problem analysis with sophisticated feature extraction
+- Enhanced sampling strategy for high-dimensional problems
+- Weighted historical performance with recency bias
+- Dynamic resource allocation based on problem characteristics
+
+### Changed
+- Updated optimizer selection strategy with confidence-based weighting
+- Improved ruggedness estimation for better landscape analysis
+- Enhanced feature correlation tracking for optimizer selection
+- Optimized Latin Hypercube sampling with adaptive corner points
+
+### Fixed
+- Fixed sampling strategy for high-dimensional problems
+- Resolved issue with negative dimensions in sample generation
+- Fixed find_similar_problems to support k parameter
+- Improved error handling in problem analysis
+
+## [4.0.6] - 2025-02-24
+
+### Added
+- Enhanced problem analysis with sophisticated feature extraction:
+  - Local and global structure analysis
+  - Fitness distance correlation
+  - Information content measurement
+  - Basin ratio estimation
+  - Gradient homogeneity analysis
+- Improved sampling strategy with corner points
+- Advanced optimizer selection with:
+  - Success-gap based adaptation
+  - Exponential decay for exploration
+  - Problem-specific base rates
+  - Weighted historical performance
+  - Confidence-based selection
+
+### Changed
+- Upgraded gradient estimation to use central differences
+- Enhanced parallel execution with dynamic resource allocation
+- Improved exploration/exploitation balance
+- Updated selection strategy to use complementary optimizer combinations
+
+### Fixed
+- Improved boundary exploration with corner point sampling
+- Enhanced numerical stability in gradient calculations
+- Fixed potential race conditions in parallel execution
+
 ## [4.0.5] - 2025-02-24
 
 ### Added
