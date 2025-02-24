@@ -157,6 +157,62 @@ class MLTestFunctions:
         
         return objective
 
+def create_test_suite() -> dict:
+    """
+    Create a comprehensive test suite with different function categories.
+    
+    Returns:
+        Dictionary containing test functions grouped by category
+    """
+    return {
+        'unimodal': {
+            'sphere': {
+                'func': ClassicalTestFunctions.sphere,
+                'dim': 2,
+                'bounds': [(-5.12, 5.12)],
+                'optimal': 0.0,
+                'multimodal': 0,
+                'discrete_vars': 0
+            }
+        },
+        'multimodal': {
+            'rastrigin': {
+                'func': ClassicalTestFunctions.rastrigin,
+                'dim': 2,
+                'bounds': [(-5.12, 5.12)],
+                'optimal': 0.0,
+                'multimodal': 1,
+                'discrete_vars': 0
+            },
+            'ackley': {
+                'func': ClassicalTestFunctions.ackley,
+                'dim': 2,
+                'bounds': [(-32.768, 32.768)],
+                'optimal': 0.0,
+                'multimodal': 1,
+                'discrete_vars': 0
+            }
+        },
+        'high_dimensional': {
+            'rosenbrock': {
+                'func': ClassicalTestFunctions.rosenbrock,
+                'dim': 10,
+                'bounds': [(-2.048, 2.048)],
+                'optimal': 0.0,
+                'multimodal': 0,
+                'discrete_vars': 0
+            },
+            'griewank': {
+                'func': ClassicalTestFunctions.griewank,
+                'dim': 10,
+                'bounds': [(-600, 600)],
+                'optimal': 0.0,
+                'multimodal': 1,
+                'discrete_vars': 0
+            }
+        }
+    }
+
 # Dictionary of test functions with their characteristics
 TEST_FUNCTIONS = {
     'sphere': lambda dim, bounds: TestFunction(

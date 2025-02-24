@@ -4,39 +4,52 @@ meta_optimizer.py
 Advanced meta-learning system for optimizer selection and adaptation.
 """
 
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Tuple, Any, Optional, Callable
 import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import time
+import warnings
 
 class MetaOptimizer:
     def __init__(self, optimizers: Dict[str, Any], mode: str = 'bayesian'):
         """
-        Initialize meta-optimizer with multiple optimization strategies.
+        Initialize meta-optimizer
         
         Args:
-            optimizers: Dictionary mapping optimizer names to their instances
-            mode: Strategy for optimizer selection ('bayesian', 'bandit', or 'rule')
+            optimizers: Dictionary of optimizers to use
+            mode: Selection mode ('bayesian' or 'bandit')
         """
         self.optimizers = optimizers
         self.mode = mode
+        self.dim = next(iter(optimizers.values())).dim
         
-        # Initialize performance history with explicit dtypes
-        self.performance_history = pd.DataFrame({
-            'optimizer': pd.Series(dtype='string'),
-            'problem_dim': pd.Series(dtype='int32'),
-            'discrete_vars': pd.Series(dtype='int32'),
-            'multimodal': pd.Series(dtype='int32'),
-            'runtime': pd.Series(dtype='float64'),
-            'score': pd.Series(dtype='float64'),
-            'timestamp': pd.Series(dtype='datetime64[ns]')
-        })
+        # Initialize performance history
+        self.performance_history = pd.DataFrame(columns=[
+            'optimizer',
+            'problem_dim',
+            'discrete_vars',
+            'multimodal',
+            'runtime',
+            'score'
+        ])
         
-        # Bayesian optimization components
-        self.gp = GaussianProcessRegressor()
-        self.scaler = StandardScaler()
+        # Initialize GP for Bayesian selection
+        if mode == 'bayesian':
+            kernel = 1.0 * RBF(
+                length_scale=[1.0] * 3,
+                length_scale_bounds=(1e-1, 1e3)
+            )
+            self.gp = GaussianProcessRegressor(
+                kernel=kernel,
+                alpha=1e-6,
+                normalize_y=True,
+                n_restarts_optimizer=5,
+                random_state=42
+            )
+            self.scaler = StandardScaler()
         
         # Performance tracking
         self.current_best = {name: float('inf') for name in optimizers}
@@ -65,33 +78,51 @@ class MetaOptimizer:
                 len(self.performance_history) % len(self.optimizers)
             ]
         
-        # Prepare features for GP
-        X = self.performance_history[[
-            'problem_dim', 'discrete_vars', 'multimodal'
-        ]].values
-        y = -self.performance_history['score'].values  # negative for maximization
-        
-        # Fit GP
-        self.gp.fit(self.scaler.fit_transform(X), y)
-        
-        # Predict performance for current context
-        context_features = np.array([[
-            context['dim'],
-            context.get('discrete_vars', 0),
-            context.get('multimodal', 0)
-        ]])
-        
-        predictions = []
-        for name in self.optimizers:
-            mean, std = self.gp.predict(
-                self.scaler.transform(context_features), 
-                return_std=True
-            )
-            # Use UCB acquisition
-            score = mean + 2 * std
-            predictions.append((name, score[0]))
-        
-        return max(predictions, key=lambda x: x[1])[0]
+        try:
+            # Prepare features for GP
+            X = self.performance_history[[
+                'problem_dim', 'discrete_vars', 'multimodal'
+            ]].values
+            y = -self.performance_history['score'].values  # negative for maximization
+            
+            # Scale features
+            X_scaled = self.scaler.fit_transform(X)
+            
+            # Normalize scores
+            y_mean = np.mean(y)
+            y_std = np.std(y) if np.std(y) > 0 else 1.0
+            y_norm = (y - y_mean) / y_std
+            
+            # Fit GP with normalized data and increased max_iter
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                self.gp.fit(X_scaled, y_norm)
+            
+            # Predict performance for current context
+            context_features = np.array([[
+                context.get('dim', 2),
+                context.get('discrete_vars', 0),
+                context.get('multimodal', 0)
+            ]])
+            
+            context_scaled = self.scaler.transform(context_features)
+            
+            # Get predictions for each optimizer
+            predictions = []
+            for name in self.optimizers:
+                mean, std = self.gp.predict(context_scaled, return_std=True)
+                # Use UCB acquisition with adaptive exploration
+                beta = np.sqrt(2 * np.log(len(self.optimizers) * len(self.performance_history)))
+                score = mean + beta * std
+                predictions.append((name, score[0]))
+            
+            return max(predictions, key=lambda x: x[1])[0]
+            
+        except Exception as e:
+            print(f"Warning: GP prediction failed ({str(e)}), falling back to round-robin")
+            return list(self.optimizers.keys())[
+                len(self.performance_history) % len(self.optimizers)
+            ]
     
     def _bandit_selection(self, context: Dict[str, Any]) -> str:
         """Thompson sampling for optimizer selection"""
@@ -130,14 +161,15 @@ class MetaOptimizer:
         else:
             return 'DifferentialEvolution'  # Robust general-purpose
     
-    def update_performance(self, optimizer_name: str, context: Dict[str, Any],
-                         runtime: float, score: float):
+    def update_performance(self, optimizer_name: str, problem_dim: int, discrete_vars: int, multimodal: int, runtime: float, score: float):
         """
         Update performance history for an optimizer.
         
         Args:
             optimizer_name: Name of the optimizer
-            context: Problem context
+            problem_dim: Problem dimension
+            discrete_vars: Number of discrete variables
+            multimodal: Whether the problem is multimodal
             runtime: Runtime in seconds
             score: Final objective value achieved
         """
@@ -146,12 +178,11 @@ class MetaOptimizer:
             self.performance_history,
             pd.DataFrame([{
                 'optimizer': optimizer_name,
-                'problem_dim': context['dim'],
-                'discrete_vars': context.get('discrete_vars', 0),
-                'multimodal': context.get('multimodal', 0),
+                'problem_dim': problem_dim,
+                'discrete_vars': discrete_vars,
+                'multimodal': multimodal,
                 'runtime': runtime,
-                'score': score,
-                'timestamp': pd.Timestamp.now()
+                'score': score
             }])
         ], ignore_index=True)
         
@@ -162,7 +193,7 @@ class MetaOptimizer:
         )
         self.runtime_stats[optimizer_name].append(runtime)
     
-    def optimize(self, objective_func, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+    def optimize(self, objective_func: Callable, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         """
         Run optimization using meta-learning to select and adapt optimizers.
         
@@ -175,6 +206,18 @@ class MetaOptimizer:
         """
         if context is None:
             context = {}
+            
+        # Ensure context has required fields
+        context = {
+            'dim': context.get('dim', self.dim),
+            'discrete_vars': context.get('discrete_vars', 0),
+            'multimodal': context.get('multimodal', 0)
+        }
+        
+        # Wrap objective function to ensure numpy array input/output
+        def wrapped_objective(x):
+            x = np.asarray(x).reshape(-1)  # Ensure 1D array
+            return float(objective_func(x))  # Ensure scalar output
         
         # Select best optimizer for current context
         optimizer_name = self.select_optimizer(context)
@@ -182,15 +225,38 @@ class MetaOptimizer:
         
         # Run optimization
         start_time = time.time()
-        solution = optimizer.optimize(objective_func)
+        try:
+            solution = optimizer.optimize(wrapped_objective)
+            solution = np.asarray(solution).reshape(-1)  # Ensure 1D array
+            score = wrapped_objective(solution)
+        except Exception as e:
+            print(f"Optimization failed with {optimizer_name}: {str(e)}")
+            # Try another optimizer
+            remaining_optimizers = set(self.optimizers.keys()) - {optimizer_name}
+            for name in remaining_optimizers:
+                try:
+                    optimizer = self.optimizers[name]
+                    solution = optimizer.optimize(wrapped_objective)
+                    solution = np.asarray(solution).reshape(-1)
+                    score = wrapped_objective(solution)
+                    optimizer_name = name  # Update selected optimizer
+                    break
+                except Exception as e2:
+                    print(f"Backup optimization with {name} failed: {str(e2)}")
+                    continue
+            else:
+                raise RuntimeError("All optimizers failed")
+                
         runtime = time.time() - start_time
         
         # Update performance history
         self.update_performance(
             optimizer_name,
-            context,
+            context['dim'],
+            context['discrete_vars'],
+            context['multimodal'],
             runtime,
-            optimizer.best_score
+            score
         )
         
         return solution

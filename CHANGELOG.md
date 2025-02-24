@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2025-02-24
+
+### Added
+- Comprehensive theoretical analysis framework
+  - Convergence rate analysis for all optimizers
+  - Stability analysis for meta-learning decisions
+  - Parameter sensitivity analysis
+  - Computational complexity analysis
+- Enhanced meta-learning optimization framework
+  - Improved Bayesian optimization with GP
+  - Multi-armed bandit strategy
+  - Context-aware algorithm selection
+- New unified main.py interface
+  - Streamlined API for general use
+  - Comprehensive benchmark suite integration
+  - Automated results analysis and visualization
+- Advanced performance tracking
+  - Detailed convergence metrics
+  - Selection stability measures
+  - Cross-optimizer performance comparisons
+
+### Changed
+- Completely restructured main.py for better usability
+- Enhanced optimizer implementations with theoretical guarantees
+- Improved error handling and logging system
+- Updated benchmark suite with more comprehensive test functions
+
+### Fixed
+- Array shape inconsistencies in high-dimensional optimization
+- Convergence issues in surrogate optimization
+- Meta-learner selection stability
+- Performance history tracking accuracy
+
 ## [3.0.0] - 2025-02-24
 
 ### Added

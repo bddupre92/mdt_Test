@@ -193,3 +193,144 @@ class StatisticalAnalyzer:
             
         direction = "positive" if effect_size > 0 else "negative"
         return f"{magnitude} {direction} effect"
+
+def run_statistical_tests(results: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Run comprehensive statistical analysis on optimization results.
+    
+    Args:
+        results: Dictionary containing optimization results
+        
+    Returns:
+        Dictionary with statistical analysis results
+    """
+    analyzer = StatisticalAnalyzer()
+    analysis = {}
+    
+    # Analyze each mode
+    for mode in results:
+        analysis[mode] = {}
+        
+        # Analyze each test suite
+        for suite_name, suite_results in results[mode].items():
+            suite_analysis = {}
+            
+            # Analyze each function
+            for func_name, trials in suite_results.items():
+                # Extract final scores
+                scores = [trial['value'] for trial in trials]
+                
+                # Basic statistics
+                basic_stats = {
+                    'mean': float(np.mean(scores)),
+                    'std': float(np.std(scores)),
+                    'median': float(np.median(scores)),
+                    'min': float(np.min(scores)),
+                    'max': float(np.max(scores))
+                }
+                
+                # Convergence analysis
+                convergence_stats = analyze_convergence(trials)
+                
+                # Selection stability
+                stability_stats = analyze_selection_stability(trials)
+                
+                # Combine all statistics
+                suite_analysis[func_name] = {
+                    'basic_stats': basic_stats,
+                    'convergence': convergence_stats,
+                    'stability': stability_stats
+                }
+            
+            analysis[mode][suite_name] = suite_analysis
+    
+    # Compare modes
+    analysis['mode_comparison'] = compare_modes(results)
+    
+    return analysis
+
+def analyze_convergence(trials: List[Dict[str, Any]]) -> Dict[str, float]:
+    """Analyze convergence behavior across trials"""
+    # Extract convergence histories
+    histories = [trial['history']['scores'] for trial in trials]
+    
+    # Calculate convergence metrics
+    convergence_rates = []
+    for history in histories:
+        # Use log-log slope as convergence rate
+        x = np.log(np.arange(1, len(history) + 1))
+        y = np.log(history)
+        slope, _, r_value, _, _ = stats.linregress(x, y)
+        convergence_rates.append(slope)
+    
+    return {
+        'mean_conv_rate': float(np.mean(convergence_rates)),
+        'std_conv_rate': float(np.std(convergence_rates)),
+        'r_squared': float(r_value**2)
+    }
+
+def analyze_selection_stability(trials: List[Dict[str, Any]]) -> Dict[str, float]:
+    """Analyze stability of optimizer selection"""
+    # Extract optimizer selections
+    selections = [trial['history']['optimizers'] for trial in trials]
+    
+    # Calculate transition matrices
+    transition_counts = {}
+    for trial_selections in selections:
+        for i in range(len(trial_selections)-1):
+            key = (trial_selections[i], trial_selections[i+1])
+            transition_counts[key] = transition_counts.get(key, 0) + 1
+    
+    # Calculate stability metrics
+    unique_optimizers = set()
+    for trial_selections in selections:
+        unique_optimizers.update(trial_selections)
+    
+    return {
+        'n_optimizers_used': len(unique_optimizers),
+        'mean_transitions': float(np.mean([len(set(s)) for s in selections])),
+        'selection_entropy': float(stats.entropy([
+            sum(1 for s in selections for opt in s if opt == optimizer)
+            for optimizer in unique_optimizers
+        ]))
+    }
+
+def compare_modes(results: Dict[str, Any]) -> Dict[str, Any]:
+    """Compare different meta-learning modes"""
+    mode_comparison = {}
+    
+    # Get all modes
+    modes = list(results.keys())
+    
+    # Compare each pair of modes
+    for i, mode1 in enumerate(modes):
+        for mode2 in modes[i+1:]:
+            comparison = {}
+            
+            # Compare on each function
+            for suite in results[mode1]:
+                for func in results[mode1][suite]:
+                    scores1 = [
+                        trial['value'] 
+                        for trial in results[mode1][suite][func]
+                    ]
+                    scores2 = [
+                        trial['value'] 
+                        for trial in results[mode2][suite][func]
+                    ]
+                    
+                    # Perform statistical test
+                    stat, p_value = stats.mannwhitneyu(scores1, scores2)
+                    effect_size = np.abs(
+                        np.mean(scores1) - np.mean(scores2)
+                    ) / np.std(scores1 + scores2)
+                    
+                    comparison[f"{suite}/{func}"] = {
+                        'statistic': float(stat),
+                        'p_value': float(p_value),
+                        'effect_size': float(effect_size)
+                    }
+            
+            mode_comparison[f"{mode1}_vs_{mode2}"] = comparison
+    
+    return mode_comparison

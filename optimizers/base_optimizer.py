@@ -55,7 +55,8 @@ class BaseOptimizer(ABC):
         self.param_history = {'diversity': []}
         self.start_time = None
         self.end_time = None
-    
+        self.history = []
+        
     def reset(self):
         """Reset optimizer state"""
         self.evaluations = 0
@@ -68,6 +69,7 @@ class BaseOptimizer(ABC):
         self.param_history = {'diversity': []}
         self.start_time = None
         self.end_time = None
+        self.history = []
         
     def _random_solution(self) -> np.ndarray:
         """Generate random solution within bounds"""

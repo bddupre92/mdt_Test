@@ -1,189 +1,232 @@
 """
 main.py
 -------
-Orchestrates data generation, preprocessing, model training,
-drift detection, and optimization. Demonstrates a simplified 
-workflow for demonstration.
+Demonstrates the usage of the meta-optimization framework for
+both standard optimization problems and real-world applications.
 """
 
 import numpy as np
-from data.generate_synthetic import generate_synthetic_data
-from data.preprocessing import preprocess_data
-from data.domain_knowledge import add_migraine_features
+from typing import Dict, Any, Optional
+import logging
+import json
+from pathlib import Path
 
-from optimizers.aco import AntColonyOptimizer
-from optimizers.gwo import GreyWolfOptimizer
-from optimizers.es import EvolutionStrategy
+# Optimizers
 from optimizers.de import DifferentialEvolutionOptimizer
+from optimizers.es import EvolutionStrategyOptimizer
+from optimizers.gwo import GreyWolfOptimizer
+from optimizers.ml_optimizers.surrogate_optimizer import SurrogateOptimizer
 
+# Meta-learning
+from meta.meta_optimizer import MetaOptimizer
 from meta.meta_learner import MetaLearner
-from models.sklearn_model import SklearnModel
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import cross_val_score, KFold
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-from drift_detection.statistical import ks_drift_test
-from drift_detection.performance_monitor import DDM
+# Analysis
+from analysis.theoretical_analysis import ConvergenceAnalyzer, StabilityAnalyzer
+from benchmarking.test_functions import create_test_suite
+from benchmarking.statistical_analysis import run_statistical_tests
 
-def evaluate_model(model, X, y):
-    """Comprehensive model evaluation"""
-    preds = model.predict(X)
-    metrics = {
-        'accuracy': accuracy_score(y, preds),
-        'precision': precision_score(y, preds, zero_division=0),
-        'recall': recall_score(y, preds, zero_division=0),
-        'f1': f1_score(y, preds, zero_division=0)
-    }
-    return metrics
+# Visualization
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-def cross_validate_model(model, X, y, n_folds=5):
-    """Perform cross-validation"""
-    kf = KFold(n_splits=n_folds, shuffle=True, random_state=42)
-    scores = cross_val_score(model.sk_model, X, y, cv=kf, scoring='f1')
-    return scores.mean(), scores.std()
+def setup_logging():
+    """Configure logging"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler('optimization.log'),
+            logging.StreamHandler()
+        ]
+    )
 
-def main():
-    print("Starting migraine prediction pipeline...")
-    
-    # 1. Generate data
-    print("\n1. Generating synthetic data...")
-    df = generate_synthetic_data(num_days=200)  # Increased dataset size
-    print(f"Generated data shape: {df.shape}")
-    
-    # 2. Preprocess
-    print("\n2. Preprocessing data...")
-    df_clean = preprocess_data(df, strategy_numeric='mean', scale_method='minmax',
-                               exclude_cols=['migraine_occurred','severity'])
-    df_feat = add_migraine_features(df_clean)
-    print(f"Data shape after preprocessing: {df_feat.shape}")
-    
-    # Prepare X,y
-    features = [c for c in df_feat.columns if c not in ['migraine_occurred','severity']]
-    df_feat = df_feat.dropna(subset=['migraine_occurred'])
-    X = df_feat[features].values
-    y = df_feat['migraine_occurred'].values.astype(int)
-    print(f"Features used: {features}")
-    
-    # Split into train/test
-    split_idx = int(0.7*len(X))
-    X_train, y_train = X[:split_idx], y[:split_idx]
-    X_test, y_test = X[split_idx:], y[split_idx:]
-    print(f"Train set size: {len(X_train)}, Test set size: {len(X_test)}")
-    
-    # 3. Use optimizers with expanded parameter space
-    print("\n3. Setting up optimization...")
-    aco = AntColonyOptimizer()
-    gwo = GreyWolfOptimizer(dim=4, bounds=(0,1))  # 4 parameters to optimize
-    es = EvolutionStrategy(dim=4)
-    de = DifferentialEvolutionOptimizer(bounds=[(0,1)]*4)
-    
-    ml = MetaLearner(method='bayesian')
-    ml.set_algorithms([aco, gwo, es, de])
-    chosen_opt = ml.select_algorithm()
-    print(f"Selected optimizer: {chosen_opt.__class__.__name__}")
-    
-    # Define objective function with cross-validation
-    def objective_func(x):
-        # Map x[0-3] to actual hyperparameters
-        n_trees = int(x[0] * 190 + 10)  # 10-200 trees
-        max_depth = int(x[1] * 30 + 3)  # 3-33 max_depth
-        min_samples_split = int(x[2] * 18 + 2)  # 2-20 min_samples_split
-        max_features = min(max(x[3], 0.1), 1.0)  # Ensure between 0.1 and 1.0
-        
-        # Create and evaluate model with cross-validation
-        rf = RandomForestClassifier(
-            n_estimators=n_trees,
-            max_depth=max_depth,
-            min_samples_split=min_samples_split,
-            max_features=max_features,
-            random_state=42
+def create_optimizers(dim: int, bounds: list) -> Dict[str, Any]:
+    """Create optimizer instances"""
+    return {
+        'surrogate': SurrogateOptimizer(
+            dim=dim,
+            bounds=bounds,
+            pop_size=30,
+            n_initial=10
+        ),
+        'de': DifferentialEvolutionOptimizer(
+            dim=dim,
+            bounds=bounds,
+            population_size=30
+        ),
+        'es': EvolutionStrategyOptimizer(
+            dim=dim,
+            bounds=bounds,
+            population_size=30
+        ),
+        'gwo': GreyWolfOptimizer(
+            dim=dim,
+            bounds=bounds,
+            population_size=30
         )
-        model = SklearnModel(rf)
-        try:
-            cv_score, cv_std = cross_validate_model(model, X_train, y_train)
-            return 1.0 - cv_score  # minimize error
-        except Exception as e:
-            print(f"Warning: Cross-validation failed with error: {str(e)}")
-            return 1.0  # Return worst possible score on failure
+    }
+
+def optimize_problem(
+    objective_func: callable,
+    dim: int,
+    bounds: list,
+    mode: str = 'bayesian',
+    max_evals: Optional[int] = None,
+    context: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Optimize a problem using the meta-optimization framework.
+    
+    Args:
+        objective_func: Function to minimize
+        dim: Problem dimension
+        bounds: List of (min, max) bounds for each dimension
+        mode: Meta-optimizer mode ('bayesian' or 'bandit')
+        max_evals: Maximum number of function evaluations
+        context: Problem context for meta-learner
+        
+    Returns:
+        Dictionary containing optimization results
+    """
+    # Create optimizers
+    optimizers = create_optimizers(dim, bounds * dim)
+    
+    # Create meta-optimizer
+    meta_opt = MetaOptimizer(optimizers, mode=mode)
+    
+    # Set up analysis
+    conv_analyzer = ConvergenceAnalyzer()
+    stab_analyzer = StabilityAnalyzer()
     
     # Run optimization
-    print("\nOptimizing model parameters...")
-    best_solution, best_score = chosen_opt.optimize(objective_func)
-    print(f"Optimization complete => best CV score: {1.0 - best_score:.3f}")
+    logging.info(f"Starting optimization with {mode} meta-learner")
+    solution = meta_opt.optimize(objective_func, context)
+    final_value = objective_func(solution)
     
-    # Use optimized parameters
-    n_trees = int(best_solution[0] * 190 + 10)
-    max_depth = int(best_solution[1] * 30 + 3)
-    min_samples_split = int(best_solution[2] * 18 + 2)
-    max_features = min(max(best_solution[3], 0.1), 1.0)
-    
-    print(f"\nBest parameters found:")
-    print(f"- n_estimators: {n_trees}")
-    print(f"- max_depth: {max_depth}")
-    print(f"- min_samples_split: {min_samples_split}")
-    print(f"- max_features: {max_features:.2f}")
-    
-    # 4. Train final model with early stopping
-    print("\n4. Training final model...")
-    final_rf = RandomForestClassifier(
-        n_estimators=n_trees,
-        max_depth=max_depth,
-        min_samples_split=min_samples_split,
-        max_features=max_features,
-        random_state=42,
-        oob_score=True  # Enable out-of-bag score for early stopping
+    # Analyze results
+    convergence = conv_analyzer.analyze_convergence_rate(
+        meta_opt.performance_history['optimizer'].iloc[-1],
+        dim,
+        list(range(len(meta_opt.performance_history))),
+        meta_opt.performance_history['score'].values
     )
-    model = SklearnModel(final_rf)
-    model.train(X_train, y_train)
     
-    # Evaluate on both sets
-    train_metrics = evaluate_model(model, X_train, y_train)
-    test_metrics = evaluate_model(model, X_test, y_test)
+    stability = stab_analyzer.analyze_selection_stability(
+        [
+            {'selected_optimizer': opt} 
+            for opt in meta_opt.performance_history['optimizer']
+        ]
+    )
     
-    print("\nModel Performance:")
-    print("Training Set:")
-    for metric, value in train_metrics.items():
-        print(f"- {metric}: {value:.3f}")
-    print("\nTest Set:")
-    for metric, value in test_metrics.items():
-        print(f"- {metric}: {value:.3f}")
+    return {
+        'solution': solution.tolist(),
+        'value': float(final_value),
+        'history': {
+            'scores': meta_opt.performance_history['score'].tolist(),
+            'optimizers': meta_opt.performance_history['optimizer'].tolist()
+        },
+        'analysis': {
+            'convergence': convergence,
+            'stability': stability
+        }
+    }
+
+def run_benchmark_suite(
+    output_dir: str = 'results/benchmarks',
+    n_trials: int = 5,
+    modes: list = ['bayesian', 'bandit']
+):
+    """
+    Run complete benchmark suite with different meta-learning modes.
     
-    if hasattr(final_rf, 'oob_score_'):
-        print(f"\nOut-of-bag score: {final_rf.oob_score_:.3f}")
+    Args:
+        output_dir: Directory to save results
+        n_trials: Number of trials per function
+        modes: List of meta-learning modes to test
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     
-    # 5. Drift detection with multiple features
-    print("\n5. Checking for drift...")
-    drift_features = ['weather_pressure', 'sleep_hours', 'stress_level']
-    for feature in drift_features:
-        old_data = df_feat.iloc[:split_idx]
-        new_data = df_feat.iloc[split_idx:]
-        p_value = ks_drift_test(old_data, new_data, feature)
-        print(f"KS drift test p-value for {feature}: {p_value:.5f}")
+    # Get test suite
+    suite = create_test_suite()
     
-    # 6. Performance-based drift detection with window
-    print("\n6. Running performance-based drift detection...")
-    ddm = DDM()
-    drift_detected = False
-    window_size = 5
-    for i in range(0, len(X_test), window_size):
-        window = slice(i, min(i + window_size, len(X_test)))
-        preds = model.predict(X_test[window])
-        correct = (preds == y_test[window]).mean()
-        if ddm.update(correct):
-            drift_detected = True
-            print(f"DDM drift triggered at test window #{i//window_size}")
-            break
+    # Run benchmarks
+    results = {}
+    for mode in modes:
+        results[mode] = {}
+        for suite_name, functions in suite.items():
+            results[mode][suite_name] = {}
+            for func_name, func_info in functions.items():
+                logging.info(f"Testing {func_name} with {mode}")
+                
+                trials = []
+                for trial in range(n_trials):
+                    try:
+                        result = optimize_problem(
+                            objective_func=func_info['func'],
+                            dim=func_info['dim'],
+                            bounds=func_info['bounds'],
+                            mode=mode,
+                            context={
+                                'dim': func_info['dim'],
+                                'multimodal': func_info['multimodal'],
+                                'discrete_vars': func_info['discrete_vars']
+                            }
+                        )
+                        trials.append(result)
+                    except Exception as e:
+                        logging.error(f"Trial {trial} failed: {str(e)}")
+                
+                results[mode][suite_name][func_name] = trials
     
-    if drift_detected:
-        print("Drift detected => retraining or adaptation would be needed.")
-    else:
-        print("No drift flagged by DDM on test set.")
+    # Save results
+    with open(output_dir / 'benchmark_results.json', 'w') as f:
+        json.dump(results, f, indent=2)
     
-    print("\nPipeline complete!")
+    # Run statistical analysis
+    stats = run_statistical_tests(results)
+    with open(output_dir / 'statistical_analysis.json', 'w') as f:
+        json.dump(stats, f, indent=2)
+    
+    return results, stats
+
+def main():
+    """Main entry point demonstrating framework usage"""
+    setup_logging()
+    logging.info("Starting meta-optimization framework demonstration")
+    
+    # Run benchmarks
+    results, stats = run_benchmark_suite()
+    
+    # Example: Optimize a specific problem
+    def custom_objective(x):
+        """Example objective function"""
+        return np.sum(x**2)  # Simple sphere function
+    
+    result = optimize_problem(
+        objective_func=custom_objective,
+        dim=10,
+        bounds=[(-5.12, 5.12)],
+        mode='bayesian',
+        context={'dim': 10, 'multimodal': 0}
+    )
+    
+    logging.info(f"Optimization complete. Final value: {result['value']}")
+    
+    # Plot results
+    plt.figure(figsize=(10, 6))
+    plt.plot(result['history']['scores'])
+    plt.yscale('log')
+    plt.xlabel('Iteration')
+    plt.ylabel('Objective Value')
+    plt.title('Optimization Progress')
+    plt.grid(True)
+    plt.savefig('results/optimization_progress.png')
+    plt.close()
 
 if __name__ == '__main__':
     try:
         main()
     except Exception as e:
-        print(f"Error occurred: {str(e)}")
-        raise
+        logging.error(f"Error in main: {str(e)}", exc_info=True)
