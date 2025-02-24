@@ -1,32 +1,83 @@
 # Meta-Learning Optimization Framework
 
-A sophisticated meta-learning framework for optimization that combines multiple optimization strategies with intelligent algorithm selection. The framework includes theoretical analysis, comprehensive benchmarking, and advanced performance tracking.
+A sophisticated meta-learning framework for optimization that combines multiple optimization strategies with intelligent algorithm selection. The framework leverages adaptive learning, parallel execution, and comprehensive performance tracking to deliver efficient optimization solutions.
 
-## Features
+## Core Components
 
-- **Meta-Learning Optimization**
-  - Bayesian optimization with Gaussian Processes
-  - Multi-armed bandit strategy
-  - Context-aware algorithm selection
-  - Adaptive parameter control
+### Meta-Learning Framework (`meta/`)
+- **meta_optimizer.py**: Core component that orchestrates optimization strategy selection and execution. Features:
+  - Adaptive exploration/exploitation balance
+  - Parallel optimizer execution
+  - Early stopping criteria
+  - Problem-specific learning
+  
+- **optimization_history.py**: Manages optimization history and enables learning from past runs:
+  - JSON-serializable history storage
+  - Similar problem identification
+  - Performance tracking
+  
+- **problem_analysis.py**: Analyzes optimization problems to extract key features:
+  - Landscape characterization
+  - Modality detection
+  - Separability analysis
+  
+- **selection_tracker.py**: Tracks and analyzes optimizer selections:
+  - Performance correlation analysis
+  - Success rate tracking
+  - Feature-based selection learning
+  
+- **bandit_policy.py**: Implements multi-armed bandit strategies for optimizer selection:
+  - Thompson sampling
+  - Upper Confidence Bound (UCB)
+  - Adaptive exploration rates
 
-- **Optimization Algorithms**
-  - Differential Evolution (DE)
-  - Evolution Strategy (ES)
-  - Grey Wolf Optimizer (GWO)
-  - Surrogate-based Optimization
+### Optimizers (`optimizers/`)
+- **Base Optimizers**:
+  - **de.py**: Differential Evolution with adaptive parameters
+  - **es.py**: Evolution Strategy with self-adaptive step sizes
+  - **gwo.py**: Grey Wolf Optimizer with enhanced social learning
+  - **aco.py**: Ant Colony Optimization for continuous domains
+  
+- **ML-Enhanced Optimizers** (`ml_optimizers/`):
+  - **surrogate_optimizer.py**: Gaussian Process-based surrogate optimization
+  - Support for custom ML model integration
 
-- **Theoretical Analysis**
+### Analysis Tools (`analysis/`)
+- **theoretical_analysis.py**: Tools for analyzing optimizer behavior:
   - Convergence rate analysis
   - Stability analysis
-  - Parameter sensitivity analysis
-  - Computational complexity analysis
+  - Parameter sensitivity studies
 
-- **Comprehensive Benchmarking**
-  - Standard test functions suite
-  - Statistical significance testing
-  - Performance visualization
-  - Cross-optimizer comparisons
+### Benchmarking (`benchmarking/`)
+- **benchmark_runner.py**: Configurable benchmark execution
+- **test_functions.py**: Standard optimization test suite
+- **cec_functions.py**: CEC benchmark functions
+- **statistical_analysis.py**: Statistical comparison tools
+- **sota_comparison.py**: Comparison with state-of-the-art methods
+
+### Drift Detection (`drift_detection/`)
+- **adwin.py**: Adaptive windowing for drift detection
+- **performance_monitor.py**: Real-time performance tracking
+- **ensemble_adapt.py**: Ensemble-based adaptation strategies
+- **statistical.py**: Statistical change detection methods
+
+### Data Management (`data/`)
+- **preprocessing.py**: Data preparation utilities
+- **domain_knowledge.py**: Domain-specific knowledge integration
+- **generate_synthetic.py**: Synthetic problem generation
+
+### Models (`models/`)
+- **base_model.py**: Base class for ML models
+- **sklearn_model.py**: Scikit-learn model integrations
+- **torch_model.py**: PyTorch model support
+- **tf_model.py**: TensorFlow model support
+
+### Examples and Testing (`examples/`)
+- **quick_test.py**: Basic functionality verification
+- **theoretical_comparison.py**: Comprehensive optimizer comparison
+- **analyze_meta_optimizer.py**: Meta-optimizer analysis
+- **visualize_optimizers.py**: Performance visualization tools
+- **tune_optimizers.py**: Parameter tuning utilities
 
 ## Installation
 
@@ -48,160 +99,83 @@ export PYTHONPATH=/path/to/mdt_Test:$PYTHONPATH
 
 ## Quick Start
 
-Run a quick test to verify the framework:
-```bash
-python examples/quick_test.py
-```
-
-This will run a minimal optimization problem and show basic results.
-
-## Usage Examples
-
-### 1. Basic Usage
+### Basic Usage
 ```python
 from meta.meta_optimizer import MetaOptimizer
 from optimizers import create_optimizers
 
-# Define objective function
-def my_objective(x):
-    return np.sum(x**2)
+# Define optimization problem
+dim = 30
+bounds = [(-100, 100)] * dim
 
 # Create optimizers
-optimizers = create_optimizers(dim=10, bounds=[(-5.12, 5.12)])
-
-# Create and run meta-optimizer
-meta_opt = MetaOptimizer(optimizers, mode='bayesian')
-solution = meta_opt.optimize(
-    my_objective,
-    context={'dim': 10, 'multimodal': 0}
-)
-```
-
-### 2. Running Examples
-
-The `examples/` directory contains various scripts for different purposes:
-
-#### Quick Testing
-```bash
-python examples/quick_test.py  # Fast test of core functionality
-```
-
-#### Comprehensive Analysis
-```bash
-python examples/analyze_meta_optimizer.py  # Detailed performance analysis
-python examples/theoretical_comparison.py  # Compare with standalone optimizers
-```
-
-#### Optimizer Testing
-```bash
-python examples/test_meta_optimizer.py     # Test meta-learning framework
-python examples/test_surrogate_optimizer.py  # Test surrogate optimization
-```
-
-#### Visualization
-```bash
-python examples/visualize_results.py  # Generate performance plots
-```
-
-## Framework Structure
-
-```
-mdt_Test/
-├── analysis/                 # Theoretical analysis tools
-├── benchmarking/            # Benchmark functions and runners
-├── data/                    # Data handling utilities
-├── drift_detection/         # Concept drift detection
-├── examples/                # Example scripts
-├── meta/                    # Meta-learning framework
-├── models/                  # ML models
-└── optimizers/             # Optimization algorithms
-```
-
-## Running Tests
-
-1. **Quick Test** (for rapid verification):
-```bash
-python examples/quick_test.py
-```
-
-2. **Full Test Suite** (comprehensive testing):
-```bash
-python main.py --mode test
-```
-
-3. **Benchmark Suite** (performance evaluation):
-```bash
-python examples/run_benchmarks.py
-```
-
-## Example Outputs
-
-The framework generates various outputs in the `results/` directory:
-
-- `results/benchmarks/`: Benchmark results and statistics
-- `results/theoretical/`: Theoretical analysis results
-- `results/quick_test/`: Quick test results
-- `results/visualization/`: Performance plots and graphs
-
-## Advanced Usage
-
-### 1. Custom Optimizer Integration
-```python
-from optimizers.base_optimizer import BaseOptimizer
-
-class MyOptimizer(BaseOptimizer):
-    def __init__(self, dim, bounds):
-        super().__init__(dim, bounds)
-        # Custom initialization
-
-    def optimize(self, objective_func):
-        # Implementation
-        pass
-```
-
-### 2. Theoretical Analysis
-```python
-from analysis.theoretical_analysis import ConvergenceAnalyzer
-
-analyzer = ConvergenceAnalyzer()
-rates = analyzer.analyze_convergence_rate(
-    optimizer_name='de',
-    dimension=10,
-    iterations=[1,2,3...],
-    objective_values=[0.1,0.01,...]
-)
-```
-
-### 3. Custom Benchmark Functions
-```python
-from benchmarking.test_functions import create_test_suite
-
-def my_function(x):
-    return np.sum(x**2) + np.prod(np.abs(x))
-
-suite = create_test_suite()
-suite['custom'] = {
-    'my_func': {
-        'func': my_function,
-        'dim': 2,
-        'bounds': [(-10, 10)],
-        'optimal': 0.0
-    }
+optimizers = {
+    'de': DifferentialEvolutionOptimizer(dim, bounds),
+    'gwo': GreyWolfOptimizer(dim, bounds),
+    'surrogate': SurrogateOptimizer(dim, bounds)
 }
+
+# Initialize meta-optimizer
+meta_opt = MetaOptimizer(
+    dim=dim,
+    bounds=bounds,
+    optimizers=optimizers,
+    history_file='optimization_history.json',
+    selection_file='selection_history.json',
+    n_parallel=2  # Enable parallel execution
+)
+
+# Run optimization
+solution = meta_opt.optimize(
+    objective_func=my_objective,
+    max_evals=1000,
+    record_history=True,
+    context={'problem_type': 'continuous'}
+)
 ```
 
-## Performance Tracking
+### Advanced Features
 
-The framework automatically tracks:
-- Convergence rates
-- Algorithm selection patterns
-- Runtime performance
-- Resource usage
-
-Access tracking data:
+1. **Parallel Optimization**
 ```python
-meta_opt.performance_history  # pandas DataFrame
+# Enable parallel execution with 3 concurrent optimizers
+meta_opt = MetaOptimizer(..., n_parallel=3)
 ```
+
+2. **Selection Learning**
+```python
+# Access optimizer selection statistics
+stats = meta_opt.selection_tracker.get_selection_stats()
+correlations = meta_opt.selection_tracker.get_feature_correlations()
+```
+
+3. **Problem Analysis**
+```python
+# Analyze problem features
+features = meta_opt.analyzer.analyze_features(objective_func)
+```
+
+## Framework Workflow
+
+1. **Problem Analysis**
+   - Extract problem features
+   - Identify similar historical problems
+   - Determine initial optimizer selection
+
+2. **Optimization Execution**
+   - Parallel optimizer execution
+   - Adaptive exploration/exploitation
+   - Early stopping when criteria met
+
+3. **Learning and Adaptation**
+   - Track optimizer performance
+   - Update selection strategies
+   - Refine feature correlations
+
+4. **Performance Analysis**
+   - Statistical analysis of results
+   - Visualization of convergence
+   - Comparison with baselines
 
 ## Contributing
 
@@ -210,21 +184,10 @@ meta_opt.performance_history  # pandas DataFrame
 3. Add tests for new features
 4. Submit a pull request
 
-## Version History
-
-See [CHANGELOG.md](CHANGELOG.md) for version history and updates.
-
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Citation
+## Version
 
-If you use this framework in your research, please cite:
-```bibtex
-@software{mdt_test,
-  title = {Meta-Learning Optimization Framework},
-  author = {Dupre, Blair},
-  year = {2025},
-  version = {4.0.0}
-}
+Current version: 4.0.5 - See CHANGELOG.md for version history.
