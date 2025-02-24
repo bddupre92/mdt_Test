@@ -21,10 +21,17 @@ class MetaOptimizer:
         """
         self.optimizers = optimizers
         self.mode = mode
-        self.performance_history = pd.DataFrame(columns=[
-            'optimizer', 'problem_dim', 'discrete_vars', 
-            'multimodal', 'runtime', 'score', 'timestamp'
-        ])
+        
+        # Initialize performance history with explicit dtypes
+        self.performance_history = pd.DataFrame({
+            'optimizer': pd.Series(dtype='string'),
+            'problem_dim': pd.Series(dtype='int32'),
+            'discrete_vars': pd.Series(dtype='int32'),
+            'multimodal': pd.Series(dtype='int32'),
+            'runtime': pd.Series(dtype='float64'),
+            'score': pd.Series(dtype='float64'),
+            'timestamp': pd.Series(dtype='datetime64[ns]')
+        })
         
         # Bayesian optimization components
         self.gp = GaussianProcessRegressor()
@@ -128,19 +135,33 @@ class MetaOptimizer:
                          runtime: float,
                          score: float):
         """Log optimizer performance for future selection"""
+        # Create new performance data with explicit dtypes
         new_data = pd.DataFrame([{
-            'optimizer': optimizer_name,
-            'problem_dim': context['dim'],
-            'discrete_vars': context.get('discrete_vars', 0),
-            'multimodal': context.get('multimodal', 0),
-            'runtime': runtime,
-            'score': score,
+            'optimizer': str(optimizer_name),
+            'problem_dim': int(context['dim']),
+            'discrete_vars': int(context.get('discrete_vars', 0)),
+            'multimodal': int(context.get('multimodal', 0)),
+            'runtime': float(runtime),
+            'score': float(score),
             'timestamp': pd.Timestamp.now()
         }])
         
+        # Ensure both DataFrames have the same schema
+        for col in self.performance_history.columns:
+            if col not in new_data.columns:
+                new_data[col] = pd.NA
+        
+        # Convert dtypes to match self.performance_history
+        for col in new_data.columns:
+            if col in self.performance_history.columns:
+                new_data[col] = new_data[col].astype(self.performance_history[col].dtype)
+        
+        # Concatenate with schema validation
         self.performance_history = pd.concat(
             [self.performance_history, new_data],
-            ignore_index=True
+            ignore_index=True,
+            verify_integrity=True,
+            copy=False
         )
         
         # Update running statistics
