@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.5] - 2025-02-24
+
+### Added
+- Added verified parallel evaluation capabilities with ThreadPoolExecutor
+- Added thread-safe evaluation counting with locks
+- Added OptimizationResult dataclass for better result handling
+- Added concurrent optimizer execution with configurable parallel runs
+- Added evaluation budget management for parallel optimizers
+
+### Changed
+- Restructured optimizer execution to support parallel runs
+- Improved resource management for concurrent optimization
+- Enhanced MetaOptimizer to handle multiple concurrent optimizers
+- Updated theoretical comparison script with parallel execution support
+
+### Fixed
+- Added thread safety for evaluation counting and history tracking
+- Fixed evaluation budget distribution in parallel runs
+- Ensured proper cleanup of thread resources
+
 ## [4.0.4] - 2025-02-24
 
 ### Added
@@ -24,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Improved JSON serialization for numpy types in optimization history
 - Fixed exploration rate calculation to prevent premature convergence
+- Added thread safety for evaluation counting and history tracking
 
 ## [4.0.3] - 2025-02-24
 

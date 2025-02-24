@@ -6,10 +6,23 @@ import numpy as np
 import logging
 from pathlib import Path
 import os
+import concurrent.futures
+from dataclasses import dataclass
+from threading import Lock
 
 from .optimization_history import OptimizationHistory
 from .problem_analysis import ProblemAnalyzer
 from .selection_tracker import SelectionTracker
+
+
+@dataclass
+class OptimizationResult:
+    """Container for optimization results"""
+    optimizer_name: str
+    solution: np.ndarray
+    score: float
+    n_evals: int
+    success: bool = False
 
 
 class MetaOptimizer:
@@ -20,7 +33,8 @@ class MetaOptimizer:
                  bounds: List[Tuple[float, float]],
                  optimizers: Dict,
                  history_file: Optional[str] = None,
-                 selection_file: Optional[str] = None):
+                 selection_file: Optional[str] = None,
+                 n_parallel: int = 2):
         """
         Initialize meta-optimizer.
         
@@ -30,10 +44,12 @@ class MetaOptimizer:
             optimizers: Dictionary of optimizers to choose from
             history_file: Optional path to save/load optimization history
             selection_file: Optional path to save/load selection history
+            n_parallel: Number of optimizers to run in parallel
         """
         self.dim = dim
         self.bounds = bounds
         self.optimizers = optimizers
+        self.n_parallel = min(n_parallel, len(optimizers))
         
         # Initialize components
         self.history = OptimizationHistory(history_file)
@@ -45,12 +61,13 @@ class MetaOptimizer:
         self._current_iteration = 0
         self.current_features = None
         self.current_problem_type = None
+        self._eval_lock = Lock()
         
         # Learning parameters
         self.min_exploration_rate = 0.1
-        self.exploration_decay = 0.995  # Slower decay for more stable learning
+        self.exploration_decay = 0.995
         self.confidence_threshold = 0.7
-        
+
     def _calculate_exploration_rate(self) -> float:
         """Calculate adaptive exploration rate based on progress and performance."""
         # Base rate decays with iterations
@@ -148,95 +165,135 @@ class MetaOptimizer:
             else:
                 return 'aco'  # Good for non-separable problems
     
+    def _run_single_optimizer(self, 
+                            optimizer_name: str, 
+                            optimizer,
+                            objective_func: Callable,
+                            max_evals: int,
+                            record_history: bool = True) -> OptimizationResult:
+        """Run a single optimizer and return its results"""
+        try:
+            # Reset optimizer state
+            optimizer.reset()
+            
+            # Create a wrapped objective function to count evaluations
+            def wrapped_objective(x):
+                with self._eval_lock:
+                    self.total_evaluations += 1
+                value = objective_func(x)
+                if record_history:
+                    self.optimization_history.append(float(value))
+                return value
+            
+            # Run optimization
+            solution = optimizer.optimize(
+                wrapped_objective,
+                max_evals=max_evals,
+                record_history=True
+            )
+            
+            if solution is None:
+                return None
+                
+            score = objective_func(solution)
+            with self._eval_lock:
+                self.total_evaluations += 1
+                if record_history:
+                    self.optimization_history.append(float(score))
+            
+            success = score < 1e-4
+            
+            return OptimizationResult(
+                optimizer_name=optimizer_name,
+                solution=solution,
+                score=score,
+                n_evals=optimizer.n_evals if hasattr(optimizer, 'n_evals') else max_evals,
+                success=success
+            )
+            
+        except Exception as e:
+            logging.error(f"Optimizer {optimizer_name} failed: {str(e)}")
+            return None
+
     def _optimize(self,
                 objective_func: Callable,
                 max_evals: Optional[int] = None,
                 record_history: bool = True,
                 context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
-        """Internal optimization method"""
+        """Internal optimization method with parallel execution"""
         if max_evals is None:
             max_evals = 1000
             
         # Analyze problem features
         self.current_features = self.analyzer.analyze_features(objective_func)
-        
-        # Try to determine problem type from context
         self.current_problem_type = context.get('problem_type') if context else None
         
         best_solution = None
         best_score = float('inf')
-        n_evals = 0
-        self.total_evaluations = 0  # Reset counter
-        self.optimization_history = []  # Reset optimization history
+        self.total_evaluations = 0
+        self.optimization_history = []
         
-        # Create a wrapped objective function to count evaluations
-        def wrapped_objective(x):
-            self.total_evaluations += 1
-            value = objective_func(x)
-            if record_history:
-                self.optimization_history.append(float(value))  # Store only the score
-            return value
-        
-        while n_evals < max_evals:
-            # Select optimizer
-            selected_optimizer = self._select_optimizer(context or {})
-            optimizer = self.optimizers[selected_optimizer]
+        while self.total_evaluations < max_evals:
+            # Select optimizers to run in parallel
+            selected_optimizers = []
+            for _ in range(self.n_parallel):
+                opt_name = self._select_optimizer(context or {})
+                if opt_name not in [o[0] for o in selected_optimizers]:
+                    selected_optimizers.append((opt_name, self.optimizers[opt_name]))
             
-            try:
-                # Reset optimizer state
-                optimizer.reset()
+            # Calculate remaining evaluations
+            remaining_evals = max_evals - self.total_evaluations
+            evals_per_optimizer = remaining_evals // len(selected_optimizers)
+            
+            # Run optimizers in parallel
+            results = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.n_parallel) as executor:
+                future_to_opt = {
+                    executor.submit(
+                        self._run_single_optimizer,
+                        opt_name,
+                        optimizer,
+                        objective_func,
+                        evals_per_optimizer,
+                        record_history
+                    ): opt_name
+                    for opt_name, optimizer in selected_optimizers
+                }
                 
-                # Run optimization with remaining budget
-                remaining_evals = max_evals - n_evals
-                solution = optimizer.optimize(
-                    wrapped_objective,
-                    max_evals=remaining_evals,
-                    record_history=True
-                )
-                
-                if solution is None:
-                    continue
-                    
-                score = objective_func(solution)  # One final evaluation
-                self.total_evaluations += 1
-                if record_history:
-                    self.optimization_history.append(float(score))  # Store final score
-                
+                for future in concurrent.futures.as_completed(future_to_opt):
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+            
+            # Process results
+            for result in results:
                 # Update optimizer history
-                success = score < 1e-4  # Consider solutions below threshold as successful
                 self.history.add_record(
                     self.current_features,
-                    selected_optimizer,
-                    score,
-                    success
+                    result.optimizer_name,
+                    result.score,
+                    result.success
                 )
                 
                 # Track selection if we know the problem type
                 if self.current_problem_type:
                     self.selection_tracker.record_selection(
                         self.current_problem_type,
-                        selected_optimizer,
+                        result.optimizer_name,
                         self.current_features,
-                        success,
-                        score
+                        result.success,
+                        result.score
                     )
                 
                 # Update best solution
-                if score < best_score:
-                    best_score = score
-                    best_solution = solution.copy()
+                if result.score < best_score:
+                    best_score = result.score
+                    best_solution = result.solution.copy()
                     
-                # Early stopping if we found a good solution
-                if best_score < 1e-4:
-                    break
-                    
-                # Update evaluations based on actual count
-                n_evals = self.total_evaluations
-                    
-            except Exception as e:
-                logging.error(f"Optimizer {selected_optimizer} failed: {str(e)}")
-                continue
-                
+                    # Early stopping if we found a good solution
+                    if best_score < 1e-4:
+                        return best_solution, best_score
+            
             self._current_iteration += 1
             
         # If no solution found, return best from random search
@@ -247,13 +304,13 @@ class MetaOptimizer:
                 high=[b[1] for b in self.bounds],
                 size=(100, self.dim)
             )
-            scores = np.array([wrapped_objective(x) for x in X])
+            scores = np.array([objective_func(x) for x in X])
             best_idx = np.argmin(scores)
             best_solution = X[best_idx]
             best_score = scores[best_idx]
             
         return best_solution, best_score
-        
+
     def optimize(self,
                 objective_func: Callable,
                 max_evals: Optional[int] = None,
