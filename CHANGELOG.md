@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.3] - 2025-02-24
+
+### Added
+- Improved MetaOptimizer with learning capabilities
+- Added OptimizationHistory class for tracking and analyzing optimizer performance
+- Added ProblemAnalyzer class for extracting problem features
+- Implemented JSON serialization for optimization history
+- Added adaptive exploration/exploitation balance in optimizer selection
+
+### Fixed
+- Fixed JSON serialization issues with numpy types
+- Improved error handling in optimizer selection
+- Enhanced stability of meta-optimization process
+
+### Changed
+- Refactored MetaOptimizer to use problem features for selection
+- Updated theoretical comparison script to use new MetaOptimizer features
+
 ## [4.0.2] - 2025-02-24
 
 ### Fixed
