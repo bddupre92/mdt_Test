@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.2] - 2025-02-24
+
+### Fixed
+- Fixed function evaluation counting in MetaOptimizer and SurrogateOptimizer
+- Updated history storage format for consistent performance tracking
+- Fixed plotting functions to handle dictionary-based history records
+- Improved performance comparison analysis and visualization
+
+### Added
+- Added actual function evaluation tracking in MetaOptimizer
+- Added early stopping criteria for efficient optimization
+- Enhanced logging of optimizer selection patterns
+
+### Changed
+- Modified theoretical comparison script to use actual function evaluations
+- Updated optimizer history format for better analysis
+- Standardized performance metrics across all optimizers
+
 ## [4.0.1] - 2025-02-24
 
 ### Fixed
