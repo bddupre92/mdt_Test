@@ -282,18 +282,133 @@ class SurrogateOptimizer(BaseOptimizer):
                 record_history: bool = True,
                 context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         """
-        Run the optimization process
+        Optimize using Gaussian Process surrogate model
         
         Args:
-            objective_func: Function to minimize
+            objective_func: Function to optimize
             max_evals: Maximum number of function evaluations
             record_history: Whether to record optimization history
-            context: Additional context for the objective function
             
         Returns:
             Best solution found
         """
-        best_solution, _ = self._optimize(objective_func, max_evals, record_history, context)
+        if max_evals is None:
+            max_evals = 1000
+            
+        self.n_evals = 0
+        best_solution = None
+        best_score = float('inf')
+        self.history = []  # Reset history
+        
+        # Initial random sampling
+        X = np.random.uniform(
+            low=[b[0] for b in self.bounds],
+            high=[b[1] for b in self.bounds],
+            size=(self.n_initial, self.dim)
+        )
+        y = np.array([objective_func(x) for x in X])
+        self.n_evals += self.n_initial
+        
+        if record_history:
+            for score in y:
+                self.history.append({'iteration': self.n_evals, 'score': float(score)})
+        
+        # Find best solution from initial samples
+        best_idx = np.argmin(y)
+        best_solution = X[best_idx].copy()
+        best_score = y[best_idx]
+        
+        # Main optimization loop
+        while self.n_evals < max_evals:
+            # Update GP model
+            if len(X) > self.max_gp_size:
+                # Subsample points for GP fitting
+                indices = np.random.choice(len(X), self.max_gp_size, replace=False)
+                X_train = X[indices]
+                y_train = y[indices]
+            else:
+                X_train = X
+                y_train = y
+                
+            try:
+                self.model.fit(X_train, y_train)
+            except Exception as e:
+                warnings.warn(f"GP fit failed: {str(e)}")
+                break
+                
+            # Generate candidates
+            candidates = np.random.uniform(
+                low=[b[0] for b in self.bounds],
+                high=[b[1] for b in self.bounds],
+                size=(self.pop_size, self.dim)
+            )
+            
+            # Predict values and uncertainties
+            try:
+                mu, sigma = self.model.predict(candidates, return_std=True)
+            except Exception as e:
+                warnings.warn(f"GP prediction failed: {str(e)}")
+                break
+                
+            # Calculate acquisition function (Expected Improvement)
+            gamma = (np.min(y) - mu) / (sigma + 1e-9)
+            ei = sigma * (gamma * norm.cdf(gamma) + norm.pdf(gamma))
+            
+            # Select next point (mix of best EI and random)
+            n_exploit = int(self.pop_size * self.exploitation_ratio)
+            n_explore = self.pop_size - n_exploit
+            
+            # Best EI points
+            if n_exploit > 0:
+                ei_indices = np.argsort(ei)[-n_exploit:]
+                next_points = candidates[ei_indices]
+                
+                # Evaluate points
+                scores = np.array([objective_func(x) for x in next_points])
+                self.n_evals += n_exploit
+                
+                # Update dataset
+                X = np.vstack([X, next_points])
+                y = np.append(y, scores)
+                
+                if record_history:
+                    for score in scores:
+                        self.history.append({'iteration': self.n_evals, 'score': float(score)})
+                
+                # Update best solution
+                min_idx = np.argmin(scores)
+                if scores[min_idx] < best_score:
+                    best_score = scores[min_idx]
+                    best_solution = next_points[min_idx].copy()
+            
+            # Random points
+            if n_explore > 0:
+                explore_points = np.random.uniform(
+                    low=[b[0] for b in self.bounds],
+                    high=[b[1] for b in self.bounds],
+                    size=(n_explore, self.dim)
+                )
+                scores = np.array([objective_func(x) for x in explore_points])
+                self.n_evals += n_explore
+                
+                # Update dataset
+                X = np.vstack([X, explore_points])
+                y = np.append(y, scores)
+                
+                if record_history:
+                    for score in scores:
+                        self.history.append({'iteration': self.n_evals, 'score': float(score)})
+                
+                # Update best solution
+                min_idx = np.argmin(scores)
+                if scores[min_idx] < best_score:
+                    best_score = scores[min_idx]
+                    best_solution = explore_points[min_idx].copy()
+            
+            # Early stopping
+            if best_score < 1e-4:
+                break
+        
         return best_solution
 
     def normalize_y(self, y: np.ndarray) -> np.ndarray:
