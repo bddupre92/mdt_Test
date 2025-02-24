@@ -160,17 +160,26 @@ class EvolutionStrategyOptimizer(BaseOptimizer):
         
         return self.population[0]
     
-    def optimize(self, objective_func, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+    def optimize(self, objective_func: Callable,
+                max_evals: Optional[int] = None,
+                record_history: bool = True,
+                context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         """
         Run ES optimization.
         
         Args:
             objective_func: Function to minimize
+            max_evals: Maximum number of function evaluations (overrides init value)
+            record_history: Whether to record convergence and parameter history
             context: Optional problem context
             
         Returns:
             Best solution found
         """
+        # Update max_evals if provided
+        if max_evals is not None:
+            self.max_evals = max_evals
+            
         self.start_time = time.time()
         
         # Initialize population scores

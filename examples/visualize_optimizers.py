@@ -1,58 +1,31 @@
 """
 visualize_optimizers.py
-----------------------
-Example script showing how to use the optimizer visualization framework.
+---------------------
+Script to run optimization comparison and generate visualizations.
 """
 
+from typing import Dict, List, Any
 import numpy as np
-from optimizers.aco import AntColonyOptimizer
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+import sys
+from os.path import dirname, abspath
+sys.path.append(dirname(dirname(abspath(__file__))))
+
+from optimizers.de import DifferentialEvolutionOptimizer
 from optimizers.gwo import GreyWolfOptimizer
 from optimizers.es import EvolutionStrategyOptimizer
-from optimizers.de import DifferentialEvolutionOptimizer
-from benchmarking.test_functions import TestFunction, ClassicalTestFunctions
+from optimizers.aco import AntColonyOptimizer
+from benchmarking.test_functions import TEST_FUNCTIONS
+from benchmarking.cec_functions import create_cec_suite
+from benchmarking.statistical_analysis import StatisticalAnalyzer
+from benchmarking.sota_comparison import SOTAComparison
 from visualization.optimizer_analysis import OptimizerAnalyzer
-from meta.meta_optimizer import MetaOptimizer
-import os
-import matplotlib.pyplot as plt
 
-def main():
-    # Create output directory
-    os.makedirs('results/plots', exist_ok=True)
-    
-    # Define dimensions and bounds for all problems
-    dim = 30  # Using higher dimension for real-world scenario
-    bounds = [(-5.12, 5.12)] * dim
-    
-    # Create test functions
-    test_functions = [
-        TestFunction(
-            name='Sphere',
-            func=ClassicalTestFunctions.sphere,
-            dim=dim,
-            bounds=bounds,
-            global_minimum=0.0,
-            characteristics={'continuous': True, 'convex': True, 'unimodal': True}
-        ),
-        TestFunction(
-            name='Rastrigin',
-            func=ClassicalTestFunctions.rastrigin,
-            dim=dim,
-            bounds=bounds,
-            global_minimum=0.0,
-            characteristics={'continuous': True, 'non-convex': True, 'multimodal': True}
-        ),
-        TestFunction(
-            name='Rosenbrock',
-            func=ClassicalTestFunctions.rosenbrock,
-            dim=dim,
-            bounds=[(-2.048, 2.048)] * dim,
-            global_minimum=0.0,
-            characteristics={'continuous': True, 'non-convex': True, 'unimodal': True}
-        )
-    ]
-    
-    # Create optimizers with both standard and adaptive variants
-    optimizers = {
+def create_optimizers(dim: int, bounds: List[tuple]) -> Dict[str, Any]:
+    """Create dictionary of optimizers to compare"""
+    return {
         'DE (Standard)': DifferentialEvolutionOptimizer(
             dim=dim, bounds=bounds, adaptive=False
         ),
@@ -78,78 +51,100 @@ def main():
             dim=dim, bounds=bounds, adaptive=True
         )
     }
+
+def main():
+    # Create output directories
+    Path('results/plots').mkdir(parents=True, exist_ok=True)
     
-    # Create meta-optimizer
-    meta_opt = MetaOptimizer(
-        optimizers=optimizers,  # Pass the dictionary directly
-        mode='bayesian'  # Using Bayesian optimization for selection
-    )
+    # Problem parameters
+    dim = 30
+    bounds = [(-100, 100)] * dim
+    
+    # Create optimizers
+    optimizers = create_optimizers(dim, bounds)
     
     # Create analyzer
-    analyzer = OptimizerAnalyzer(
-        optimizers=list(optimizers.values()),  # Pass the dictionary values as a list
+    analyzer = OptimizerAnalyzer(optimizers)
+    
+    # Get test functions (both classical and CEC)
+    test_functions = {}
+    
+    # Add classical test functions
+    for name, func_factory in TEST_FUNCTIONS.items():
+        test_functions[name] = func_factory(dim, bounds)
+    
+    # Add CEC test functions
+    cec_funcs = create_cec_suite(dim, bounds)
+    test_functions.update(cec_funcs)
+    
+    print("Running optimization comparison...\n")
+    
+    # Run comparison
+    results = analyzer.run_comparison(
         test_functions=test_functions,
-        meta_optimizer=meta_opt
+        n_runs=30,
+        record_convergence=True
     )
     
-    # Run optimization comparison
-    print("Running optimization comparison...")
-    results = analyzer.run_comparison(n_runs=5, record_convergence=True)
+    print("\nGenerating visualizations...\n")
     
-    # Generate visualizations
-    print("\nGenerating visualizations...")
+    # 1. Basic visualization
+    print("1. Plotting convergence comparisons...")
+    analyzer.plot_convergence_comparison()
     
-    # 1. Convergence Comparison
-    print("\n1. Plotting convergence comparisons...")
-    for func in test_functions:
-        analyzer.plot_convergence_comparison(
-            function_name=func.name,
-            log_scale=True
-        )
-        plt.savefig(f'results/plots/convergence_{func.name.lower()}.png')
-        plt.clf()
-    
-    # 2. Performance Heatmap
+    # 2. Performance heatmap
     print("\n2. Creating performance heatmaps...")
-    for metric in ['best_score', 'time', 'success_rate']:
-        analyzer.plot_performance_heatmap(metric=metric)
-        plt.savefig(f'results/plots/heatmap_{metric}.png')
-        plt.clf()
+    analyzer.plot_performance_heatmap()
     
-    # 3. Parameter Adaptation Analysis
+    # 3. Parameter adaptation analysis
     print("\n3. Analyzing parameter adaptation...")
-    for opt_name in optimizers:
-        if 'Adaptive' in opt_name:
-            for func in test_functions:
-                analyzer.plot_parameter_adaptation(
-                    optimizer_name=opt_name,
-                    function_name=func.name
-                )
-                plt.savefig(f'results/plots/params_{opt_name.lower()}_{func.name.lower()}.png')
-                plt.clf()
+    for optimizer_name in optimizers:
+        if 'Adaptive' in optimizer_name:
+            for func_name in test_functions:
+                analyzer.plot_parameter_adaptation(optimizer_name, func_name)
     
-    # 4. Diversity Analysis
+    # 4. Diversity analysis
     print("\n4. Analyzing population diversity...")
-    for opt_name in optimizers:
-        for func in test_functions:
-            analyzer.plot_diversity_analysis(
-                optimizer_name=opt_name,
-                function_name=func.name
-            )
-            plt.savefig(f'results/plots/diversity_{opt_name.lower()}_{func.name.lower()}.png')
-            plt.clf()
+    for optimizer_name in optimizers:
+        for func_name in test_functions:
+            analyzer.plot_diversity_analysis(optimizer_name, func_name)
     
-    # 5. Meta-Optimizer Analysis
-    print("\n5. Analyzing meta-optimizer performance...")
-    analyzer.plot_meta_optimizer_analysis()
-    plt.savefig('results/plots/meta_optimizer_analysis.png')
-    plt.clf()
+    # 5. Statistical analysis
+    print("\n5. Performing statistical analysis...")
+    stat_analyzer = StatisticalAnalyzer()
+    stat_results = stat_analyzer.compare_algorithms(results)
+    stat_results.to_csv('results/statistical_analysis.csv', index=False)
     
-    # 6. Generate HTML Report
-    print("\n6. Creating interactive HTML report...")
-    analyzer.create_summary_report(output_file='results/optimization_report.html')
+    # 6. SOTA comparison
+    print("\n6. Comparing with state-of-the-art variants...")
+    sota_comparison = SOTAComparison()
+    
+    # Create reference results (you would normally load these from published results)
+    reference_results = {
+        func_name: [opt.best_score for opt in results[func_name].values()]
+        for func_name in results
+    }
+    
+    # Compare with reference
+    comparison_results = sota_comparison.compare_with_reference(
+        {name: results[name] for name in test_functions},
+        reference_results
+    )
+    
+    # Generate comparison report
+    comparison_report = sota_comparison.generate_comparison_report(comparison_results)
+    comparison_report.to_csv('results/sota_comparison.csv', index=False)
+    
+    # 7. Create interactive HTML report
+    print("\n7. Creating interactive HTML report...")
+    analyzer.create_html_report(
+        statistical_results=stat_results,
+        sota_results=comparison_report
+    )
     
     print("\nVisualization complete! Results saved in 'results/plots' directory")
+    print("Statistical analysis saved as 'results/statistical_analysis.csv'")
+    print("SOTA comparison saved as 'results/sota_comparison.csv'")
     print("Interactive report saved as 'results/optimization_report.html'")
 
 if __name__ == '__main__':

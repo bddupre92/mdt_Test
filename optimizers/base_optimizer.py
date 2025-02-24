@@ -170,19 +170,43 @@ class BaseOptimizer(ABC):
         """Get history of parameter values"""
         return self.param_history
     
+    def get_parameters(self) -> Dict[str, Any]:
+        """Get current optimizer parameters"""
+        params = {
+            'population_size': self.population_size,
+            'max_evals': self.max_evals,
+            'adaptive': self.adaptive,
+            'success_rate': np.mean(self.success_history)
+        }
+        
+        # Add any additional parameters from param_history
+        for param_name, history in self.param_history.items():
+            if history:  # Only add if there's history
+                params[param_name] = history[-1]  # Get most recent value
+                
+        return params
+    
     def optimize(self,
                 objective_func: Callable,
+                max_evals: Optional[int] = None,
+                record_history: bool = True,
                 context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         """
         Run optimization process.
         
         Args:
             objective_func: Function to minimize
+            max_evals: Maximum number of function evaluations (overrides init value)
+            record_history: Whether to record convergence and parameter history
             context: Optional problem context
             
         Returns:
             Best solution found as numpy array
         """
+        # Update max_evals if provided
+        if max_evals is not None:
+            self.max_evals = max_evals
+            
         # Start timing
         self.start_time = time.time()
         

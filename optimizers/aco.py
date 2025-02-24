@@ -219,20 +219,68 @@ class AntColonyOptimizer(BaseOptimizer):
         
         return self.best_solution
     
-    def optimize(self, objective_func, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+    def optimize(self, objective_func: Callable,
+                max_evals: Optional[int] = None,
+                record_history: bool = True,
+                context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         """
         Run ACO optimization.
         
         Args:
             objective_func: Function to minimize
+            max_evals: Maximum number of function evaluations (overrides init value)
+            record_history: Whether to record convergence and parameter history
             context: Optional problem context
             
         Returns:
             Best solution found
         """
+        # Update max_evals if provided
+        if max_evals is not None:
+            self.max_evals = max_evals
+            
         self.start_time = time.time()
         
-        self._optimize(objective_func, context)
+        # Initialize pheromone matrix
+        self.pheromone = np.ones((self.dim, self.grid_points)) * self.tau_init
+        
+        while not self._check_convergence():
+            # Generate solutions
+            solutions = []
+            scores = []
+            
+            for ant in range(self.population_size):
+                # Construct solution
+                solution = self._construct_solution()
+                
+                # Evaluate solution
+                score = self._evaluate(solution, objective_func)
+                
+                solutions.append(solution)
+                scores.append(score)
+                
+            # Convert to numpy arrays
+            solutions = np.array(solutions)
+            scores = np.array(scores)
+            
+            # Update population
+            combined_solutions = np.vstack((self.population, solutions))
+            combined_scores = np.concatenate((self.population_scores, scores))
+            
+            # Select best solutions
+            best_indices = np.argsort(combined_scores)[:self.population_size]
+            self.population = combined_solutions[best_indices]
+            self.population_scores = combined_scores[best_indices]
+            
+            # Update pheromone trails
+            self._update_pheromone()
+            
+            # Update parameters
+            if self.adaptive:
+                self._update_parameters()
+            
+            # Track diversity
+            self._update_diversity()
         
         self.end_time = time.time()
         return self.best_solution

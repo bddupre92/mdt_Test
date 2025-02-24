@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2025-02-24
+
+### Added
+- New modular benchmarking and visualization workflow:
+  - `run_benchmarks.py`: Run and save optimization results
+  - `visualize_results.py`: Generate visualizations from saved results
+  - Test mode (`--test`) for quick validation
+- Enhanced visualization suite:
+  - Convergence comparison plots with standard deviation bands
+  - Performance heatmaps comparing optimizers across functions
+  - Parameter adaptation analysis for adaptive optimizers
+  - Population diversity tracking and visualization
+  - Interactive 3D landscape visualizations
+- Optimizer factory for consistent optimizer creation
+- Consistent file naming conventions for all outputs
+- Support for selective visualization of specific functions/optimizers
+
+### Changed
+- Split benchmarking and visualization into separate scripts
+- Improved plot formatting and aesthetics
+- Enhanced error handling in visualization code
+- Updated parameter adaptation plots to show mean trajectories
+- Standardized file naming across all visualizations
+
+### Fixed
+- Fixed issue with convergence curves of different lengths
+- Resolved duplicate file creation with different naming conventions
+- Fixed parameter adaptation plots for non-adaptive optimizers
+
 ## [2.0.0] - 2025-02-23
 
 ### Added
