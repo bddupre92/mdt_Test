@@ -26,23 +26,27 @@ class TestFunction:
 
 class ClassicalTestFunctions:
     @staticmethod
-    def sphere(x: np.ndarray) -> float:
+    def sphere(x) -> float:
         """Sphere function (continuous, convex, unimodal)"""
+        x = np.asarray(x)
         return np.sum(x**2)
     
     @staticmethod
-    def rosenbrock(x: np.ndarray) -> float:
+    def rosenbrock(x) -> float:
         """Rosenbrock function (continuous, non-convex, unimodal)"""
+        x = np.asarray(x)
         return np.sum(100.0*(x[1:] - x[:-1]**2)**2 + (1 - x[:-1])**2)
     
     @staticmethod
-    def rastrigin(x: np.ndarray) -> float:
+    def rastrigin(x) -> float:
         """Rastrigin function (continuous, non-convex, multimodal)"""
+        x = np.asarray(x)
         return 10*len(x) + np.sum(x**2 - 10*np.cos(2*np.pi*x))
     
     @staticmethod
-    def ackley(x: np.ndarray) -> float:
+    def ackley(x) -> float:
         """Ackley function (continuous, non-convex, multimodal)"""
+        x = np.asarray(x)
         a, b, c = 20, 0.2, 2*np.pi
         d = len(x)
         sum_sq = np.sum(x**2)
@@ -50,15 +54,17 @@ class ClassicalTestFunctions:
         return -a * np.exp(-b*np.sqrt(sum_sq/d)) - np.exp(sum_cos/d) + a + np.exp(1)
     
     @staticmethod
-    def griewank(x: np.ndarray) -> float:
+    def griewank(x) -> float:
         """Griewank function (continuous, non-convex, multimodal)"""
+        x = np.asarray(x)
         sum_sq = np.sum(x**2) / 4000
         prod_cos = np.prod(np.cos(x / np.sqrt(np.arange(1, len(x)+1))))
         return 1 + sum_sq - prod_cos
     
     @staticmethod
-    def levy(x: np.ndarray) -> float:
+    def levy(x) -> float:
         """Levy function (continuous, non-convex, multimodal)"""
+        x = np.asarray(x)
         w = 1 + (x - 1) / 4
         term1 = np.sin(np.pi * w[0])**2
         term2 = np.sum((w[:-1]-1)**2 * (1 + 10*np.sin(np.pi*w[:-1] + 1)**2))

@@ -5,20 +5,20 @@ Base class for optimization algorithms with common functionality
 and adaptive parameter management.
 """
 
-from abc import ABC, abstractmethod
-from typing import Tuple, List, Dict, Any, Optional, Callable
 import numpy as np
 import time
+from typing import Tuple, List, Dict, Any, Optional, Callable
+from dataclasses import dataclass
+from abc import ABC, abstractmethod
 
+@dataclass
 class OptimizerState:
-    """Track optimizer state during optimization"""
-    def __init__(self):
-        self.best_solution = None
-        self.best_score = float('inf')
-        self.generation = 0
-        self.evaluations = 0
-        self.runtime = 0.0
-        self.history = []
+    """Store optimizer state information"""
+    evaluations: int
+    runtime: float
+    history: List[Tuple[int, float]]  # (evaluation_count, best_score)
+    success_rate: Optional[float] = None
+    diversity_history: Optional[List[float]] = None
 
 class BaseOptimizer(ABC):
     def __init__(self,
@@ -45,15 +45,30 @@ class BaseOptimizer(ABC):
         self.adaptive = adaptive
         
         # Initialize state
-        self.state = OptimizerState()
-        
-        # Success tracking (last 20 iterations)
-        self.success_history = np.zeros(20)
+        self.evaluations = 0
+        self.best_solution = None
+        self.best_score = float('inf')
+        self.convergence_curve = []
+        self.diversity_history = []
+        self.success_history = np.zeros(20)  # Track last 20 iterations
         self.success_idx = 0
-        
-        # Parameter history for adaptive variants
-        self.param_history = {}
+        self.param_history = {'diversity': []}
+        self.start_time = None
+        self.end_time = None
     
+    def reset(self):
+        """Reset optimizer state"""
+        self.evaluations = 0
+        self.best_solution = None
+        self.best_score = float('inf')
+        self.convergence_curve = []
+        self.diversity_history = []
+        self.success_history = np.zeros(20)  # Track last 20 iterations
+        self.success_idx = 0
+        self.param_history = {'diversity': []}
+        self.start_time = None
+        self.end_time = None
+        
     def _random_solution(self) -> np.ndarray:
         """Generate random solution within bounds"""
         return np.array([
@@ -69,41 +84,95 @@ class BaseOptimizer(ABC):
     
     def _check_convergence(self) -> bool:
         """Check if optimization should stop"""
-        return (self.state.evaluations >= self.max_evals or
-                self.state.best_score <= 1e-8)
+        return (self.evaluations >= self.max_evals or
+                self.best_score <= 1e-8)
     
-    def _update_state(self, solution: np.ndarray, score: float) -> None:
-        """Update optimizer state with new solution"""
-        improved = score < self.state.best_score
+    def _update_parameters(self):
+        """Update optimizer parameters based on performance"""
+        pass  # Implemented by adaptive optimizers
+    
+    def _evaluate(self, solution: np.ndarray, objective_func: Callable) -> float:
+        """Evaluate solution and update state"""
+        solution = np.asarray(solution)
+        score = objective_func(solution)
+        self.evaluations += 1
         
-        if improved:
-            self.state.best_solution = solution.copy()
-            self.state.best_score = score
-            self.state.history.append((self.state.evaluations, score))
-            
-            # Update success history
+        # Update best solution
+        if score < self.best_score:
+            self.best_score = score
+            self.best_solution = solution.copy()
             self.success_history[self.success_idx] = 1.0
         else:
             self.success_history[self.success_idx] = 0.0
             
         self.success_idx = (self.success_idx + 1) % len(self.success_history)
+        
+        # Record convergence
+        self.convergence_curve.append(self.best_score)
+        
+        return score
+    
+    def _calculate_diversity(self) -> float:
+        """Calculate population diversity"""
+        if not hasattr(self, 'population'):
+            return 0.0
+            
+        # Calculate mean distance from centroid
+        centroid = np.mean(self.population, axis=0)
+        distances = np.sqrt(np.sum((self.population - centroid)**2, axis=1))
+        return np.mean(distances)
+    
+    def _update_diversity(self):
+        """Calculate and store population diversity."""
+        if self.population is None or len(self.population) < 2:
+            diversity = 0.0
+        else:
+            # Calculate mean pairwise distance
+            distances = []
+            for i in range(len(self.population)):
+                for j in range(i + 1, len(self.population)):
+                    dist = np.linalg.norm(self.population[i] - self.population[j])
+                    distances.append(dist)
+            diversity = np.mean(distances)
+        
+        self.diversity_history.append(diversity)
+        self.param_history['diversity'].append(diversity)
+    
+    def _init_population(self) -> np.ndarray:
+        """Initialize random population within bounds"""
+        population = np.zeros((self.population_size, self.dim))
+        for i, (lower, upper) in enumerate(self.bounds):
+            population[:, i] = np.random.uniform(lower, upper, self.population_size)
+        return population
+    
+    def _bound_solution(self, x: np.ndarray) -> np.ndarray:
+        """Ensure solution stays within bounds"""
+        x = np.asarray(x)
+        for i, (lower, upper) in enumerate(self.bounds):
+            x[..., i] = np.clip(x[..., i], lower, upper)
+        return x
+    
+    def get_convergence_curve(self) -> List[float]:
+        """Get convergence curve"""
+        return self.convergence_curve
     
     def get_state(self) -> OptimizerState:
-        """Return current optimization state"""
-        return self.state
+        """Get current optimizer state"""
+        return OptimizerState(
+            evaluations=self.evaluations,
+            runtime=(self.end_time - self.start_time) if self.end_time else 0,
+            history=list(enumerate(self.convergence_curve)),
+            success_rate=np.mean(self.success_history),
+            diversity_history=self.diversity_history
+        )
     
     def get_parameter_history(self) -> Dict[str, List[float]]:
-        """Return history of parameter adaptations"""
+        """Get history of parameter values"""
         return self.param_history
     
-    def get_convergence_curve(self) -> List[Tuple[int, float]]:
-        """Return the convergence history"""
-        return self.state.history
-    
-    @abstractmethod
     def optimize(self,
                 objective_func: Callable,
-                context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
+                context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         """
         Run optimization process.
         
@@ -112,6 +181,31 @@ class BaseOptimizer(ABC):
             context: Optional problem context
             
         Returns:
-            Tuple of (best_solution, best_score)
+            Best solution found as numpy array
+        """
+        # Start timing
+        self.start_time = time.time()
+        
+        # Run optimization (implemented by subclasses)
+        solution = self._optimize(objective_func, context)
+        
+        # End timing
+        self.end_time = time.time()
+        
+        return solution
+    
+    @abstractmethod
+    def _optimize(self,
+                 objective_func: Callable,
+                 context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+        """
+        Internal optimization method to be implemented by subclasses.
+        
+        Args:
+            objective_func: Function to minimize
+            context: Optional problem context
+            
+        Returns:
+            Best solution found as numpy array
         """
         pass

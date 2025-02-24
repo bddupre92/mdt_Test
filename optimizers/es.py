@@ -1,12 +1,11 @@
 """
 es.py
------
-Enhanced Evolution Strategy optimizer with self-adaptive parameters
-and improved mutation control.
+------
+Evolution Strategy optimizer with adaptive parameters.
 """
 
-from typing import Tuple, List, Callable, Dict, Any, Optional
 import numpy as np
+from typing import Dict, Any, Optional, List, Tuple, Callable
 from .base_optimizer import BaseOptimizer
 import time
 
@@ -14,174 +13,219 @@ class EvolutionStrategyOptimizer(BaseOptimizer):
     def __init__(self,
                  dim: int,
                  bounds: List[Tuple[float, float]],
-                 population_size: int = 100,
+                 population_size: int = 50,
                  max_evals: int = 10000,
                  adaptive: bool = True,
-                 min_sigma: float = 1e-8,
-                 max_sigma: float = 1.0,
+                 offspring_size: int = None,
                  **kwargs):
         """
-        Initialize ES optimizer with self-adaptive parameters.
+        Initialize ES optimizer.
         
         Args:
             dim: Problem dimensionality
             bounds: Parameter bounds
-            population_size: Population size (lambda)
+            population_size: Population size
             max_evals: Maximum function evaluations
             adaptive: Whether to use parameter adaptation
-            min_sigma: Minimum step size
-            max_sigma: Maximum step size
+            offspring_size: Number of offspring (default: population_size)
         """
-        super().__init__(dim, bounds, population_size, max_evals=max_evals,
-                        adaptive=adaptive, **kwargs)
+        super().__init__(dim=dim, bounds=bounds, population_size=population_size,
+                        max_evals=max_evals, adaptive=adaptive)
         
-        # ES-specific parameters
-        self.mu = self.population_size // 4  # Parent population size
-        self.sigma0 = 0.3  # Initial step size
-        self.tau = 1.0 / np.sqrt(2.0 * self.dim)  # Learning rate for sigma
-        self.tau_prime = 1.0 / np.sqrt(2.0 * np.sqrt(self.dim))  # Overall learning rate
-        self.min_sigma = min_sigma
-        self.max_sigma = max_sigma
+        # ES parameters
+        self.offspring_size = offspring_size or population_size
+        self.strategy_params = np.ones(population_size) * 0.1  # Initial step sizes
         
-        # Initialize parent population
-        self.parents = np.array([
-            self._random_solution()
-            for _ in range(self.mu)
-        ])
-        self.parent_sigmas = np.full((self.mu, self.dim), self.sigma0)
+        # Initialize population
+        self.population = self._init_population()
+        self.population_scores = np.full(population_size, np.inf)
         
-        # Adaptive parameters
+        # Initialize parameter history
         if adaptive:
-            self.param_history['sigma'] = [self.sigma0]
-            self.param_history['success_rate'] = []
+            self.param_history = {
+                'step_size': [0.1],  # Initial mean step size
+                'success_rate': [],
+                'diversity': []
+            }
+        else:
+            self.param_history = {
+                'diversity': []
+            }
     
-    def _mutate(self, parent: np.ndarray, sigma: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Mutate parent solution using uncorrelated mutation with n step sizes.
+    def _calculate_diversity(self) -> float:
+        """Calculate population diversity"""
+        centroid = np.mean(self.population, axis=0)
+        distances = np.sqrt(np.sum((self.population - centroid)**2, axis=1))
+        return np.mean(distances)
+    
+    def _generate_offspring(self) -> np.ndarray:
+        """Generate offspring using mutation"""
+        # Select random parent
+        parent_idx = np.random.randint(self.population_size)
+        parent = self.population[parent_idx]
         
-        Args:
-            parent: Parent solution
-            sigma: Step sizes for each dimension
+        # Generate offspring using Gaussian mutation
+        mutation = np.random.normal(0, self.strategy_params[parent_idx])
+        offspring = parent + mutation
+        
+        # Bound offspring to constraints
+        return self._bound_solution(offspring)
+    
+    def _update_parameters(self):
+        """Update optimizer parameters based on performance"""
+        if not self.adaptive:
+            return
             
-        Returns:
-            Tuple of (mutated_solution, new_sigmas)
-        """
-        # Update step sizes
-        r = np.random.normal(0, 1)
-        new_sigmas = sigma * np.exp(self.tau_prime * r + self.tau * np.random.normal(0, 1, self.dim))
-        new_sigmas = np.clip(new_sigmas, self.min_sigma, self.max_sigma)
+        # Calculate success rate
+        success_rate = np.mean(self.success_history)
         
-        # Create offspring
-        offspring = parent + new_sigmas * np.random.normal(0, 1, self.dim)
-        offspring = self._clip_to_bounds(offspring)
-        
-        return offspring, new_sigmas
-    
-    def _recombine(self, parents: np.ndarray, parent_sigmas: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Perform intermediate recombination of parents.
-        
-        Args:
-            parents: Parent solutions
-            parent_sigmas: Parent step sizes
+        # Update step sizes based on success rate
+        if success_rate > 0.2:
+            self.strategy_params *= 1.1  # Increase step sizes
+        else:
+            self.strategy_params *= 0.9  # Decrease step sizes
             
-        Returns:
-            Tuple of (recombined_solution, recombined_sigmas)
-        """
-        # Select random parents
-        indices = np.random.choice(len(parents), size=2, replace=False)
-        p1, p2 = parents[indices]
-        s1, s2 = parent_sigmas[indices]
+        # Keep step sizes within reasonable bounds
+        self.strategy_params = np.clip(self.strategy_params, 0.01, 1.0)
         
-        # Intermediate recombination
-        child = (p1 + p2) / 2.0
-        sigma = (s1 + s2) / 2.0
-        
-        return child, sigma
+        # Record parameter values
+        self.param_history['step_size'].append(np.mean(self.strategy_params))
+        self.param_history['success_rate'].append(success_rate)
     
-    def optimize(self,
-                objective_func: Callable,
-                context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
+    def _update_diversity(self):
+        diversity = self._calculate_diversity()
+        if 'diversity' not in self.param_history:
+            self.param_history['diversity'] = []
+        self.param_history['diversity'].append(diversity)
+    
+    def reset(self):
+        """Reset optimizer state"""
+        super().reset()
+        
+        # Reset parameters
+        self.strategy_params = np.ones(self.population_size) * 0.1
+        
+        # Initialize population
+        self.population = self._init_population()
+        self.population_scores = np.full(self.population_size, np.inf)
+        
+        # Initialize parameter history
+        if self.adaptive:
+            self.param_history = {
+                'step_size': [0.1],
+                'success_rate': [],
+                'diversity': []
+            }
+        else:
+            self.param_history = {
+                'diversity': []
+            }
+    
+    def _optimize(self, objective_func: Callable, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+        """Run ES optimization"""
+        # Evaluate initial population
+        for i in range(self.population_size):
+            self.population_scores[i] = self._evaluate(self.population[i], objective_func)
+        
+        # Track initial diversity
+        self._update_diversity()
+        
+        while not self._check_convergence():
+            # Generate offspring
+            offspring = np.zeros((self.offspring_size, self.dim))
+            offspring_scores = np.zeros(self.offspring_size)
+            
+            for i in range(self.offspring_size):
+                # Generate offspring
+                offspring[i] = self._generate_offspring()
+                
+                # Evaluate offspring
+                offspring_scores[i] = self._evaluate(offspring[i], objective_func)
+            
+            # Selection
+            combined_pop = np.vstack((self.population, offspring))
+            combined_scores = np.concatenate((self.population_scores, offspring_scores))
+            
+            # Select best individuals
+            best_indices = np.argsort(combined_scores)[:self.population_size]
+            self.population = combined_pop[best_indices]
+            self.population_scores = combined_scores[best_indices]
+            
+            # Update parameters
+            if self.adaptive:
+                self._update_parameters()
+            
+            # Track diversity
+            self._update_diversity()
+        
+        return self.population[0]
+    
+    def optimize(self, objective_func, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         """
-        Run the ES optimization process.
+        Run ES optimization.
         
         Args:
             objective_func: Function to minimize
             context: Optional problem context
             
         Returns:
-            Tuple of (best_solution, best_score)
+            Best solution found
         """
-        start_time = time.time()
+        self.start_time = time.time()
         
-        # Evaluate initial parent population
-        parent_scores = np.array([
-            objective_func(p) for p in self.parents
-        ])
-        self.state.evaluations += self.mu
+        # Initialize population scores
+        for i in range(self.population_size):
+            self.population_scores[i] = self._evaluate(self.population[i], objective_func)
+        
+        # Sort initial population
+        sort_idx = np.argsort(self.population_scores)
+        self.population = self.population[sort_idx]
+        self.population_scores = self.population_scores[sort_idx]
+        
+        # Track initial diversity
+        self._update_diversity()
         
         # Track best solution
-        best_idx = np.argmin(parent_scores)
-        self._update_state(
-            self.parents[best_idx],
-            parent_scores[best_idx]
-        )
+        self.best_solution = self.population[0].copy()
+        self.best_score = self.population_scores[0]
         
-        # Main optimization loop
         while not self._check_convergence():
-            self.state.generation += 1
+            # Generate and evaluate offspring
+            offspring = np.zeros((self.offspring_size, self.dim))
+            offspring_scores = np.zeros(self.offspring_size)
             
-            # Create and evaluate offspring
-            offspring = []
-            offspring_sigmas = []
-            offspring_scores = []
-            
-            for _ in range(self.population_size):
-                # Recombine parents
-                child, sigma = self._recombine(self.parents, self.parent_sigmas)
+            for i in range(self.offspring_size):
+                # Generate offspring
+                offspring[i] = self._generate_offspring()
                 
-                # Mutate child
-                mutant, new_sigma = self._mutate(child, sigma)
-                
-                # Evaluate
-                score = objective_func(mutant)
-                self.state.evaluations += 1
-                
-                offspring.append(mutant)
-                offspring_sigmas.append(new_sigma)
-                offspring_scores.append(score)
+                # Evaluate offspring
+                offspring_scores[i] = self._evaluate(offspring[i], objective_func)
             
-            # Convert to arrays
-            offspring = np.array(offspring)
-            offspring_sigmas = np.array(offspring_sigmas)
-            offspring_scores = np.array(offspring_scores)
+            # Combine parents and offspring
+            combined_pop = np.vstack((self.population, offspring))
+            combined_scores = np.concatenate((self.population_scores, offspring_scores))
             
-            # Update best solution
-            best_offspring_idx = np.argmin(offspring_scores)
-            if offspring_scores[best_offspring_idx] < self.state.best_score:
-                self._update_state(
-                    offspring[best_offspring_idx],
-                    offspring_scores[best_offspring_idx]
-                )
+            # Sort combined population
+            sort_idx = np.argsort(combined_scores)
+            self.population = combined_pop[sort_idx]
+            self.population_scores = combined_scores[sort_idx]
             
-            # Select new parent population (mu,lambda)
-            selected = np.argsort(offspring_scores)[:self.mu]
-            self.parents = offspring[selected]
-            self.parent_sigmas = offspring_sigmas[selected]
-            parent_scores = offspring_scores[selected]
+            # Update success history
+            if self.population_scores[0] < self.best_score:
+                self.success_history[self.success_idx] = 1
+                self.best_solution = self.population[0].copy()
+                self.best_score = self.population_scores[0]
+            else:
+                self.success_history[self.success_idx] = 0
             
-            # Adapt parameters
+            self.success_idx = (self.success_idx + 1) % len(self.success_history)
+            
+            # Update parameters
             if self.adaptive:
-                success_rate = np.mean(self.success_history)
-                self.param_history['success_rate'].append(success_rate)
-                
-                # Adapt global step size based on 1/5 success rule
-                if success_rate < 0.2:
-                    self.sigma0 = max(self.min_sigma, self.sigma0 * 0.85)
-                elif success_rate > 0.2:
-                    self.sigma0 = min(self.max_sigma, self.sigma0 * 1.15)
-                    
-                self.param_history['sigma'].append(self.sigma0)
+                self._update_parameters()
+            
+            # Track diversity
+            self._update_diversity()
         
-        self.state.runtime = time.time() - start_time
-        return self.state.best_solution, self.state.best_score
+        self.end_time = time.time()
+        return self.best_solution

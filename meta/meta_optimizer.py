@@ -9,6 +9,7 @@ import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
+import time
 
 class MetaOptimizer:
     def __init__(self, optimizers: Dict[str, Any], mode: str = 'bayesian'):
@@ -129,60 +130,93 @@ class MetaOptimizer:
         else:
             return 'DifferentialEvolution'  # Robust general-purpose
     
-    def update_performance(self, 
-                         optimizer_name: str,
-                         context: Dict[str, Any],
-                         runtime: float,
-                         score: float):
-        """Log optimizer performance for future selection"""
-        # Create new performance data with explicit dtypes
-        new_data = pd.DataFrame([{
-            'optimizer': str(optimizer_name),
-            'problem_dim': int(context['dim']),
-            'discrete_vars': int(context.get('discrete_vars', 0)),
-            'multimodal': int(context.get('multimodal', 0)),
-            'runtime': float(runtime),
-            'score': float(score),
-            'timestamp': pd.Timestamp.now()
-        }])
+    def update_performance(self, optimizer_name: str, context: Dict[str, Any],
+                         runtime: float, score: float):
+        """
+        Update performance history for an optimizer.
         
-        # Ensure both DataFrames have the same schema
-        for col in self.performance_history.columns:
-            if col not in new_data.columns:
-                new_data[col] = pd.NA
+        Args:
+            optimizer_name: Name of the optimizer
+            context: Problem context
+            runtime: Runtime in seconds
+            score: Final objective value achieved
+        """
+        # Update performance history
+        self.performance_history = pd.concat([
+            self.performance_history,
+            pd.DataFrame([{
+                'optimizer': optimizer_name,
+                'problem_dim': context['dim'],
+                'discrete_vars': context.get('discrete_vars', 0),
+                'multimodal': context.get('multimodal', 0),
+                'runtime': runtime,
+                'score': score,
+                'timestamp': pd.Timestamp.now()
+            }])
+        ], ignore_index=True)
         
-        # Convert dtypes to match self.performance_history
-        for col in new_data.columns:
-            if col in self.performance_history.columns:
-                new_data[col] = new_data[col].astype(self.performance_history[col].dtype)
-        
-        # Concatenate with schema validation
-        self.performance_history = pd.concat(
-            [self.performance_history, new_data],
-            ignore_index=True,
-            verify_integrity=True,
-            copy=False
-        )
-        
-        # Update running statistics
+        # Update tracking
         self.current_best[optimizer_name] = min(
             self.current_best[optimizer_name],
             score
         )
         self.runtime_stats[optimizer_name].append(runtime)
     
+    def optimize(self, objective_func, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+        """
+        Run optimization using meta-learning to select and adapt optimizers.
+        
+        Args:
+            objective_func: Function to minimize
+            context: Optional problem context
+            
+        Returns:
+            Best solution found
+        """
+        if context is None:
+            context = {}
+        
+        # Select best optimizer for current context
+        optimizer_name = self.select_optimizer(context)
+        optimizer = self.optimizers[optimizer_name]
+        
+        # Run optimization
+        start_time = time.time()
+        solution = optimizer.optimize(objective_func)
+        runtime = time.time() - start_time
+        
+        # Update performance history
+        self.update_performance(
+            optimizer_name,
+            context,
+            runtime,
+            optimizer.best_score
+        )
+        
+        return solution
+    
     def get_optimizer_stats(self) -> Dict[str, Dict[str, float]]:
         """Return performance statistics for each optimizer"""
         stats = {}
         for name in self.optimizers:
-            hist = self.performance_history[
-                self.performance_history['optimizer'] == name
-            ]
-            if not hist.empty:
+            if self.runtime_stats[name]:
                 stats[name] = {
-                    'best_score': self.current_best[name],
                     'avg_runtime': np.mean(self.runtime_stats[name]),
-                    'success_rate': sum(hist['score'] < hist['score'].mean()) / len(hist),
-                    'runs': len(hist)
+                    'best_score': self.current_best[name],
+                    'n_runs': len(self.runtime_stats[name])
                 }
         return stats
+    
+    def get_convergence_curve(self) -> List[float]:
+        """Get convergence curve for the last optimization run"""
+        if hasattr(self, 'current_optimizer'):
+            return self.current_optimizer.get_convergence_curve()
+        return []
+    
+    def get_state(self) -> Dict[str, Any]:
+        """Get current state of the meta-optimizer"""
+        return {
+            'performance_history': self.performance_history,
+            'current_best': self.current_best,
+            'runtime_stats': self.runtime_stats
+        }

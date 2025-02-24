@@ -1,12 +1,11 @@
 """
 aco.py
--------
-Enhanced Ant Colony Optimization with adaptive parameters
-and improved pheromone management for continuous optimization.
+------
+Ant Colony Optimization (ACO) for continuous optimization.
 """
 
-from typing import Tuple, List, Callable, Dict, Any, Optional
 import numpy as np
+from typing import Dict, Any, Optional, List, Tuple, Callable
 from .base_optimizer import BaseOptimizer
 import time
 
@@ -15,176 +14,225 @@ class AntColonyOptimizer(BaseOptimizer):
                  dim: int,
                  bounds: List[Tuple[float, float]],
                  population_size: int = 50,
-                 archive_size: int = 10,
-                 q: float = 0.1,
-                 xi: float = 0.1,
+                 max_evals: int = 10000,
                  adaptive: bool = True,
+                 evaporation_rate: float = 0.1,
+                 intensification: float = 2.0,
+                 alpha: float = 1.0,
+                 beta: float = 2.0,
+                 grid_points: int = 10,
+                 tau_init: float = 1.0,
+                 rho: float = 0.1,
+                 q0: float = 0.5,
                  **kwargs):
         """
-        Initialize ACO optimizer with adaptive parameters.
+        Initialize ACO optimizer.
         
         Args:
             dim: Problem dimensionality
-            bounds: Parameter bounds
+            bounds: List of (lower, upper) bounds for each dimension
             population_size: Number of ants
-            archive_size: Size of solution archive
-            q: Initial search localization factor
-            xi: Pheromone evaporation rate
+            max_evals: Maximum function evaluations
             adaptive: Whether to use parameter adaptation
+            evaporation_rate: Pheromone evaporation rate
+            intensification: Pheromone intensification factor
+            alpha: Pheromone influence
+            beta: Heuristic influence
+            grid_points: Number of discrete regions per dimension
+            tau_init: Initial pheromone value
+            rho: Pheromone evaporation rate
+            q0: Exploration-exploitation trade-off
         """
-        super().__init__(dim, bounds, population_size, adaptive=adaptive, **kwargs)
+        super().__init__(dim=dim, bounds=bounds, population_size=population_size,
+                        max_evals=max_evals, adaptive=adaptive)
         
-        # ACO-specific parameters
-        self.archive_size = archive_size
-        self.q = q  # Search localization (diversity control)
-        self.xi = xi  # Pheromone evaporation rate
+        # ACO parameters
+        self.evaporation_rate = evaporation_rate
+        self.intensification = intensification
+        self.alpha = alpha
+        self.beta = beta
+        self.grid_points = grid_points
+        self.tau_init = tau_init
+        self.rho = rho
+        self.q0 = q0
         
-        # Initialize solution archive
-        self.archive = np.array([
-            self._random_solution()
-            for _ in range(self.archive_size)
-        ])
-        self.archive_scores = np.full(self.archive_size, np.inf)
+        # Initialize pheromone matrix
+        self.pheromone = np.full((dim, grid_points), tau_init)
+        
+        # Initialize population
+        self.population = self._init_population()
+        self.population_scores = np.full(population_size, np.inf)
+        
+        # Success tracking
+        self.success_history = np.zeros(20)  # Track last 20 iterations
+        self.success_idx = 0
         
         # Adaptive parameters
         if adaptive:
-            self.param_history['q'] = [q]
-            self.param_history['xi'] = [xi]
-            
-            # Learning rates
-            self.lr_q = 0.1
-            self.lr_xi = 0.05
-            
-            # Diversity thresholds
-            self.min_diversity = 0.1
-            self.max_diversity = 0.5
+            self.param_history = {
+                'rho': [rho],
+                'q0': [q0],
+                'success_rate': [],
+                'diversity': []
+            }
+        else:
+            self.param_history = {
+                'diversity': []
+            }
     
-    def _calculate_weights(self) -> np.ndarray:
-        """Calculate selection weights for archive solutions"""
-        ranks = np.argsort(np.argsort(self.archive_scores))
-        return 1.0 / (self.q * self.archive_size * np.sqrt(2 * np.pi)) * \
-               np.exp(-0.5 * ((ranks / (self.q * self.archive_size)) ** 2))
-    
-    def _sample_gaussian(self, weights: np.ndarray) -> np.ndarray:
-        """Generate new solution using Gaussian sampling"""
-        # Select solution using weights
-        selected_idx = np.random.choice(
-            self.archive_size,
-            p=weights / np.sum(weights)
-        )
-        selected = self.archive[selected_idx]
+    def reset(self):
+        """Reset optimizer state"""
+        super().reset()
         
-        # Calculate standard deviations
-        dists = np.abs(self.archive - selected)
-        sigma = self.xi * np.sum(dists * weights.reshape(-1, 1), axis=0) / np.sum(weights)
+        # Initialize population
+        self.population = self._init_population()
+        self.population_scores = np.full(self.population_size, np.inf)
         
-        # Generate new solution
-        return self._clip_to_bounds(
-            selected + sigma * np.random.normal(0, 1, self.dim)
-        )
+        # Initialize pheromone matrix
+        self.pheromone = np.full((self.dim, self.grid_points), self.tau_init)
+        
+        # Initialize adaptive parameters
+        if self.adaptive:
+            self.param_history = {
+                'rho': [self.rho],
+                'q0': [self.q0],
+                'success_rate': [],
+                'diversity': []
+            }
+        else:
+            self.param_history = {
+                'diversity': []
+            }
     
-    def _calculate_diversity(self) -> float:
-        """Calculate diversity of the solution archive"""
-        centroid = np.mean(self.archive, axis=0)
-        distances = np.sqrt(np.sum((self.archive - centroid)**2, axis=1))
-        return np.mean(distances) / np.sqrt(self.dim)
+    def _discretize(self, x: np.ndarray) -> np.ndarray:
+        """Convert continuous solution to discrete regions"""
+        regions = np.zeros(self.dim, dtype=int)
+        for i, (lower, upper) in enumerate(self.bounds):
+            regions[i] = int((x[i] - lower) / (upper - lower) * self.grid_points)
+            regions[i] = np.clip(regions[i], 0, self.grid_points - 1)
+        return regions
     
-    def _adapt_parameters(self) -> None:
-        """
-        Adapt q and xi parameters based on search progress
-        and archive diversity.
-        """
+    def _continuous_value(self, region: int, dim: int) -> float:
+        """Convert discrete region to continuous value"""
+        lower, upper = self.bounds[dim]
+        region_size = (upper - lower) / self.grid_points
+        return lower + (region + 0.5) * region_size
+    
+    def _update_pheromone(self):
+        """Update pheromone levels based on solution quality"""
+        # Evaporation
+        self.pheromone *= (1 - self.rho)
+        
+        # Intensification
+        for i in range(self.population_size):
+            regions = self._discretize(self.population[i])
+            delta = self.intensification / (self.population_scores[i] + 1e-10)
+            for j, region in enumerate(regions):
+                self.pheromone[j, region] += delta
+    
+    def _select_region(self, dim: int) -> int:
+        """Select region using pheromone levels"""
+        p = self.pheromone[dim] ** self.alpha
+        p /= np.sum(p)
+        return np.random.choice(self.grid_points, p=p)
+    
+    def _construct_solution(self) -> np.ndarray:
+        """Construct new solution using pheromone information"""
+        solution = np.zeros(self.dim)
+        for i in range(self.dim):
+            region = self._select_region(i)
+            solution[i] = self._continuous_value(region, i)
+            # Add small random perturbation
+            lower, upper = self.bounds[i]
+            perturbation = np.random.normal(0, (upper - lower) / (4 * self.grid_points))
+            solution[i] = np.clip(solution[i] + perturbation, lower, upper)
+        return solution
+    
+    def _update_parameters(self):
+        """Update optimizer parameters based on performance"""
         if not self.adaptive:
             return
             
-        if len(self.success_history) >= 10:
-            success_rate = sum(self.success_history[-10:]) / 10
-            diversity = self._calculate_diversity()
+        # Calculate success rate
+        success_rate = np.mean(self.success_history)
+        
+        # Update rho based on success rate
+        if success_rate > 0.5:
+            self.rho *= 0.9  # Decrease evaporation to focus on exploitation
+        else:
+            self.rho *= 1.1  # Increase evaporation to encourage exploration
             
-            # Adapt search localization (q)
-            if diversity < self.min_diversity:
-                # Increase exploration
-                self.q = min(0.5, self.q * (1 + self.lr_q))
-            elif diversity > self.max_diversity:
-                # Increase exploitation
-                self.q = max(0.01, self.q * (1 - self.lr_q))
+        # Update q0 based on success rate
+        if success_rate > 0.5:
+            self.q0 = min(0.9, self.q0 * 1.1)  # Increase exploitation
+        else:
+            self.q0 = max(0.1, self.q0 * 0.9)  # Increase exploration
             
-            # Adapt pheromone evaporation (xi)
-            if success_rate < 0.2:
-                # Increase exploration
-                self.xi = min(0.3, self.xi * (1 + self.lr_xi))
-            else:
-                # Increase exploitation
-                self.xi = max(0.05, self.xi * (1 - self.lr_xi))
-            
-            # Store parameter history
-            self.param_history['q'].append(self.q)
-            self.param_history['xi'].append(self.xi)
+        # Keep parameters within reasonable bounds
+        self.rho = np.clip(self.rho, 0.01, 0.5)
+        
+        # Record parameter values
+        self.param_history['rho'].append(self.rho)
+        self.param_history['q0'].append(self.q0)
+        self.param_history['success_rate'].append(success_rate)
     
-    def optimize(self,
-                objective_func: Callable,
-                context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
+    def _optimize(self, objective_func: Callable, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+        """Run ACO optimization"""
+        # Evaluate initial population
+        for i in range(self.population_size):
+            self.population_scores[i] = self._evaluate(self.population[i], objective_func)
+        
+        # Track initial diversity
+        self._update_diversity()
+        
+        while not self._check_convergence():
+            # Generate new solutions
+            new_solutions = np.zeros((self.population_size, self.dim))
+            new_scores = np.zeros(self.population_size)
+            
+            for i in range(self.population_size):
+                # Construct solution using pheromone information
+                solution = self._construct_solution()
+                new_solutions[i] = solution
+                
+                # Evaluate solution
+                new_scores[i] = self._evaluate(solution, objective_func)
+            
+            # Update population
+            combined_solutions = np.vstack((self.population, new_solutions))
+            combined_scores = np.concatenate((self.population_scores, new_scores))
+            
+            # Select best solutions
+            best_indices = np.argsort(combined_scores)[:self.population_size]
+            self.population = combined_solutions[best_indices]
+            self.population_scores = combined_scores[best_indices]
+            
+            # Update pheromone trails
+            self._update_pheromone()
+            
+            # Update parameters
+            if self.adaptive:
+                self._update_parameters()
+            
+            # Track diversity
+            self._update_diversity()
+        
+        return self.best_solution
+    
+    def optimize(self, objective_func, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         """
-        Run the ACO optimization process.
+        Run ACO optimization.
         
         Args:
             objective_func: Function to minimize
             context: Optional problem context
             
         Returns:
-            Tuple of (best_solution, best_score)
+            Best solution found
         """
-        start_time = time.time()
+        self.start_time = time.time()
         
-        # Initialize archive
-        self.archive_scores = np.array([
-            objective_func(sol) for sol in self.archive
-        ])
-        self.state.evaluations += self.archive_size
+        self._optimize(objective_func, context)
         
-        # Track best solution
-        best_idx = np.argmin(self.archive_scores)
-        self._update_state(
-            self.archive[best_idx],
-            self.archive_scores[best_idx]
-        )
-        
-        # Main optimization loop
-        while not self._check_convergence():
-            self.state.generation += 1
-            
-            # Generate new solutions
-            weights = self._calculate_weights()
-            new_solutions = np.array([
-                self._sample_gaussian(weights)
-                for _ in range(self.population_size)
-            ])
-            
-            # Evaluate new solutions
-            new_scores = np.array([
-                objective_func(sol) for sol in new_solutions
-            ])
-            self.state.evaluations += self.population_size
-            
-            # Update archive
-            combined = np.vstack((self.archive, new_solutions))
-            combined_scores = np.concatenate((self.archive_scores, new_scores))
-            
-            # Select best solutions for archive
-            selected = np.argsort(combined_scores)[:self.archive_size]
-            self.archive = combined[selected]
-            self.archive_scores = combined_scores[selected]
-            
-            # Update best solution
-            if self.archive_scores[0] < self.state.best_score:
-                self._update_state(
-                    self.archive[0],
-                    self.archive_scores[0]
-                )
-            
-            # Adapt parameters
-            if self.adaptive:
-                self._adapt_parameters()
-        
-        self.state.runtime = time.time() - start_time
-        return self.state.best_solution, self.state.best_score
+        self.end_time = time.time()
+        return self.best_solution

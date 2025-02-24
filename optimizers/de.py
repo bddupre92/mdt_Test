@@ -1,187 +1,165 @@
 """
 de.py
 -----
-Enhanced Differential Evolution with adaptive parameters and
-improved exploration/exploitation balance.
+Differential Evolution optimizer with adaptive parameters.
 """
 
-from typing import Tuple, List, Callable, Dict, Any, Optional
 import numpy as np
+from typing import Dict, Any, Optional, List, Tuple, Callable
 from .base_optimizer import BaseOptimizer
 import time
-from collections import deque
 
 class DifferentialEvolutionOptimizer(BaseOptimizer):
     def __init__(self,
                  dim: int,
                  bounds: List[Tuple[float, float]],
                  population_size: int = 50,
+                 max_evals: int = 10000,
                  F: float = 0.8,
                  CR: float = 0.5,
-                 strategy: str = 'best/1/bin',
                  adaptive: bool = True,
                  **kwargs):
         """
-        Initialize DE optimizer with adaptive parameters.
+        Initialize DE optimizer.
         
         Args:
             dim: Problem dimensionality
             bounds: Parameter bounds
             population_size: Population size
-            F: Initial mutation factor
-            CR: Initial crossover rate
-            strategy: DE variant strategy
+            max_evals: Maximum function evaluations
+            F: Mutation factor
+            CR: Crossover rate
             adaptive: Whether to use parameter adaptation
         """
-        super().__init__(dim, bounds, population_size, adaptive=adaptive, **kwargs)
+        super().__init__(dim=dim, bounds=bounds, population_size=population_size,
+                        max_evals=max_evals, adaptive=adaptive)
         
+        # DE parameters
+        self.F_init = F
+        self.CR_init = CR
         self.F = F
         self.CR = CR
-        self.strategy = strategy
         
-        # Adaptive parameters
+        # Initialize population
+        self.population = self._init_population()
+        self.population_scores = np.full(population_size, np.inf)
+        
+        # Initialize parameter history
         if adaptive:
-            self.F_range = (0.1, 1.0)
-            self.CR_range = (0.1, 0.9)
-            self.success_threshold = 0.6
-            
-            # Track parameter performance
-            self.param_history = {'F': [F], 'CR': [CR]}
-            self.param_memory = {
-                'F': deque(maxlen=50),
-                'CR': deque(maxlen=50)
+            self.param_history = {
+                'F': [F],
+                'CR': [CR],
+                'success_rate': []
             }
-    
-    def _mutate(self, population: np.ndarray, target_idx: int) -> np.ndarray:
-        """
-        Generate mutant vector using specified strategy.
-        """
-        if self.strategy == 'best/1/bin':
-            best_idx = np.argmin(self.current_scores)
-            r1, r2 = self._select_parents(target_idx, 2)
-            
-            mutant = (population[best_idx] + 
-                     self.F * (population[r1] - population[r2]))
-            
-        elif self.strategy == 'rand/1/bin':
-            r1, r2, r3 = self._select_parents(target_idx, 3)
-            
-            mutant = (population[r1] + 
-                     self.F * (population[r2] - population[r3]))
-            
-        elif self.strategy == 'current-to-best/1/bin':
-            best_idx = np.argmin(self.current_scores)
-            r1, r2 = self._select_parents(target_idx, 2)
-            
-            mutant = (population[target_idx] +
-                     self.F * (population[best_idx] - population[target_idx]) +
-                     self.F * (population[r1] - population[r2]))
+        else:
+            self.param_history = {}
         
-        return self._clip_to_bounds(mutant)
+        # Success tracking
+        self.success_history = np.zeros(20)  # Track last 20 iterations
+        self.success_idx = 0
+        
+        # Diversity tracking
+        self.diversity_history = []
+    
+    def _mutate(self, target_idx: int) -> np.ndarray:
+        """Generate mutant vector using DE mutation"""
+        # Select three random distinct vectors
+        idxs = [i for i in range(self.population_size) if i != target_idx]
+        r1, r2, r3 = np.random.choice(idxs, size=3, replace=False)
+        
+        # Get best solution index
+        best_idx = np.argmin(self.population_scores)
+        
+        # Generate mutant using current-to-best/1 strategy
+        mutant = (self.population[target_idx] + 
+                 self.F * (self.population[best_idx] - self.population[target_idx]) +
+                 self.F * (self.population[r1] - self.population[r2]))
+        
+        return self._bound_solution(mutant)
     
     def _crossover(self, target: np.ndarray, mutant: np.ndarray) -> np.ndarray:
-        """
-        Perform binomial crossover between target and mutant vectors.
-        """
+        """Perform binomial crossover"""
         mask = np.random.rand(self.dim) <= self.CR
         # Ensure at least one component is taken from mutant
         if not np.any(mask):
             mask[np.random.randint(0, self.dim)] = True
-        
         return np.where(mask, mutant, target)
     
-    def _select_parents(self, target_idx: int, count: int) -> List[int]:
-        """Select random distinct parents excluding target_idx"""
-        available = list(range(self.population_size))
-        available.remove(target_idx)
-        return np.random.choice(available, size=count, replace=False)
-    
-    def _adapt_parameters(self) -> None:
-        """
-        Adapt F and CR based on recent success history.
-        Uses the JADE-inspired parameter adaptation.
-        """
+    def _update_parameters(self):
+        """Update optimizer parameters based on performance"""
         if not self.adaptive:
             return
             
-        # Calculate success rate over recent history
-        if len(self.success_history) >= 10:
-            success_rate = sum(self.success_history) / len(self.success_history)
+        # Calculate success rate
+        success_rate = np.mean(self.success_history)
+        
+        # Update F and CR based on success rate
+        if success_rate > 0.5:
+            self.F *= 0.9  # Decrease F to focus on exploitation
+            self.CR *= 0.9  # Decrease CR to focus on exploitation
+        else:
+            self.F *= 1.1  # Increase F to encourage exploration
+            self.CR *= 1.1  # Increase CR to encourage exploration
             
-            # Adapt F
-            if success_rate > self.success_threshold:
-                # Increase exploration
-                self.F = min(self.F * 1.1, self.F_range[1])
-            else:
-                # Increase exploitation
-                self.F = max(self.F * 0.9, self.F_range[0])
-            
-            # Adapt CR similarly
-            if success_rate > self.success_threshold:
-                self.CR = min(self.CR * 1.1, self.CR_range[1])
-            else:
-                self.CR = max(self.CR * 0.9, self.CR_range[0])
-            
-            # Store parameter history
-            self.param_history['F'].append(self.F)
-            self.param_history['CR'].append(self.CR)
+        # Keep parameters within reasonable bounds
+        self.F = np.clip(self.F, 0.1, 2.0)
+        self.CR = np.clip(self.CR, 0.1, 0.9)
+        
+        # Record parameter values
+        self.param_history['F'].append(self.F)
+        self.param_history['CR'].append(self.CR)
+        self.param_history['success_rate'].append(success_rate)
     
-    def optimize(self,
-                objective_func: Callable,
-                context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
-        """
-        Run the DE optimization process.
+    def _update_diversity(self):
+        """Track population diversity"""
+        diversity = np.mean(np.std(self.population, axis=0))
+        self.diversity_history.append(diversity)
+    
+    def reset(self):
+        """Reset optimizer state"""
+        super().reset()
         
-        Args:
-            objective_func: Function to minimize
-            context: Optional problem context
-            
-        Returns:
-            Tuple of (best_solution, best_score)
-        """
-        start_time = time.time()
+        # Reset parameters
+        self.F = self.F_init
+        self.CR = self.CR_init
         
-        # Initialize population
-        population = np.array([
-            self._random_solution()
-            for _ in range(self.population_size)
-        ])
-        
+        # Reset parameter history
+        if self.adaptive:
+            self.param_history.update({
+                'F': [self.F_init],
+                'CR': [self.CR_init],
+                'success_rate': []
+            })
+    
+    def _optimize(self, objective_func: Callable, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+        """Run DE optimization"""
         # Evaluate initial population
-        self.current_scores = np.array([
-            objective_func(ind) for ind in population
-        ])
-        self.state.evaluations += self.population_size
+        for i in range(self.population_size):
+            self.population_scores[i] = self._evaluate(self.population[i], objective_func)
         
-        best_idx = np.argmin(self.current_scores)
-        self._update_state(
-            population[best_idx],
-            self.current_scores[best_idx]
-        )
+        # Track initial diversity
+        self._update_diversity()
         
-        # Main optimization loop
         while not self._check_convergence():
-            self.state.generation += 1
-            
-            # Adapt parameters if needed
-            if self.adaptive and self.state.generation % 10 == 0:
-                self._adapt_parameters()
-            
-            # Evolution step
+            # Generate and evaluate trial solutions
             for i in range(self.population_size):
-                # Generate trial vector
-                mutant = self._mutate(population, i)
-                trial = self._crossover(population[i], mutant)
+                # Generate trial solution
+                mutant = self._mutate(i)
+                trial = self._crossover(self.population[i], mutant)
                 
-                # Evaluate trial vector
-                trial_score = objective_func(trial)
-                self.state.evaluations += 1
+                # Evaluate trial solution
+                trial_score = self._evaluate(trial, objective_func)
                 
                 # Selection
-                if trial_score < self.current_scores[i]:
-                    population[i] = trial
-                    self.current_scores[i] = trial_score
-                    self._update_state(trial, trial_score)
+                if trial_score <= self.population_scores[i]:
+                    self.population[i] = trial
+                    self.population_scores[i] = trial_score
+            
+            # Update parameters
+            if self.adaptive:
+                self._update_parameters()
+            
+            # Track diversity
+            self._update_diversity()
         
-        self.state.runtime = time.time() - start_time
-        return self.state.best_solution, self.state.best_score
+        return self.best_solution
