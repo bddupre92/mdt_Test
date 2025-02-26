@@ -7,6 +7,7 @@ alongside triggers like sleep hours, weather, etc.
 
 import numpy as np
 import pandas as pd
+from app.core.data.test_data_generator import TestDataGenerator
 
 def generate_synthetic_data(num_days=180, random_seed=42):
     """
@@ -14,51 +15,30 @@ def generate_synthetic_data(num_days=180, random_seed=42):
     
     :param num_days: Number of days of data to generate
     :param random_seed: Random seed for reproducibility
-    :return: A pandas DataFrame indexed by date, with columns:
-             ['sleep_hours', 'weather_pressure', 'weather_temp', 'heart_rate',
-              'stress_level', 'migraine_occurred', 'severity', ...]
+    :return: A pandas DataFrame with columns:
+             ['sleep_hours', 'stress_level', 'weather_pressure', 'heart_rate',
+              'hormonal_level', 'migraine_occurred']
     """
-    rng = np.random.default_rng(random_seed)
-    
-    dates = pd.date_range(start="2025-01-01", periods=num_days, freq='D')
-    df = pd.DataFrame(index=dates)
-    
-    # Generate base features
-    df['sleep_hours'] = rng.normal(loc=7.0, scale=1.5, size=num_days).clip(0, 12)
-    df['weather_pressure'] = 1013 + 5*np.sin(np.linspace(0, 6*np.pi, num_days)) 
-    df['weather_pressure'] += rng.normal(0, 2, size=num_days)
-    df['weather_temp'] = 15 + 10*np.sin(np.linspace(0, 2*np.pi, num_days))
-    df['weather_temp'] += rng.normal(0, 3, size=num_days)
-    df['heart_rate'] = rng.normal(70, 5, size=num_days).clip(40, 120)
-    df['stress_level'] = rng.normal(5, 2, size=num_days).clip(0, 10)
-    
-    # Probability of migraine influenced by sleep & stress & weather changes
-    prob = 0.05 + 0.02*(7 - df['sleep_hours']).clip(0) + 0.01*(df['stress_level'] - 5).clip(0) 
-    # if big pressure drop from previous day
-    pressure_drop = df['weather_pressure'].diff().fillna(0).abs()
-    prob += 0.01 * (pressure_drop > 3)
-    
-    # Convert prob to [0,1]
-    prob = np.clip(prob, 0, 0.9)
-    
-    df['migraine_occurred'] = (rng.random(num_days) < prob).astype(int)
-    
-    # For severity, if migraine occurred, random scale 1-10
-    severity = np.zeros(num_days, dtype=int)
-    severity[df['migraine_occurred'] == 1] = rng.integers(1, 10, size=(df['migraine_occurred'] == 1).sum())
-    df['severity'] = severity
+    # Use our test data generator
+    generator = TestDataGenerator(seed=random_seed)
+    df = generator.generate_time_series(n_days=num_days)
     
     # Introduce missing values (5% random)
-    for col in df.columns:
+    rng = np.random.default_rng(random_seed)
+    for col in ['sleep_hours', 'weather_pressure', 'heart_rate', 'stress_level', 'hormonal_level']:
         mask = rng.random(num_days) < 0.05
         df.loc[mask, col] = np.nan
-    
+        
     return df
 
 def main():
-    # Quick test
-    data = generate_synthetic_data(180)
-    print("Sample synthetic data:\n", data.head(10))
+    """Generate sample dataset and print summary."""
+    df = generate_synthetic_data()
+    print("Generated synthetic dataset:")
+    print(df.describe())
+    print("\nMissing values:")
+    print(df.isna().sum())
+    print("\nMigraine frequency:", df['migraine_occurred'].mean())
 
 if __name__ == "__main__":
     main()

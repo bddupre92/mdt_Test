@@ -9,17 +9,9 @@ import numpy as np
 import time
 import pandas as pd
 from typing import Tuple, List, Dict, Any, Optional, Callable
-from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
-@dataclass
-class OptimizerState:
-    """Store optimizer state information"""
-    evaluations: int
-    runtime: float
-    history: List[Tuple[int, float]]  # (evaluation_count, best_score)
-    success_rate: Optional[float] = None
-    diversity_history: Optional[List[float]] = None
+from meta.optimizer_state import OptimizerState
 
 class BaseOptimizer(ABC):
     def __init__(self,
@@ -57,6 +49,7 @@ class BaseOptimizer(ABC):
         self.start_time = None
         self.end_time = None
         self.history = []
+        self.name = self.__class__.__name__  # Add name attribute
         
         # Performance tracking
         self.performance_history = pd.DataFrame(columns=['iteration', 'score'])
@@ -120,7 +113,15 @@ class BaseOptimizer(ABC):
         self.convergence_curve.append(self.best_score)
         
         # Update performance history
-        self._update_history(score)
+        new_row = pd.DataFrame({
+            'iteration': [self._current_iteration],
+            'score': [score]
+        })
+        self.performance_history = pd.concat([
+            self.performance_history,
+            new_row
+        ], ignore_index=True)
+        self._current_iteration += 1
         
         return score
     
@@ -130,13 +131,13 @@ class BaseOptimizer(ABC):
         Args:
             score: Current objective function value
         """
-        new_record = pd.DataFrame({
+        new_row = pd.DataFrame({
             'iteration': [self._current_iteration],
             'score': [score]
         })
         self.performance_history = pd.concat([
             self.performance_history,
-            new_record
+            new_row
         ], ignore_index=True)
         self._current_iteration += 1
     
@@ -176,8 +177,10 @@ class BaseOptimizer(ABC):
     def _bound_solution(self, x: np.ndarray) -> np.ndarray:
         """Ensure solution stays within bounds"""
         x = np.asarray(x)
-        for i, (lower, upper) in enumerate(self.bounds):
-            x[..., i] = np.clip(x[..., i], lower, upper)
+        # Use numpy's clip function for vectorized bounds checking
+        x = np.clip(x, 
+                   [b[0] for b in self.bounds],
+                   [b[1] for b in self.bounds])
         return x
     
     def get_convergence_curve(self) -> List[float]:
@@ -222,7 +225,7 @@ class BaseOptimizer(ABC):
                 objective_func: Callable,
                 max_evals: Optional[int] = None,
                 record_history: bool = True,
-                context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+                context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
         """
         Run optimization process.
         
@@ -233,7 +236,7 @@ class BaseOptimizer(ABC):
             context: Optional problem context
             
         Returns:
-            Best solution found as numpy array
+            Tuple of (best solution found as numpy array, best score)
         """
         # Update max_evals if provided
         if max_evals is not None:
@@ -243,17 +246,17 @@ class BaseOptimizer(ABC):
         self.start_time = time.time()
         
         # Run optimization (implemented by subclasses)
-        solution = self._optimize(objective_func, context)
+        solution, score = self._optimize(objective_func, context)
         
         # End timing
         self.end_time = time.time()
         
-        return solution
+        return solution, score
     
     @abstractmethod
     def _optimize(self,
                  objective_func: Callable,
-                 context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+                 context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
         """
         Internal optimization method to be implemented by subclasses.
         
@@ -262,6 +265,6 @@ class BaseOptimizer(ABC):
             context: Optional problem context
             
         Returns:
-            Best solution found as numpy array
+            Tuple of (best solution found as numpy array, best score)
         """
         pass

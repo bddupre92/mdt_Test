@@ -1,0 +1,130 @@
+{
+  "records": [
+    {
+      "features": {
+        "dimension": 5.0,
+        "range": 124.12860022276676,
+        "std": 43.265848091524965,
+        "gradient_variance": 4256468856338.065,
+        "modality": 41.0,
+        "convexity": 0.463,
+        "ruggedness": 0.008716170785455309,
+        "separability": 0.1553374671627988,
+        "local_structure": 0.3601483830864784,
+        "global_structure": 0.17258707546296664,
+        "fitness_distance_correlation": 0.8968120087375944,
+        "information_content": 1.706889702220007,
+        "basin_ratio": 0.87,
+        "gradient_homogeneity": 0.34613253121799753
+      },
+      "optimizer": "DE (Adaptive)",
+      "performance": 8.378020461598728,
+      "success": false
+    },
+    {
+      "features": {
+        "dimension": 5.0,
+        "range": 124.12860022276676,
+        "std": 43.265848091524965,
+        "gradient_variance": 4256468856338.065,
+        "modality": 41.0,
+        "convexity": 0.463,
+        "ruggedness": 0.008716170785455309,
+        "separability": 0.1553374671627988,
+        "local_structure": 0.3601483830864784,
+        "global_structure": 0.17258707546296664,
+        "fitness_distance_correlation": 0.8968120087375944,
+        "information_content": 1.706889702220007,
+        "basin_ratio": 0.87,
+        "gradient_homogeneity": 0.34613253121799753
+      },
+      "optimizer": "ES (Adaptive)",
+      "performance": 16.45643219651327,
+      "success": false
+    },
+    {
+      "features": {
+        "dimension": 5.0,
+        "range": 124.12860022276676,
+        "std": 43.265848091524965,
+        "gradient_variance": 4256468856338.065,
+        "modality": 41.0,
+        "convexity": 0.463,
+        "ruggedness": 0.008716170785455309,
+        "separability": 0.1553374671627988,
+        "local_structure": 0.3601483830864784,
+        "global_structure": 0.17258707546296664,
+        "fitness_distance_correlation": 0.8968120087375944,
+        "information_content": 1.706889702220007,
+        "basin_ratio": 0.87,
+        "gradient_homogeneity": 0.34613253121799753
+      },
+      "optimizer": "GWO (Standard)",
+      "performance": 22.168892909163358,
+      "success": false
+    },
+    {
+      "features": {
+        "dimension": 5.0,
+        "range": 124.12860022276676,
+        "std": 43.265848091524965,
+        "gradient_variance": 4256468856338.065,
+        "modality": 41.0,
+        "convexity": 0.463,
+        "ruggedness": 0.008716170785455309,
+        "separability": 0.1553374671627988,
+        "local_structure": 0.3601483830864784,
+        "global_structure": 0.17258707546296664,
+        "fitness_distance_correlation": 0.8968120087375944,
+        "information_content": 1.706889702220007,
+        "basin_ratio": 0.87,
+        "gradient_homogeneity": 0.34613253121799753
+      },
+      "optimizer": "Meta-Optimizer",
+      "performance": 8.378020461598728,
+      "success": false
+    },
+    {
+      "features": {
+        "dimension": 5.0,
+        "range": 124.12860022276676,
+        "std": 43.265848091524965,
+        "gradient_variance": 4256468856338.065,
+        "modality": 41.0,
+        "convexity": 0.463,
+        "ruggedness": 0.008716170785455309,
+        "separability": 0.1553374671627988,
+        "local_structure": 0.3601483830864784,
+        "global_structure": 0.17258707546296664,
+        "fitness_distance_correlation": 0.8968120087375944,
+        "information_content": 1.706889702220007,
+        "basin_ratio": 0.87,
+        "gradient_homogeneity": 0.34613253121799753
+      },
+      "optimizer": "ES (Adaptive)",
+      "performance": 4.899870024189433,
+      "success": false
+    },
+    {
+      "features": {
+        "dimension": 5.0,
+        "range": 124.12860022276676,
+        "std": 43.265848091524965,
+        "gradient_variance": 4256468856338.065,
+        "modality": 41.0,
+        "convexity": 0.463,
+        "ruggedness": 0.008716170785455309,
+        "separability": 0.1553374671627988,
+        "local_structure": 0.3601483830864784,
+        "global_structure": 0.17258707546296664,
+        "fitness_distance_correlation": 0.8968120087375944,
+        "information_content": 1.706889702220007,
+        "basin_ratio": 0.87,
+        "gradient_homogeneity": 0.34613253121799753
+      },
+      "optimizer": "Meta-Optimizer",
+      "performance": 8.378020461598728,
+      "success": false
+    }
+  ]
+}

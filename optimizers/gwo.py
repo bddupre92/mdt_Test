@@ -36,17 +36,17 @@ class GreyWolfOptimizer(BaseOptimizer):
         self.a_init = a_init
         self.a = a_init
         
-        # Initialize population
-        self.population = self._init_population()
-        self.population_scores = np.full(population_size, np.inf)
+        # Initialize population as a (population_size, dim) array
+        self.population = np.zeros((self.population_size, self.dim))
+        for i, (lower, upper) in enumerate(self.bounds):
+            self.population[:, i] = np.random.uniform(lower, upper, self.population_size)
         
-        # Initialize wolf hierarchy
-        self.alpha = None
-        self.beta = None
-        self.delta = None
-        self.alpha_score = np.inf
-        self.beta_score = np.inf
-        self.delta_score = np.inf
+        # Initialize scores
+        self.population_scores = np.full(self.population_size, np.inf)
+        
+        # Track best solution
+        self.best_solution = None
+        self.best_score = np.inf
         
         # Success tracking
         self.success_history = np.zeros(20)  # Track last 20 iterations
@@ -63,11 +63,13 @@ class GreyWolfOptimizer(BaseOptimizer):
             self.param_history = {
                 'diversity': []
             }
-    
+            
     def _calculate_diversity(self) -> float:
         """Calculate population diversity"""
         centroid = np.mean(self.population, axis=0)
-        distances = np.sqrt(np.sum((self.population - centroid)**2, axis=1))
+        # Use numpy's broadcasting for squared distance calculation
+        squared_distances = np.sum(np.square(self.population - centroid), axis=1)
+        distances = np.sqrt(squared_distances)
         return np.mean(distances)
     
     def _update_wolves(self, scores: np.ndarray):
@@ -139,7 +141,9 @@ class GreyWolfOptimizer(BaseOptimizer):
         self.a = self.a_init
         
         # Initialize population
-        self.population = self._init_population()
+        self.population = np.zeros((self.population_size, self.dim))
+        for i, (lower, upper) in enumerate(self.bounds):
+            self.population[:, i] = np.random.uniform(lower, upper, self.population_size)
         self.population_scores = np.full(self.population_size, np.inf)
         
         # Initialize wolf hierarchy
@@ -161,43 +165,72 @@ class GreyWolfOptimizer(BaseOptimizer):
                 'diversity': []
             }
             
-    def _optimize(self, objective_func: Callable, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+    def _optimize(self, objective_func: Callable, context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
         """Run GWO optimization"""
         # Evaluate initial population
         for i in range(self.population_size):
             self.population_scores[i] = self._evaluate(self.population[i], objective_func)
+            if self.population_scores[i] < self.best_score:
+                self.best_score = self.population_scores[i]
+                self.best_solution = self.population[i].copy()
         
         # Track initial diversity
         self._update_diversity()
         
-        # Initialize alpha, beta, and delta wolves
-        self._update_wolves(self.population_scores)
-        
         while not self._check_convergence():
+            # Sort population by fitness
+            sorted_indices = np.argsort(self.population_scores)
+            alpha = self.population[sorted_indices[0]]  # Best solution
+            beta = self.population[sorted_indices[1]]   # Second best
+            delta = self.population[sorted_indices[2]]  # Third best
+            
             # Update a parameter
-            if self.adaptive:
-                self._update_parameters()
-            else:
-                self.a = self.a_init * (1 - self.evaluations / self.max_evals)
+            self.a = 2 * (1 - self.evaluations / self.max_evals)
             
             # Update each wolf's position
+            new_population = np.zeros_like(self.population)
+            
+            # Generate random coefficients for all wolves at once
+            A1 = self.a * (2 * np.random.rand() - 1)
+            A2 = self.a * (2 * np.random.rand() - 1)
+            A3 = self.a * (2 * np.random.rand() - 1)
+            C1 = 2 * np.random.rand()
+            C2 = 2 * np.random.rand()
+            C3 = 2 * np.random.rand()
+            
+            # Calculate distances to leaders using broadcasting
+            D_alpha = np.abs(C1 * alpha[np.newaxis, :] - self.population)
+            D_beta = np.abs(C2 * beta[np.newaxis, :] - self.population)
+            D_delta = np.abs(C3 * delta[np.newaxis, :] - self.population)
+            
+            # Calculate position updates using broadcasting
+            X1 = alpha[np.newaxis, :] - A1 * D_alpha
+            X2 = beta[np.newaxis, :] - A2 * D_beta
+            X3 = delta[np.newaxis, :] - A3 * D_delta
+            
+            # Average position updates
+            new_population = (X1 + X2 + X3) / 3
+            
+            # Bound solutions and update population
             for i in range(self.population_size):
-                # Calculate position updates towards alpha, beta, and delta
-                X1 = self._calculate_position_update(self.population[i], self.alpha)
-                X2 = self._calculate_position_update(self.population[i], self.beta)
-                X3 = self._calculate_position_update(self.population[i], self.delta)
+                new_population[i] = self._bound_solution(new_population[i])
+                score = self._evaluate(new_population[i], objective_func)
                 
-                # Update position
-                self.population[i] = (X1 + X2 + X3) / 3.0
-                self.population[i] = self._bound_solution(self.population[i])
-                
-                # Evaluate new position
-                self.population_scores[i] = self._evaluate(self.population[i], objective_func)
+                # Update if better
+                if score < self.population_scores[i]:
+                    self.population[i] = new_population[i]
+                    self.population_scores[i] = score
+                    
+                    # Update best solution
+                    if score < self.best_score:
+                        self.best_score = score
+                        self.best_solution = new_population[i].copy()
             
-            # Update wolf hierarchy
-            self._update_wolves(self.population_scores)
-            
-            # Track diversity
+            # Update parameters and track diversity
+            self._update_parameters()
             self._update_diversity()
+            
+            if self._check_convergence():
+                break
         
-        return self.alpha
+        return self.best_solution, self.best_score

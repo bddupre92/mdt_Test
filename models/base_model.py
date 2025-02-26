@@ -1,22 +1,52 @@
 """
 base_model.py
--------------
-Abstract base class for our ML models, ensuring a consistent interface.
+------------
+Base class for all models
 """
 
 from abc import ABC, abstractmethod
+import numpy as np
 
 class BaseModel(ABC):
+    """Abstract base class for all models"""
+    
     @abstractmethod
-    def train(self, X, y):
+    def fit(self, X, y):
         """
-        Train the model on features X and labels y.
+        Fit the model to the data
+        
+        Args:
+            X: Features
+            y: Labels
+            
+        Returns:
+            dict: Training history
         """
         pass
     
     @abstractmethod
     def predict(self, X):
         """
-        Predict labels or probabilities for X.
+        Make predictions
+        
+        Args:
+            X: Features
+            
+        Returns:
+            array-like: Predictions
+        """
+        pass
+    
+    @abstractmethod
+    def score(self, X, y):
+        """
+        Calculate score (accuracy for classification)
+        
+        Args:
+            X: Features
+            y: True labels
+            
+        Returns:
+            float: Score
         """
         pass

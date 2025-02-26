@@ -138,7 +138,7 @@ class OptimizationHistory:
         Path(self.history_file).parent.mkdir(parents=True, exist_ok=True)
         
         with open(self.history_file, 'w') as f:
-            json.dump([self._convert_to_native_types(record) for record in self.records], f, indent=2)
+            json.dump(self.to_dict(), f, indent=2)
     
     def load_history(self) -> None:
         """Load history from file."""
@@ -147,7 +147,28 @@ class OptimizationHistory:
             
         with open(self.history_file, 'r') as f:
             data = json.load(f)
-            self.records = data
+            self.from_dict(data)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert history to dictionary for JSON serialization."""
+        return {
+            'records': [
+                {
+                    'features': self._convert_to_native_types(record['features']),
+                    'optimizer': record['optimizer'],
+                    'performance': float(record['performance']),
+                    'success': bool(record['success'])
+                }
+                for record in self.records
+            ]
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'OptimizationHistory':
+        """Create history from dictionary."""
+        history = cls()
+        history.records = data['records']
+        return history
     
     def _calculate_similarity(self, features1: Dict[str, float], 
                             features2: Dict[str, float]) -> float:

@@ -1,8 +1,24 @@
 # Core dependencies
 numpy>=1.24.0
-pandas>=2.0.0
-scipy>=1.10.0
-scikit-learn>=1.2.0
+pandas>=1.5.0
+scipy>=1.9.0
+scikit-learn>=1.0.0
+fastapi>=0.95.0
+uvicorn>=0.21.0
+python-multipart>=0.0.6
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+sqlalchemy>=1.4.0
+psycopg2-binary>=2.9.0
+alembic>=1.7.0
+pytest>=7.0.0
+pytest-cov>=4.0.0
+httpx>=0.24.0
+pydantic>=2.0.0
+pydantic[email]>=2.0.0
+python-jose>=3.3.0
+bcrypt>=4.0.0
+aiosqlite>=0.19.0
 
 # Deep Learning
 torch>=2.0.0
@@ -19,31 +35,42 @@ bayesian-optimization>=1.2.0  # Bayesian optimization
 
 # Distributed Computing
 ray[default]>=1.9.0
-dask>=2021.11.0
-distributed>=2021.11.0
+dask>=2023.0.0
+distributed>=2023.0.0
 
-# Visualization and Logging
-matplotlib>=3.7.0
+# MLOps and Tracking
+mlflow>=2.0.0
+wandb>=0.15.0
+
+# Visualization
+plotly>=5.0.0
+dash>=2.0.0
+matplotlib>=3.5.0
 seaborn>=0.12.0
-plotly>=5.13.0
-tensorboard>=2.6.0
-wandb>=0.12.0  # Weights & Biases for experiment tracking
 
-# Testing and Development
-pytest>=7.3.0
-pytest-cov>=2.12.0
-black>=21.9b0
-flake8>=3.9.0
-mypy>=0.910
+# Data Processing
+pyarrow>=10.0.0
+polars>=0.15.0
+category_encoders>=2.5.0
 
-# System Monitoring
-psutil>=5.9.0
-memory-profiler>=0.58.0
+# Testing and Quality
+black>=22.0.0
+flake8>=6.0.0
+mypy>=1.0.0
+pytest-asyncio>=0.20.0
+pytest-xdist>=3.0.0
+coverage>=7.0.0
 
-# Additional ML Tools
-imbalanced-learn>=0.8.0  # For handling class imbalance
-shap>=0.39.0  # For model interpretability
-lime>=0.2.0  # For local interpretable model-agnostic explanations
-xgboost>=1.4.0  # For gradient boosting
-lightgbm>=3.2.0  # For gradient boosting
-catboost>=0.26.0  # For gradient boosting
+# Documentation
+sphinx>=5.0.0
+sphinx-rtd-theme>=1.0.0
+nbsphinx>=0.8.0
+jupyter>=1.0.0
+
+# Utilities
+tqdm>=4.65.0
+click>=8.0.0
+python-dotenv>=1.0.0
+pyyaml>=6.0.0
+joblib>=1.2.0
+requests>=2.28.0

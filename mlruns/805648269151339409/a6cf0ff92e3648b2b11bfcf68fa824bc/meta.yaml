@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/blair.dupre/Documents/migrineDT/mdt_Test/mlruns/805648269151339409/a6cf0ff92e3648b2b11bfcf68fa824bc/artifacts
+end_time: 1740452520591
+entry_point_name: ''
+experiment_id: '805648269151339409'
+lifecycle_stage: active
+run_id: a6cf0ff92e3648b2b11bfcf68fa824bc
+run_name: model_training
+run_uuid: a6cf0ff92e3648b2b11bfcf68fa824bc
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1740452520580
+status: 3
+tags: []
+user_id: blair.dupre

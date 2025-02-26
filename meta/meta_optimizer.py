@@ -220,41 +220,43 @@ class MetaOptimizer:
         
         return selected_optimizers
 
-    def _run_single_optimizer(self, 
-                            optimizer_name: str, 
+    def _run_single_optimizer(self,
+                            optimizer_name: str,
                             optimizer,
                             objective_func: Callable,
                             max_evals: int,
-                            record_history: bool = True) -> OptimizationResult:
+                            record_history: bool = True) -> Optional[OptimizationResult]:
         """Run a single optimizer and return its results"""
         try:
             # Reset optimizer state
             optimizer.reset()
             
-            # Create a wrapped objective function to count evaluations
+            # Create wrapped objective that ensures numpy array input
             def wrapped_objective(x):
-                with self._eval_lock:
-                    self.total_evaluations += 1
-                value = objective_func(x)
-                if record_history:
-                    self.optimization_history.append(float(value))
-                return value
+                x = np.asarray(x)
+                return float(objective_func(x))
             
             # Run optimization
-            solution = optimizer.optimize(
-                wrapped_objective,
-                max_evals=max_evals,
-                record_history=True
-            )
-            
+            solution, score = optimizer._optimize(wrapped_objective)
             if solution is None:
                 return None
                 
-            score = objective_func(solution)
+            # Convert to numpy array and ensure float score
+            solution = np.asarray(solution)
+            score = float(score)
+            
             with self._eval_lock:
                 self.total_evaluations += 1
                 if record_history:
-                    self.optimization_history.append(float(score))
+                    # Record optimization history
+                    self.optimization_history.append(score)
+                    if self.current_features:
+                        self.history.add_record(
+                            features=self.current_features,
+                            optimizer=optimizer_name,
+                            performance=score,
+                            success=score < 1e-4
+                        )
             
             success = score < 1e-4
             

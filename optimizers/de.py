@@ -15,8 +15,8 @@ class DifferentialEvolutionOptimizer(BaseOptimizer):
                  bounds: List[Tuple[float, float]],
                  population_size: int = 50,
                  max_evals: int = 10000,
-                 F: float = 0.8,
-                 CR: float = 0.5,
+                 F: float = 0.6,
+                 CR: float = 0.7,
                  adaptive: bool = True,
                  **kwargs):
         """
@@ -40,19 +40,30 @@ class DifferentialEvolutionOptimizer(BaseOptimizer):
         self.F = F
         self.CR = CR
         
-        # Initialize population
-        self.population = self._init_population()
-        self.population_scores = np.full(population_size, np.inf)
+        # Initialize population as a (population_size, dim) array
+        self.population = np.zeros((self.population_size, self.dim))
+        for i, (lower, upper) in enumerate(self.bounds):
+            self.population[:, i] = np.random.uniform(lower, upper, self.population_size)
+        
+        # Initialize scores
+        self.population_scores = np.full(self.population_size, np.inf)
+        
+        # Track best solution
+        self.best_solution = None
+        self.best_score = np.inf
         
         # Initialize parameter history
         if adaptive:
             self.param_history = {
                 'F': [F],
                 'CR': [CR],
-                'success_rate': []
+                'success_rate': [],
+                'diversity': []
             }
         else:
-            self.param_history = {}
+            self.param_history = {
+                'diversity': []
+            }
         
         # Success tracking
         self.success_history = np.zeros(20)  # Track last 20 iterations
@@ -95,16 +106,12 @@ class DifferentialEvolutionOptimizer(BaseOptimizer):
         
         # Update F and CR based on success rate
         if success_rate > 0.5:
-            self.F *= 0.9  # Decrease F to focus on exploitation
-            self.CR *= 0.9  # Decrease CR to focus on exploitation
+            self.F = max(0.4, self.F * 0.95)
+            self.CR = max(0.5, self.CR * 0.95)
         else:
-            self.F *= 1.1  # Increase F to encourage exploration
-            self.CR *= 1.1  # Increase CR to encourage exploration
+            self.F = min(0.8, self.F * 1.05)
+            self.CR = min(0.9, self.CR * 1.05)
             
-        # Keep parameters within reasonable bounds
-        self.F = np.clip(self.F, 0.1, 2.0)
-        self.CR = np.clip(self.CR, 0.1, 0.9)
-        
         # Record parameter values
         self.param_history['F'].append(self.F)
         self.param_history['CR'].append(self.CR)
@@ -114,6 +121,7 @@ class DifferentialEvolutionOptimizer(BaseOptimizer):
         """Track population diversity"""
         diversity = np.mean(np.std(self.population, axis=0))
         self.diversity_history.append(diversity)
+        self.param_history['diversity'].append(diversity)
     
     def reset(self):
         """Reset optimizer state"""
@@ -128,38 +136,73 @@ class DifferentialEvolutionOptimizer(BaseOptimizer):
             self.param_history.update({
                 'F': [self.F_init],
                 'CR': [self.CR_init],
-                'success_rate': []
+                'success_rate': [],
+                'diversity': []
+            })
+        else:
+            self.param_history.update({
+                'diversity': []
             })
     
-    def _optimize(self, objective_func: Callable, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+    def _optimize(self, objective_func: Callable, context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
         """Run DE optimization"""
         # Evaluate initial population
         for i in range(self.population_size):
             self.population_scores[i] = self._evaluate(self.population[i], objective_func)
+            if self.population_scores[i] < self.best_score:
+                self.best_score = self.population_scores[i]
+                self.best_solution = self.population[i].copy()
         
         # Track initial diversity
         self._update_diversity()
         
         while not self._check_convergence():
-            # Generate and evaluate trial solutions
+            # Create new population
+            new_population = np.zeros_like(self.population)
+            
             for i in range(self.population_size):
-                # Generate trial solution
-                mutant = self._mutate(i)
-                trial = self._crossover(self.population[i], mutant)
+                # Select three random parents
+                a, b, c = np.random.choice(
+                    [j for j in range(self.population_size) if j != i],
+                    size=3, replace=False
+                )
                 
-                # Evaluate trial solution
+                # Create mutant vector
+                mutant = self.population[a] + self.F * (self.population[b] - self.population[c])
+                
+                # Create trial vector through crossover
+                trial = np.zeros_like(mutant)
+                j_rand = np.random.randint(self.dim)
+                for j in range(self.dim):
+                    if np.random.rand() < self.CR or j == j_rand:
+                        trial[j] = mutant[j]
+                    else:
+                        trial[j] = self.population[i, j]
+                
+                # Bound trial vector
+                trial = self._bound_solution(trial)
+                
+                # Evaluate trial vector
                 trial_score = self._evaluate(trial, objective_func)
                 
                 # Selection
                 if trial_score <= self.population_scores[i]:
-                    self.population[i] = trial
+                    new_population[i] = trial
                     self.population_scores[i] = trial_score
+                    if trial_score < self.best_score:
+                        self.best_score = trial_score
+                        self.best_solution = trial.copy()
+                else:
+                    new_population[i] = self.population[i]
             
-            # Update parameters
-            if self.adaptive:
-                self._update_parameters()
+            # Update population
+            self.population = new_population
             
-            # Track diversity
+            # Update parameters and track diversity
+            self._update_parameters()
             self._update_diversity()
+            
+            if self._check_convergence():
+                break
         
-        return self.best_solution
+        return self.best_solution, self.best_score

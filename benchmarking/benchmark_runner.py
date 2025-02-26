@@ -24,6 +24,7 @@ from optimizers.aco import AntColonyOptimizer
 from optimizers.gwo import GreyWolfOptimizer
 from optimizers.es import EvolutionStrategy
 from optimizers.de import DifferentialEvolutionOptimizer
+from meta.meta_optimizer import MetaOptimizer
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -75,7 +76,26 @@ class BenchmarkRunner:
             initial_memory = process.memory_info().rss
         
         start_time = time.time()
-        best_solution, best_fitness = optimizer.optimize(func)
+        
+        # Handle meta-optimizer differently
+        if isinstance(optimizer, MetaOptimizer):
+            # Create objective function wrapper for meta-optimizer
+            def objective_func(x):
+                return func(x)
+            
+            best_solution = optimizer.optimize(
+                objective_func,
+                max_evals=self.max_evaluations,
+                context={'problem_type': func.name if hasattr(func, 'name') else 'unknown'}
+            )
+            best_fitness = func(best_solution)
+            convergence_curve = optimizer.optimization_history
+            evaluations = optimizer.total_evaluations
+        else:
+            best_solution, best_fitness = optimizer.optimize(func)
+            convergence_curve = optimizer.convergence_curve
+            evaluations = optimizer.evaluations
+            
         time_taken = time.time() - start_time
         
         if self.memory_tracking:
@@ -85,8 +105,8 @@ class BenchmarkRunner:
         
         return (
             best_fitness,
-            optimizer.convergence_curve,
-            optimizer.evaluations,
+            convergence_curve,
+            evaluations,
             memory_peak
         )
     
@@ -99,58 +119,60 @@ class BenchmarkRunner:
         self,
         dimensions: List[int] = [2, 10, 30],
         bounds: List[Tuple[float, float]] = [(-5.12, 5.12)]
-    ) -> pd.DataFrame:
+    ) -> Dict[str, List[BenchmarkResult]]:
         """Run benchmarks on theoretical test functions"""
-        results = []
+        results = {}
         
-        for opt in self.optimizers:
+        for dim in dimensions:
             for func_name, func_factory in self.test_functions.items():
-                for dim in dimensions:
-                    logger.info(f"Testing {opt.__class__.__name__} on {func_name} ({dim}D)")
+                logger.info(f"Running {func_name} benchmark in {dim} dimensions")
+                
+                func = func_factory(dim, bounds)
+                func_results = []
+                
+                for optimizer in self.optimizers:
+                    optimizer_name = (
+                        optimizer.__class__.__name__ 
+                        if not hasattr(optimizer, 'name') 
+                        else optimizer.name
+                    )
+                    logger.info(f"Testing {optimizer_name}")
                     
-                    # Create function instance
-                    test_func = func_factory(dim=dim, bounds=bounds*dim)
-                    
-                    # Parallel execution of multiple runs
-                    if self.use_ray:
-                        futures = [
-                            self._run_single_optimization_ray.remote(
-                                self, opt, test_func, i
-                            ) for i in range(self.n_runs)
-                        ]
-                        run_results = ray.get(futures)
-                    else:
-                        with ProcessPoolExecutor() as executor:
-                            futures = [
-                                executor.submit(
-                                    self._run_single_optimization,
-                                    opt, test_func, i
-                                ) for i in range(self.n_runs)
-                            ]
-                            run_results = [f.result() for f in futures]
+                    # Run multiple times
+                    run_results = []
+                    for run in range(self.n_runs):
+                        optimizer.reset()  # Reset optimizer state
+                        result = self._run_single_optimization(
+                            optimizer, func, run
+                        )
+                        run_results.append(result)
                     
                     # Aggregate results
-                    fitnesses = [r[0] for r in run_results]
-                    convergence_curves = [r[1] for r in run_results]
-                    evaluations = [r[2] for r in run_results]
-                    memory_peaks = [r[3] for r in run_results]
+                    best_fitnesses = [r[0] for r in run_results]
+                    mean_fitness = np.mean(best_fitnesses)
+                    std_fitness = np.std(best_fitnesses)
+                    total_evals = sum(r[2] for r in run_results)
+                    total_time = sum(r[3] for r in run_results)
                     
-                    result = BenchmarkResult(
-                        optimizer_name=opt.__class__.__name__,
+                    # Store result
+                    benchmark_result = BenchmarkResult(
+                        optimizer_name=optimizer_name,
                         function_name=func_name,
                         dimension=dim,
-                        best_fitness=min(fitnesses),
-                        mean_fitness=np.mean(fitnesses),
-                        std_fitness=np.std(fitnesses),
-                        iterations=len(convergence_curves[0]),
-                        evaluations=np.mean(evaluations),
-                        time_taken=np.mean([r[2] for r in run_results]),
-                        memory_peak=np.mean(memory_peaks),
-                        convergence_history=np.mean(convergence_curves, axis=0).tolist()
+                        best_fitness=min(best_fitnesses),
+                        mean_fitness=mean_fitness,
+                        std_fitness=std_fitness,
+                        iterations=self.n_runs,
+                        evaluations=total_evals // self.n_runs,
+                        time_taken=total_time / self.n_runs,
+                        memory_peak=max(r[3] for r in run_results),
+                        convergence_history=run_results[0][1]  # Use first run's history
                     )
-                    results.append(asdict(result))
-        
-        return pd.DataFrame(results)
+                    func_results.append(benchmark_result)
+                
+                results[f"{func_name}_{dim}d"] = func_results
+                
+        return results
     
     def run_ml_benchmarks(
         self,
@@ -321,7 +343,8 @@ def run_comprehensive_benchmark(
     
     # Run theoretical benchmarks
     theoretical_results = runner.run_theoretical_benchmarks()
-    theoretical_results.to_csv(f'{output_dir}/theoretical_results.csv')
+    theoretical_results_df = pd.concat([pd.DataFrame(v) for v in theoretical_results.values()], ignore_index=True)
+    theoretical_results_df.to_csv(f'{output_dir}/theoretical_results.csv')
     
     # Run ML benchmarks
     model_factories = {
@@ -354,10 +377,10 @@ def run_comprehensive_benchmark(
         
         f.write("1. Theoretical Benchmarks\n")
         f.write("-----------------------\n")
-        for func in theoretical_results['function_name'].unique():
+        for func in theoretical_results_df['function_name'].unique():
             f.write(f"\n{func} Function:\n")
-            func_data = theoretical_results[
-                theoretical_results['function_name'] == func
+            func_data = theoretical_results_df[
+                theoretical_results_df['function_name'] == func
             ]
             for _, row in func_data.iterrows():
                 f.write(f"  {row['optimizer_name']}:\n")

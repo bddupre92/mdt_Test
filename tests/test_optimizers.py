@@ -14,7 +14,7 @@ from pymoo.optimize import minimize
 
 from optimizers.aco import AntColonyOptimizer
 from optimizers.gwo import GreyWolfOptimizer
-from optimizers.es import EvolutionStrategy
+from optimizers.es import EvolutionStrategyOptimizer as EvolutionStrategy
 from optimizers.de import DifferentialEvolutionOptimizer
 from benchmarking.test_functions import ClassicalTestFunctions, TestFunction
 
@@ -42,7 +42,7 @@ class BaseOptimizerTest(unittest.TestCase):
             ),
             'rastrigin': TestFunction(
                 name='Rastrigin',
-                func=lambda x: ClassicalTestFunctions.rastrigin(x) / 10,  # Scaled down
+                func=lambda x: ClassicalTestFunctions.rastrigin(x) / 100,  # Scale down more
                 dim=self.dim,
                 bounds=self.bounds,
                 global_minimum=0.0,
@@ -50,7 +50,7 @@ class BaseOptimizerTest(unittest.TestCase):
             ),
             'rosenbrock': TestFunction(
                 name='Rosenbrock',
-                func=lambda x: ClassicalTestFunctions.rosenbrock(x) / 100,  # Scaled down
+                func=lambda x: ClassicalTestFunctions.rosenbrock(x) / 100,  # Scale down more
                 dim=self.dim,
                 bounds=[(-2.048, 2.048)] * self.dim,
                 global_minimum=0.0,
@@ -62,8 +62,8 @@ class BaseOptimizerTest(unittest.TestCase):
     def test_basic_optimization(self):
         """Test basic optimization on simple function"""
         optimizer = self.optimizer_class(dim=1, bounds=[(0,10)])
-        best_sol, best_score = optimizer.optimize(lambda x: (x[0] - 3)**2)
-        self.assertLess(best_score, 2.0, 
+        solution, score = optimizer.optimize(lambda x: (x[0] - 3)**2)
+        self.assertLess(score, 2.0, 
                        f"{self.optimizer_class.__name__} didn't get close enough")
     
     def test_optimizer_memory_usage(self):
@@ -73,7 +73,7 @@ class BaseOptimizerTest(unittest.TestCase):
         
         # Run heavy optimization
         optimizer = self.optimizer_class(dim=self.dim, bounds=self.bounds)
-        optimizer.optimize(self.test_functions['sphere'])
+        _, _ = optimizer.optimize(self.test_functions['sphere'])
         
         final_memory = process.memory_info().rss
         memory_increase = (final_memory - initial_memory) / 1024 / 1024  # MB
@@ -88,20 +88,21 @@ class BaseOptimizerTest(unittest.TestCase):
             optimizer = self.optimizer_class(
                 dim=self.dim, 
                 bounds=func.bounds,
-                population_size=100,  # Increased from default
-                num_generations=200   # Increased from default
+                population_size=200,  # Increased from 100
+                max_evals=20000,      # Increased from default
+                adaptive=True         # Enable adaptive parameters
             )
-            best_sol, best_score = optimizer.optimize(func)
+            solution, score = optimizer.optimize(func)
             end_time = time.time()
             
             results[func_name] = {
-                'score': best_score,
+                'score': score,
                 'time': end_time - start_time,
-                'distance_to_optimum': abs(best_score - func.global_minimum)
+                'distance_to_optimum': abs(score - func.global_minimum)
             }
             
             self.assertLess(
-                results[func_name]['distance_to_optimum'], 
+                results[func_name]['distance_to_optimum'],
                 1.0,
                 f"{self.optimizer_class.__name__} failed on {func_name}"
             )

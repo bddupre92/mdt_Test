@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.0] - 2025-02-25
+
+### Added
+- New FastAPI-based application structure in `app/` directory
+- Comprehensive test suite with pytest fixtures and configuration
+- Model factory implementation for consistent model creation
+- Enhanced drift detection with severity calculation and trend analysis
+- Synthetic data generation with concept drift simulation
+- Development requirements in `requirements-dev.txt`
+- Testing guide documentation
+- Alembic database migrations
+- Environment configuration example
+- New example scripts for meta-optimizer usage
+
+### Changed
+- Improved meta-learner parameter ranges and optimization
+- Enhanced optimizer history tracking
+- Updated model wrapper implementations
+- Refactored drift detection logic for better accuracy
+- Restructured project layout for better organization
+- Updated requirements.txt with new dependencies
+- Improved documentation and code comments
+
+### Removed
+- Deprecated TensorFlow model implementation
+- Old example scripts
+- Unused test files
+
+### Fixed
+- DataFrame concatenation warnings in optimizer
+- Multi-dimensional data handling in drift detection
+- Model parameter scaling in meta-learner
+- Various bug fixes in optimizers and model training
+
 ## [5.0.0] - 2025-02-24
 
 ### Added

@@ -1,65 +1,93 @@
 """
-torch_model.py
---------------
-Example of a PyTorch model wrapper for migraine classification.
+PyTorch model wrapper.
 """
-
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-from .base_model import BaseModel
-
-class SimpleTorchNet(nn.Module):
-    def __init__(self, input_dim, hidden_dim=16, output_dim=1):
-        super(SimpleTorchNet, self).__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(hidden_dim, output_dim)
+class TorchModel:
+    """Wrapper for PyTorch models."""
     
-    def forward(self, x):
-        # x shape: (batch_size, input_dim)
-        x = self.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
-
-class TorchModel(BaseModel):
-    def __init__(self, input_dim, hidden_dim=16, lr=0.001, epochs=10):
-        """
-        :param input_dim: number of features
-        :param hidden_dim: size of hidden layer
-        :param lr: learning rate
-        :param epochs: number of training epochs
-        """
-        self.model = SimpleTorchNet(input_dim, hidden_dim=hidden_dim)
-        self.lr = lr
-        self.epochs = epochs
-        self.criterion = nn.BCEWithLogitsLoss()  # for binary classification
-        self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
-    
-    def train(self, X, y):
-        """
-        X, y: numpy arrays
-        """
-        X_torch = torch.tensor(X, dtype=torch.float32)
-        y_torch = torch.tensor(y, dtype=torch.float32).view(-1,1)
+    def __init__(self, model: nn.Module, criterion=None, optimizer=None, optimizer_class=None, optimizer_params=None, learning_rate=0.001, device=None):
+        """Initialize model."""
+        self.model = model
+        self.criterion = criterion or nn.BCELoss()
+        self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model.to(self.device)
         
-        for epoch in range(self.epochs):
-            self.model.train()
-            self.optimizer.zero_grad()
-            outputs = self.model(X_torch)
-            loss = self.criterion(outputs, y_torch)
-            loss.backward()
-            self.optimizer.step()
+        # Handle optimizer
+        if optimizer is not None:
+            self.optimizer = optimizer
+        elif optimizer_class is not None:
+            if optimizer_params is None:
+                optimizer_params = {}
+            optimizer_params['lr'] = optimizer_params.get('lr', learning_rate)
+            self.optimizer = optimizer_class(self.model.parameters(), **optimizer_params)
+        else:
+            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
     
-    def predict(self, X):
-        """
-        Returns 0/1 predictions based on sigmoid output
-        """
+    def train(self, X: np.ndarray, y: np.ndarray, epochs: int = 10, batch_size: int = 32) -> None:
+        """Train model (alias for fit)."""
+        return self.fit(X, y, epochs, batch_size)
+    
+    def fit(self, X: np.ndarray, y: np.ndarray, epochs: int = 10, batch_size: int = 32) -> None:
+        """Train model."""
+        X_tensor = torch.FloatTensor(X).to(self.device)
+        y_tensor = torch.FloatTensor(y).to(self.device)
+        dataset = TensorDataset(X_tensor, y_tensor)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        
+        self.model.train()
+        for epoch in range(epochs):
+            for batch_X, batch_y in dataloader:
+                self.optimizer.zero_grad()
+                outputs = self.model(batch_X)
+                loss = self.criterion(outputs.squeeze(), batch_y)
+                loss.backward()
+                self.optimizer.step()
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Make predictions."""
+        X_tensor = torch.FloatTensor(X).to(self.device)
         self.model.eval()
-        X_torch = torch.tensor(X, dtype=torch.float32)
         with torch.no_grad():
-            logits = self.model(X_torch)
-            probs = torch.sigmoid(logits)
-            preds = (probs >= 0.5).int().squeeze().numpy()
-        return preds
+            outputs = self.model(X_tensor)
+        predictions = (outputs.squeeze().cpu().numpy() > 0.5).astype(int)
+        return predictions
+    
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        """Get prediction probabilities."""
+        X_tensor = torch.FloatTensor(X).to(self.device)
+        self.model.eval()
+        with torch.no_grad():
+            outputs = self.model(X_tensor)
+        probabilities = outputs.squeeze().cpu().numpy()
+        return np.vstack((1 - probabilities, probabilities)).T
+    
+    def evaluate(self, X: np.ndarray, y: np.ndarray) -> dict:
+        """Evaluate model performance."""
+        y_pred = self.predict(X)
+        return {
+            'accuracy': accuracy_score(y, y_pred),
+            'precision': precision_score(y, y_pred),
+            'recall': recall_score(y, y_pred),
+            'f1': f1_score(y, y_pred)
+        }
+    
+    def save(self, path: str) -> None:
+        """Save model to disk."""
+        torch.save({
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+        }, path)
+    
+    @classmethod
+    def load(cls, path: str, model: nn.Module) -> 'TorchModel':
+        """Load model from disk."""
+        checkpoint = torch.load(path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer = torch.optim.Adam(model.parameters())
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        return cls(model, optimizer=optimizer)
