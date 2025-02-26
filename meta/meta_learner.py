@@ -1,263 +1,207 @@
 """
 meta_learner.py
----------------
-High-level orchestrator for algorithm selection using Bayesian or RL approaches.
-We show placeholders for actual usage of scikit-optimize or RL libraries.
+-------------
+Meta-learner implementation that combines multiple optimization algorithms
 """
 
+from typing import Dict, Any, Optional, Callable, List, Tuple
 import numpy as np
-from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+from models.model_factory import ModelFactory
 
 class MetaLearner:
-    def __init__(self, method='bayesian', surrogate_model=None):
-        """
-        method: 'bayesian' or 'rl'
-        surrogate_model: optional model for Bayesian optimization
-        """
-        self.method = method
-        self.surrogate_model = surrogate_model
-        self.history = []  # store dicts with algorithm and performance
+    def __init__(self):
         self.algorithms = []
-        self.state_dim = 2  # example dimension of context
-        self.current_phase = None
-        self.phase_state = 'explore'  # 'explore' or 'exploit'
-        self.best_in_phase = None
-        self.exploration_order = None
         self.best_config = None
+        self.best_score = float('-inf')
+        self.feature_names = None
         
-    def set_algorithms(self, alg_list):
-        """
-        alg_list: list of available optimizer objects or references
-        """
-        self.algorithms = alg_list
+        # Enhanced parameter ranges
+        self.param_ranges = {
+            'n_estimators': (100, 500),  # Increased from (50, 200)
+            'max_depth': (5, 25),        # Increased from (3, 15)
+            'min_samples_split': (2, 30), # Increased from (2, 20)
+            'min_samples_leaf': (1, 15),  # Added parameter
+            'max_features': ['sqrt', 'log2', None]  # Added parameter
+        }
+        
+        # Performance tracking
+        self.eval_history = []
+        self.param_importance = {}
     
-    def select_algorithm_bayesian(self, context):
-        """
-        Select algorithm using a simple state machine approach.
-        States:
-        - explore: Try each algorithm in sequence
-        - exploit: Use best performing algorithm
-        """
-        # Get current phase
-        phase = context.get('phase', 1)
-        
-        # Reset state on phase change
-        if phase != self.current_phase:
-            self.current_phase = phase
-            self.phase_state = 'explore'
-            self.best_in_phase = None
-            # Use fixed exploration order in Phase 2
-            if phase == 2:
-                # Start with Opt2 in Phase 2 since it should perform best
-                self.exploration_order = [
-                    i for i, algo in enumerate(self.algorithms)
-                    if algo.name == 'Opt2'
-                ]
-                self.exploration_order.extend([
-                    i for i, algo in enumerate(self.algorithms)
-                    if algo.name != 'Opt2'
-                ])
-            else:
-                # In Phase 1, try algorithms in order
-                self.exploration_order = list(range(len(self.algorithms)))
-        
-        # Get phase-specific history
-        phase_history = [h for h in self.history if h.get('phase', 1) == phase]
-        
-        if self.phase_state == 'explore':
-            # Try each algorithm in sequence
-            for i in self.exploration_order:
-                algo = self.algorithms[i]
-                if not any(h['algorithm'] == algo.name for h in phase_history):
-                    return algo
-                    
-            # After trying each algorithm, find the best one
-            perfs = {}
-            for algo in self.algorithms:
-                algo_hist = [h['performance'] for h in phase_history if h['algorithm'] == algo.name]
-                if algo_hist:
-                    perfs[algo.name] = np.mean(algo_hist[-2:])  # Look at last 2 trials
-            
-            if perfs:
-                # In Phase 2, bias towards Opt2 if it's performing reasonably well
-                if phase == 2:
-                    opt2_perf = perfs.get('Opt2', 0)
-                    if opt2_perf >= 0.6:
-                        self.best_in_phase = 'Opt2'
-                    else:
-                        self.best_in_phase = max(perfs.items(), key=lambda x: x[1])[0]
-                else:
-                    self.best_in_phase = max(perfs.items(), key=lambda x: x[1])[0]
-                
-                self.phase_state = 'exploit'
-                return next(algo for algo in self.algorithms if algo.name == self.best_in_phase)
-        
-        if self.phase_state == 'exploit':
-            # Check if best algorithm is still performing well
-            if self.best_in_phase:
-                recent_hist = [h for h in phase_history if h['algorithm'] == self.best_in_phase][-2:]
-                avg_perf = np.mean([h['performance'] for h in recent_hist])
-                
-                if avg_perf < 0.4:  # More aggressive threshold
-                    # Performance degraded, go back to exploration
-                    self.phase_state = 'explore'
-                    # Try Opt2 first in Phase 2
-                    if phase == 2:
-                        self.exploration_order = [
-                            i for i, algo in enumerate(self.algorithms)
-                            if algo.name == 'Opt2'
-                        ]
-                        self.exploration_order.extend([
-                            i for i, algo in enumerate(self.algorithms)
-                            if algo.name != 'Opt2'
-                        ])
-                    else:
-                        self.exploration_order = list(range(len(self.algorithms)))
-                    return self.algorithms[self.exploration_order[0]]
-                else:
-                    return next(algo for algo in self.algorithms if algo.name == self.best_in_phase)
-        
-        # Fallback: try first algorithm
-        return self.algorithms[0]
+    def set_algorithms(self, algorithms: List[Any]) -> None:
+        """Set optimization algorithms to use"""
+        self.algorithms = algorithms
     
-    def select_algorithm_rl(self, context):
+    def optimize(self, X: np.ndarray, y: np.ndarray, 
+                context: Optional[Dict] = None,
+                progress_callback: Optional[Callable[[int, float], None]] = None,
+                max_iterations: int = 100,
+                feature_names: Optional[List[str]] = None) -> None:
         """
-        Placeholder for an RL approach. We might do a bandit or a policy-based selection.
-        Here, just random for demo.
-        """
-        idx = np.random.randint(len(self.algorithms))
-        return self.algorithms[idx]
-    
-    def select_algorithm(self, context=None):
-        """
-        Select the best algorithm based on context and history.
-        """
-        if not self.algorithms:
-            raise ValueError("No algorithms available")
-            
-        if context is None:
-            context = {}
-            
-        # Add phase to history entries
-        for hist in self.history:
-            if 'phase' not in hist and 'context' in hist:
-                hist['phase'] = hist['context'].get('phase', 1)
-        
-        if self.method == 'bayesian':
-            return self.select_algorithm_bayesian(context)
-        else:
-            return self.select_algorithm_rl(context)
-    
-    def update(self, algorithm, performance, context=None):
-        """
-        Update history with new performance data.
-        """
-        if context is None:
-            context = {}
-            
-        self.history.append({
-            'algorithm': algorithm,
-            'performance': performance,
-            'phase': context.get('phase', 1),
-            'context': context
-        })
-    
-    def update_rl(self, algorithm, reward, state):
-        """
-        Update RL policy with reward
-        """
-        self.history.append({
-            'algorithm': algorithm,
-            'reward': reward,
-            'state': state
-        })
-
-    def optimize(self, X, y, context=None):
-        """
-        Run optimization process to find best model configuration
+        Run optimization process
         
         Args:
             X: Features
             y: Labels
             context: Optional context dictionary
+            progress_callback: Optional callback for progress updates
+            max_iterations: Maximum iterations for optimization
+            feature_names: Optional list of feature names
         """
         if context is None:
             context = {}
             
-        # Select algorithm based on context
-        algorithm = self.select_algorithm(context)
+        self.feature_names = feature_names
+        current_iteration = 0
         
-        # Run optimization
-        best_params, _ = algorithm.optimize(
-            lambda params: self._evaluate_config(params, X, y),
-            max_evals=100
-        )
-        
-        # Scale parameters to more reasonable ranges
-        n_estimators = max(50, int(best_params[0].item() * 500))  # Scale to [50, 500]
-        max_depth = max(5, int(best_params[1].item() * 30))      # Scale to [5, 30]
-        
-        # Create best configuration
-        self.best_config = {
-            'type': 'random_forest',  # Start with random forest
-            'params': {
-                'n_estimators': n_estimators,
-                'max_depth': max_depth
-            }
-        }
-        
-        # Update history
-        performance = self._evaluate_config(best_params, X, y)
-        self.update(algorithm.__class__.__name__, performance, context)
-        
-    def get_best_configuration(self):
-        """
-        Get the best configuration found during optimization
-        
-        Returns:
-            dict: Best model configuration
-        """
-        if self.best_config is None:
-            # Return default configuration if no optimization has been run
-            return {
-                'type': 'random_forest',
-                'params': {
-                    'n_estimators': 100,
-                    'max_depth': 10
+        for algorithm in self.algorithms:
+            def objective_function(params):
+                nonlocal current_iteration
+                
+                # Scale parameters to actual ranges
+                scaled_params = {
+                    'n_estimators': int(params[0] * (self.param_ranges['n_estimators'][1] - self.param_ranges['n_estimators'][0]) + self.param_ranges['n_estimators'][0]),
+                    'max_depth': int(params[1] * (self.param_ranges['max_depth'][1] - self.param_ranges['max_depth'][0]) + self.param_ranges['max_depth'][0]),
+                    'min_samples_split': int(params[2] * (self.param_ranges['min_samples_split'][1] - self.param_ranges['min_samples_split'][0]) + self.param_ranges['min_samples_split'][0]),
+                    'min_samples_leaf': int(params[3] * (self.param_ranges['min_samples_leaf'][1] - self.param_ranges['min_samples_leaf'][0]) + self.param_ranges['min_samples_leaf'][0]),
+                    'max_features': self.param_ranges['max_features'][int(params[4] * len(self.param_ranges['max_features']))]
                 }
-            }
-        return self.best_config
-        
-    def _evaluate_config(self, params, X, y):
+                
+                score = self._evaluate_config(scaled_params, X, y)
+                
+                # Track evaluation
+                self.eval_history.append({
+                    'iteration': current_iteration,
+                    'params': scaled_params,
+                    'score': score
+                })
+                
+                if progress_callback:
+                    progress_callback(current_iteration, score)
+                current_iteration += 1
+                
+                return -score  # Negative because optimizers minimize
+            
+            # Run optimization
+            best_params, _ = algorithm.optimize(
+                objective_function,
+                max_evals=max_iterations
+            )
+            
+            # Update best configuration if better
+            performance = -objective_function(best_params)
+            if performance > self.best_score:
+                self.best_score = performance
+                self.best_config = self._scale_parameters(best_params)
+                
+        # Calculate parameter importance
+        self._update_param_importance()
+    
+    def _scale_parameters(self, params):
+        """Scale parameters to actual ranges"""
+        return {
+            'n_estimators': int(params[0] * (self.param_ranges['n_estimators'][1] - self.param_ranges['n_estimators'][0]) + self.param_ranges['n_estimators'][0]),
+            'max_depth': int(params[1] * (self.param_ranges['max_depth'][1] - self.param_ranges['max_depth'][0]) + self.param_ranges['max_depth'][0]),
+            'min_samples_split': int(params[2] * (self.param_ranges['min_samples_split'][1] - self.param_ranges['min_samples_split'][0]) + self.param_ranges['min_samples_split'][0]),
+            'min_samples_leaf': int(params[3] * (self.param_ranges['min_samples_leaf'][1] - self.param_ranges['min_samples_leaf'][0]) + self.param_ranges['min_samples_leaf'][0]),
+            'max_features': self.param_ranges['max_features'][int(params[4] * len(self.param_ranges['max_features']))]
+        }
+    
+    def _evaluate_config(self, params: Dict[str, Any], X: np.ndarray, y: np.ndarray) -> float:
         """
         Evaluate a configuration using cross-validation
         
         Args:
-            params: Model parameters (numpy array)
-            X: Features
-            y: Labels
+            params: Model configuration to evaluate
+            X: Training features
+            y: Training labels
             
         Returns:
-            float: Performance score
+            Mean validation score
         """
-        from sklearn.model_selection import cross_val_score
-        from sklearn.ensemble import RandomForestClassifier
+        # Simple holdout validation for speed
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
         
-        # Scale parameters to more reasonable ranges
-        if isinstance(params, np.ndarray):
-            n_estimators = max(50, int(params[0].item() * 500))  # Scale to [50, 500]
-            max_depth = max(5, int(params[1].item() * 30))      # Scale to [5, 30]
-        else:
-            n_estimators = max(50, int(params[0] * 500))
-            max_depth = max(5, int(params[1] * 30))
+        factory = ModelFactory()
+        model = factory.create_model(params)
+        model.fit(X_train, y_train, feature_names=self.feature_names)
+        return model.score(X_val, y_val)
+    
+    def _update_param_importance(self):
+        """Calculate parameter importance based on evaluation history"""
+        if not self.eval_history:
+            return
+            
+        # Convert history to numpy arrays
+        scores = np.array([h['score'] for h in self.eval_history])
         
-        # Create and evaluate model
-        model = RandomForestClassifier(
-            n_estimators=n_estimators,
-            max_depth=max_depth,
-            random_state=42
-        )
+        # Calculate importance for each parameter
+        for param in self.param_ranges.keys():
+            values = np.array([h['params'][param] for h in self.eval_history])
+            correlation = np.corrcoef(values, scores)[0, 1]
+            self.param_importance[param] = abs(correlation)
+    
+    def get_best_configuration(self) -> Dict[str, Any]:
+        """Get best configuration found during optimization"""
+        return self.best_config
+    
+    def get_optimization_stats(self) -> Dict[str, Any]:
+        """Get detailed optimization statistics"""
+        if not self.eval_history:
+            return {}
+            
+        scores = [h['score'] for h in self.eval_history]
+        iterations = [h['iteration'] for h in self.eval_history]
         
-        # Use 3-fold cross-validation
-        scores = cross_val_score(model, X, y, cv=3)
-        return -np.mean(scores)  # Return negative score for minimization
+        # Calculate convergence metrics
+        convergence_rate = (max(scores) - scores[0]) / len(scores)
+        plateau_threshold = 0.001
+        plateau_count = sum(1 for i in range(1, len(scores))
+                          if abs(scores[i] - scores[i-1]) < plateau_threshold)
+        
+        # Calculate exploration metrics
+        param_ranges = {}
+        for param in self.param_ranges.keys():
+            values = [h['params'][param] for h in self.eval_history]
+            if isinstance(values[0], (int, float)):
+                param_ranges[param] = {
+                    'min': min(values),
+                    'max': max(values),
+                    'mean': np.mean(values),
+                    'std': np.std(values)
+                }
+            else:
+                # For categorical parameters
+                unique_values = set(values)
+                param_ranges[param] = {
+                    'unique_values': list(unique_values),
+                    'most_common': max(set(values), key=values.count)
+                }
+        
+        # Calculate performance improvement
+        initial_window = scores[:5]
+        final_window = scores[-5:]
+        improvement = (np.mean(final_window) - np.mean(initial_window)) / np.mean(initial_window) * 100
+        
+        return {
+            'best_score': self.best_score,
+            'evaluations': len(self.eval_history),
+            'param_importance': self.param_importance,
+            'convergence': [h['score'] for h in self.eval_history],
+            'convergence_rate': convergence_rate,
+            'plateau_percentage': (plateau_count / len(scores)) * 100,
+            'param_ranges': param_ranges,
+            'performance_improvement': improvement,
+            'final_performance': {
+                'mean': np.mean(final_window),
+                'std': np.std(final_window),
+                'stability': 1 - (np.std(final_window) / np.mean(final_window))
+            },
+            'exploration_coverage': {
+                param: (ranges['max'] - ranges['min']) / 
+                      (self.param_ranges[param][1] - self.param_ranges[param][0])
+                for param, ranges in param_ranges.items()
+                if isinstance(ranges, dict) and 'min' in ranges
+            }
+        }

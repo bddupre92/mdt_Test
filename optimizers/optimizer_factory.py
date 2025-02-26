@@ -4,81 +4,52 @@ optimizer_factory.py
 Factory for creating optimizer instances.
 """
 
-from typing import Dict, Any, List, Tuple
-from .de import DifferentialEvolutionOptimizer
-from .gwo import GreyWolfOptimizer
-from .es import EvolutionStrategyOptimizer
-from .aco import AntColonyOptimizer
-from meta.meta_optimizer import MetaOptimizer as BaseMetaOptimizer
-from app.core.optimization.meta_optimizer import OptimizationConfig
+from typing import Dict, Any, List, Tuple, Callable
+import numpy as np
+from scipy.optimize import differential_evolution
 
-def create_optimizers(dim: int, bounds: List[Tuple[float, float]], include_meta: bool = True) -> Dict[str, Any]:
+class DifferentialEvolutionWrapper:
+    """Wrapper for scipy's differential evolution optimizer"""
+    def __init__(self, dim: int, bounds: List[Tuple[float, float]], adaptive: bool = True):
+        self.dim = dim
+        self.bounds = bounds
+        self.adaptive = adaptive
+        self.name = 'DE (Adaptive)' if adaptive else 'DE'
+    
+    def optimize(self, objective_fn: Callable[[np.ndarray], float], max_evals: int = 100) -> Tuple[np.ndarray, float]:
+        """Run optimization"""
+        result = differential_evolution(
+            objective_fn,
+            bounds=self.bounds,
+            maxiter=max_evals,
+            popsize=10,
+            mutation=(0.5, 1.0),
+            recombination=0.7,
+            updating='deferred' if not self.adaptive else 'immediate',
+            workers=1
+        )
+        return result.x, result.fun
+
+def create_optimizers(dim: int, bounds: List[Tuple[float, float]], include_meta: bool = False) -> Dict[str, Any]:
     """
-    Create optimizer instances.
+    Create optimizer instances
     
     Args:
         dim: Problem dimensionality
-        bounds: Parameter bounds
+        bounds: Parameter bounds [(min1, max1), (min2, max2), ...]
         include_meta: Whether to include meta-optimizer
-        
+    
     Returns:
-        Dictionary mapping optimizer names to optimizer instances
+        Dictionary mapping optimizer names to instances
     """
     optimizers = {}
     
-    # Create DE optimizers
-    optimizers['DE (Standard)'] = DifferentialEvolutionOptimizer(
+    # Create differential evolution optimizers
+    optimizers['DE (Standard)'] = DifferentialEvolutionWrapper(
         dim=dim, bounds=bounds, adaptive=False
     )
-    optimizers['DE (Adaptive)'] = DifferentialEvolutionOptimizer(
+    optimizers['DE (Adaptive)'] = DifferentialEvolutionWrapper(
         dim=dim, bounds=bounds, adaptive=True
     )
-    
-    # Create GWO optimizers
-    optimizers['GWO (Standard)'] = GreyWolfOptimizer(
-        dim=dim, bounds=bounds, adaptive=False
-    )
-    optimizers['GWO (Adaptive)'] = GreyWolfOptimizer(
-        dim=dim, bounds=bounds, adaptive=True
-    )
-    
-    # Create ES optimizers
-    optimizers['ES (Standard)'] = EvolutionStrategyOptimizer(
-        dim=dim, bounds=bounds, adaptive=False
-    )
-    optimizers['ES (Adaptive)'] = EvolutionStrategyOptimizer(
-        dim=dim, bounds=bounds, adaptive=True
-    )
-    
-    # Create ACO optimizers
-    optimizers['ACO (Standard)'] = AntColonyOptimizer(
-        dim=dim, bounds=bounds, adaptive=False
-    )
-    optimizers['ACO (Adaptive)'] = AntColonyOptimizer(
-        dim=dim, bounds=bounds, adaptive=True
-    )
-    
-    # Add meta-optimizer if requested
-    if include_meta:
-        config = OptimizationConfig(
-            population_size=50,
-            max_iterations=100,
-            feature_subset_size=dim,
-            crossover_rate=0.8,
-            mutation_rate=0.1,
-            performance_threshold=0.7,
-            drift_adaptation_rate=0.3
-        )
-        
-        # Create meta-optimizer with all base optimizers
-        meta_opt = BaseMetaOptimizer(
-            dim=dim,
-            bounds=bounds,
-            optimizers=optimizers,
-            history_file='meta/history.json',
-            selection_file='meta/selection.json',
-            n_parallel=2
-        )
-        optimizers['Meta-Optimizer'] = meta_opt
     
     return optimizers

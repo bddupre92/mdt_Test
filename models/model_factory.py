@@ -1,103 +1,82 @@
 """
 model_factory.py
----------------
-Factory class for creating different types of models
+--------------
+Factory for creating model instances with appropriate wrappers
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
 from .base_model import BaseModel
 
 class SklearnModelWrapper(BaseModel):
-    """Wrapper for scikit-learn models to maintain consistent interface"""
+    """Wrapper for scikit-learn models"""
+    
     def __init__(self, model):
         self.model = model
-        self.history = {'accuracy': [], 'loss': []}
+        self.feature_importances_ = None
+        self.confusion_matrix_ = None
+        self.feature_names = None
+    
+    def fit(self, X, y, feature_names: Optional[List[str]] = None):
+        """
+        Train model and store feature importances
         
-    def fit(self, X, y):
-        """Fit the model and track basic metrics"""
+        Args:
+            X: Features
+            y: Labels
+            feature_names: Optional list of feature names
+        """
         self.model.fit(X, y)
-        pred = self.model.predict(X)
-        accuracy = np.mean(pred == y)
-        self.history['accuracy'].append(accuracy)
-        self.history['loss'].append(1 - accuracy)
-        return self.history
+        self.feature_names = feature_names
         
-    def predict(self, X):
-        return self.model.predict(X)
-        
-    def predict_proba(self, X):
-        """Get probability estimates for each class"""
-        if hasattr(self.model, 'predict_proba'):
-            return self.model.predict_proba(X)
-        # For models without predict_proba, use decision_function if available
-        elif hasattr(self.model, 'decision_function'):
-            df = self.model.decision_function(X)
-            if df.ndim == 1:
-                return np.vstack([1-df, df]).T
+        # Store feature importances if available
+        if hasattr(self.model, 'feature_importances_'):
+            importances = self.model.feature_importances_
+            if feature_names:
+                self.feature_importances_ = dict(zip(feature_names, importances))
             else:
-                return df
-        else:
-            # Fallback to hard predictions
-            pred = self.predict(X)
-            return np.eye(2)[pred]
+                self.feature_importances_ = dict(enumerate(importances))
         
+        return self
+    
+    def predict(self, X):
+        """Get predictions"""
+        return self.model.predict(X)
+    
+    def predict_proba(self, X):
+        """Get prediction probabilities"""
+        return self.model.predict_proba(X)
+    
     def score(self, X, y):
+        """Get model score"""
         return self.model.score(X, y)
+    
+    def get_feature_importances(self) -> Optional[Dict]:
+        """Get feature importance dictionary"""
+        return self.feature_importances_
 
 class ModelFactory:
-    """Factory class for creating models based on configuration"""
-    
-    def __init__(self):
-        self.model_types = {
-            'random_forest': self._create_random_forest,
-            'logistic_regression': self._create_logistic_regression,
-            'svm': self._create_svm
-        }
+    """Factory for creating model instances"""
     
     def create_model(self, config: Dict[str, Any]) -> BaseModel:
         """
-        Create a model based on configuration
+        Create a model instance based on configuration
         
         Args:
-            config: Dictionary containing model type and parameters
-                   Example: {'type': 'random_forest', 'params': {'n_estimators': 100}}
-        
-        Returns:
-            BaseModel: Initialized model
-        """
-        model_type = config['type']
-        if model_type not in self.model_types:
-            raise ValueError(f"Unknown model type: {model_type}")
+            config: Model configuration with parameters
             
-        params = config.get('params', {})
-        return self.model_types[model_type](params)
-        
-    def _create_random_forest(self, params: Dict[str, Any]) -> BaseModel:
-        """Create random forest classifier"""
+        Returns:
+            Wrapped model instance
+        """
+        # For now, we only support RandomForest
         model = RandomForestClassifier(
-            n_estimators=params.get('n_estimators', 100),
-            max_depth=params.get('max_depth', None),
+            n_estimators=config.get('n_estimators', 100),
+            max_depth=config.get('max_depth', None),
+            min_samples_split=config.get('min_samples_split', 10),
+            min_samples_leaf=config.get('min_samples_leaf', 4),
+            max_features=config.get('max_features', 'sqrt'),
             random_state=42
         )
-        return SklearnModelWrapper(model)
         
-    def _create_logistic_regression(self, params: Dict[str, Any]) -> BaseModel:
-        """Create logistic regression classifier"""
-        model = LogisticRegression(
-            C=params.get('C', 1.0),
-            random_state=42
-        )
-        return SklearnModelWrapper(model)
-        
-    def _create_svm(self, params: Dict[str, Any]) -> BaseModel:
-        """Create SVM classifier"""
-        model = SVC(
-            C=params.get('C', 1.0),
-            kernel=params.get('kernel', 'rbf'),
-            random_state=42
-        )
         return SklearnModelWrapper(model)

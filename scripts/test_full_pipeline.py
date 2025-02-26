@@ -1,181 +1,219 @@
 """
 test_full_pipeline.py
---------------------
-Full pipeline test including meta-optimization, model selection, and prediction
+-------------------
+Test full pipeline with synthetic data and drift detection
 """
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
+from typing import Dict, Any, List, Tuple
+from tqdm import tqdm
+import os
 
-from meta.meta_learner import MetaLearner
-from optimizers.aco import AntColonyOptimizer
 from drift_detection.detector import DriftDetector
-from models.base_model import BaseModel
 from models.model_factory import ModelFactory
+from meta.meta_learner import MetaLearner
+from optimizers.optimizer_factory import create_optimizers
 
-def generate_synthetic_migraine_data(n_samples=1000):
-    """Generate synthetic migraine data with concept drift"""
+def generate_synthetic_data(n_samples: int = 1000) -> Tuple[pd.DataFrame, np.ndarray]:
+    """Generate synthetic data with concept drift"""
+    # Generate base features
     np.random.seed(42)
+    data = {
+        'temperature': np.random.normal(22, 5, n_samples),
+        'pressure': np.random.normal(1015, 5, n_samples),
+        'stress_level': np.random.uniform(0, 12, n_samples),
+        'sleep_hours': np.random.normal(7, 1, n_samples),
+        'screen_time': np.random.normal(6, 2, n_samples)
+    }
     
-    # First half: normal conditions
-    n_half = n_samples // 2
-    weather_temp = np.random.normal(20, 5, n_half)
-    weather_pressure = np.random.normal(1013, 5, n_half)
-    stress_level = np.random.uniform(0, 10, n_half)
-    sleep_hours = np.random.normal(7, 1, n_half)
-    screen_time = np.random.normal(6, 2, n_half)
+    # Add concept drift in second half
+    mid_point = n_samples // 2
+    data['temperature'][mid_point:] += 2  # Temperature increases
+    data['stress_level'][mid_point:] *= 1.2  # Stress has more impact
+    data['sleep_hours'][mid_point:] -= 1  # Sleep decreases
     
-    # Second half: changed conditions (concept drift)
-    weather_temp_2 = np.random.normal(25, 5, n_samples - n_half)  # Higher temps
-    weather_pressure_2 = np.random.normal(1018, 5, n_samples - n_half)  # Higher pressure
-    stress_level_2 = np.random.uniform(2, 12, n_samples - n_half)  # Higher stress
-    sleep_hours_2 = np.random.normal(6, 1, n_samples - n_half)  # Less sleep
-    screen_time_2 = np.random.normal(8, 2, n_samples - n_half)  # More screen time
+    # Generate target with changing relationship
+    X = np.column_stack([
+        data['temperature'],
+        data['pressure'],
+        data['stress_level'],
+        data['sleep_hours'],
+        data['screen_time']
+    ])
     
-    # Combine data
-    weather_temp = np.concatenate([weather_temp, weather_temp_2])
-    weather_pressure = np.concatenate([weather_pressure, weather_pressure_2])
-    stress_level = np.concatenate([stress_level, stress_level_2])
-    sleep_hours = np.concatenate([sleep_hours, sleep_hours_2])
-    screen_time = np.concatenate([screen_time, screen_time_2])
+    # First half: more weight on temperature and pressure
+    y1 = (0.3 * data['temperature'][:mid_point] +
+          0.3 * data['pressure'][:mid_point] +
+          0.2 * data['stress_level'][:mid_point] +
+          0.1 * data['sleep_hours'][:mid_point] +
+          0.1 * data['screen_time'][:mid_point])
     
-    # Create migraine probability function
-    def get_migraine_prob(temp, pressure, stress, sleep, screen):
-        return (
-            0.3 * (temp - 20) / 5 +      # Higher temp increases probability
-            0.2 * (pressure - 1013) / 5 + # Pressure changes matter
-            0.25 * stress / 10 +          # Higher stress increases probability
-            -0.15 * (sleep - 7) +         # Less sleep increases probability
-            0.1 * screen / 6              # More screen time increases probability
-        )
+    # Second half: more weight on stress and sleep
+    y2 = (0.1 * data['temperature'][mid_point:] +
+          0.1 * data['pressure'][mid_point:] +
+          0.4 * data['stress_level'][mid_point:] +
+          0.3 * data['sleep_hours'][mid_point:] +
+          0.1 * data['screen_time'][mid_point:])
     
-    # Calculate probabilities
-    migraine_prob = get_migraine_prob(
-        weather_temp, weather_pressure, stress_level, sleep_hours, screen_time
-    )
+    y = np.concatenate([y1, y2])
+    y = (y > np.median(y)).astype(int)  # Convert to binary classification
     
-    # Normalize to [0,1] range
-    migraine_prob = (migraine_prob - migraine_prob.min()) / (migraine_prob.max() - migraine_prob.min())
-    
-    # Generate labels (1 for migraine, 0 for no migraine)
-    labels = (migraine_prob > 0.5).astype(int)
-    
-    # Create DataFrame
-    data = pd.DataFrame({
-        'temperature': weather_temp,
-        'pressure': weather_pressure,
-        'stress_level': stress_level,
-        'sleep_hours': sleep_hours,
-        'screen_time': screen_time,
-        'target': labels
-    })
-    
-    return data
+    return pd.DataFrame(data), y
 
-def plot_performance(history, predictions=None, drift_points=None):
-    """Plot training history and drift detection results"""
-    plt.figure(figsize=(12, 6))
+def plot_performance(drift_detector: DriftDetector,
+                    feature_names: List[str],
+                    save_path: str = 'pipeline_performance.png'):
+    """Plot drift detection results"""
+    # Create figure
+    plt.figure(figsize=(12, 10))
     
-    # Plot training metrics if available
-    if history and hasattr(history, 'history'):
-        plt.subplot(2, 1, 1)
-        for metric in history.history:
-            plt.plot(history.history[metric], label=metric)
-        plt.title('Model Training History')
-        plt.xlabel('Epoch')
-        plt.ylabel('Score')
-        plt.legend()
+    # Plot 1: Drift Scores
+    plt.subplot(3, 1, 1)
+    plt.plot(drift_detector.drift_scores, label='Drift Score')
+    plt.axhline(y=drift_detector.drift_threshold, color='r', linestyle='--',
+               label='Drift Threshold')
+    plt.title('Drift Scores Over Time')
+    plt.ylabel('Score')
+    plt.legend()
     
-    # Plot predictions and drift points if available
-    if predictions is not None:
-        plt.subplot(2, 1, 2)
-        plt.plot(predictions, label='Prediction Probability')
-        if drift_points:
-            for point in drift_points:
-                plt.axvline(x=point, color='r', linestyle='--', alpha=0.5)
-        plt.title('Model Predictions with Drift Points')
-        plt.xlabel('Sample')
-        plt.ylabel('Probability')
-        plt.legend()
+    # Plot 2: Feature Drift Severities
+    plt.subplot(3, 1, 2)
+    for name in feature_names:
+        if name in drift_detector.feature_drift_scores:
+            scores = drift_detector.feature_drift_scores[name]
+            plt.plot(scores, label=name)
+    plt.title('Feature Drift Severities')
+    plt.ylabel('Severity')
+    plt.legend()
+    
+    # Plot 3: Confidence Scores
+    plt.subplot(3, 1, 3)
+    plt.plot(drift_detector.confidence_scores, label='Confidence')
+    plt.axhline(y=drift_detector.confidence_threshold, color='r', linestyle='--',
+               label='Confidence Threshold')
+    plt.title('Model Confidence Over Time')
+    plt.ylabel('Confidence')
+    plt.legend()
     
     plt.tight_layout()
-    plt.savefig('pipeline_performance.png')
+    plt.savefig(save_path)
+    print(f"Saving plot to: {os.path.abspath(save_path)}")
     plt.close()
 
 def main():
-    """Run full pipeline test"""
-    print("Starting full pipeline test...")
+    print("Starting full pipeline test...\n")
+    
+    # Create progress bar for overall progress
+    stages = ['Data Generation', 'Meta-optimization', 'Model Training', 'Drift Detection']
+    overall_progress = tqdm(stages, desc='Overall Progress', position=0)
     
     # 1. Generate synthetic data
-    print("\n1. Generating synthetic data...")
-    data = generate_synthetic_migraine_data(n_samples=1000)
-    print("Data shape:", data.shape)
-    print("\nFeature statistics:")
-    print(data.describe())
+    overall_progress.set_description('Generating Data')
+    X_full, y_full = generate_synthetic_data()
+    print(f"\nData shape: {X_full.shape}")
+    print("Feature statistics:")
+    print(pd.concat([X_full, pd.Series(y_full, name='target')], axis=1).describe())
+    overall_progress.update(1)
     
-    # 2. Split data and scale features
-    X = data.drop('target', axis=1)
-    y = data['target']
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
+    # 2. Initialize components
+    print("\nInitializing components...")
+    feature_names = list(X_full.columns)
     scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+    X_scaled = scaler.fit_transform(X_full)
     
-    # 3. Initialize components
-    print("\n2. Initializing components...")
+    # Split into train/test
+    train_size = int(0.8 * len(X_scaled))
+    X_train = X_scaled[:train_size]
+    y_train = y_full[:train_size]
+    X_test = X_scaled[train_size:]
+    y_test = y_full[train_size:]
+    
+    # 3. Run meta-optimization
+    overall_progress.set_description('Running Meta-optimization')
+    print("\nRunning meta-optimization...")
     meta_learner = MetaLearner()
-    optimizer = AntColonyOptimizer(dim=2, bounds=[(0, 1), (0, 1)])
-    meta_learner.set_algorithms([optimizer])
+    bounds = [(0, 1), (0, 1)]  # Parameters will be scaled in the objective function
+    optimizers = create_optimizers(dim=2, bounds=bounds)
+    meta_learner.set_algorithms([optimizers['DE (Adaptive)']])  # Use adaptive DE optimizer
     
-    drift_detector = DriftDetector(window_size=50)
-    model_factory = ModelFactory()
+    # Add progress callback to meta-learner
+    with tqdm(total=100, desc='Optimization Progress', position=1, leave=False) as pbar:
+        def progress_callback(iteration, best_score):
+            pbar.update(1)
+            pbar.set_postfix({'best_score': f'{best_score:.4f}'})
+        
+        meta_learner.optimize(
+            X_train, y_train,
+            progress_callback=progress_callback,
+            feature_names=feature_names
+        )
     
-    # 4. Meta-optimization
-    print("\n3. Running meta-optimization...")
-    context = {'phase': 1}  # Initial context for meta-learner
-    meta_learner.optimize(X_train_scaled, y_train, context=context)
-    best_model_config = meta_learner.get_best_configuration()
+    overall_progress.update(1)
+    
+    # Get best configuration
+    config = meta_learner.get_best_configuration()
     print("\nBest model configuration:")
-    print(best_model_config)
+    print(config)
     
-    # 5. Train model with best configuration
-    print("\n4. Training model with best configuration...")
-    model = model_factory.create_model(best_model_config)
-    history = model.fit(X_train_scaled, y_train)
+    # 4. Train model
+    overall_progress.set_description('Training Model')
+    print("\nTraining model with best configuration...")
+    factory = ModelFactory()
+    model = factory.create_model(config)
+    history = model.fit(X_train, y_train, feature_names=feature_names)
+    overall_progress.update(1)
     
-    # 6. Evaluate performance
-    print("\n5. Evaluating performance...")
-    train_score = model.score(X_train_scaled, y_train)
-    test_score = model.score(X_test_scaled, y_test)
-    print(f"Train accuracy: {train_score:.4f}")
-    print(f"Test accuracy: {test_score:.4f}")
+    # 5. Evaluate performance
+    print("\nEvaluating performance...")
+    train_acc = model.score(X_train, y_train)
+    test_acc = model.score(X_test, y_test)
+    print(f"Train accuracy: {train_acc:.4f}")
+    print(f"Test accuracy: {test_acc:.4f}")
     
-    # 7. Test drift detection on prediction probabilities
-    print("\n6. Testing drift detection...")
-    test_probs = model.predict_proba(X_test_scaled)[:, 1]  # Get positive class probabilities
+    # 6. Test drift detection
+    overall_progress.set_description('Running Drift Detection')
+    print("\nTesting drift detection...")
+    detector = DriftDetector(window_size=50, feature_names=feature_names)
     
-    drift_detector.set_reference_window(test_probs[:50])
-    drift_points = []
-    n_drifts = 0
+    # Get prediction probabilities
+    train_probs = model.predict_proba(X_train)[:, 1]
+    test_probs = model.predict_proba(X_test)[:, 1]
     
-    for i in range(50, len(test_probs)):
-        drift_detector.add_sample(float(test_probs[i]))  # Convert to float
-        is_drift, severity = drift_detector.detect_drift()
-        if is_drift:
-            n_drifts += 1
-            drift_points.append(i)
-            print(f"Drift detected at sample {i} with severity {severity:.2f}")
+    # Set reference window from training data
+    detector.set_reference_window(train_probs[-50:], X_train[-50:])
     
-    print(f"Total drifts detected: {n_drifts}")
+    # Process test data with progress bar
+    drifts_detected = 0
+    with tqdm(total=len(X_test), desc='Processing Samples', position=1, leave=False) as pbar:
+        for i in range(len(X_test)):
+            drift, severity, info = detector.add_sample(
+                test_probs[i],
+                features=X_test[i],
+                prediction_proba=model.predict_proba(X_test[i].reshape(1, -1))[0]
+            )
+            if drift:
+                drifts_detected += 1
+                print(f"\nDrift detected at sample {i}:")
+                print(f"Severity: {severity:.3f}")
+                print("Drifting features:", info['drifting_features'])
+                print(f"Confidence: {info['confidence']:.3f}")
+            pbar.update(1)
+            pbar.set_postfix({'drifts': drifts_detected})
     
-    # 8. Plot results
-    print("\n7. Plotting results...")
-    plot_performance(history, test_probs, drift_points)
-    print("Performance plot saved as 'pipeline_performance.png'")
+    overall_progress.update(1)
+    print(f"\nTotal drifts detected: {drifts_detected}")
+    
+    # 7. Plot results
+    print("\nPlotting results...")
+    os.makedirs('plots', exist_ok=True)
+    plot_path = os.path.join('plots', 'pipeline_performance.png')
+    plot_performance(detector, feature_names, save_path=plot_path)
+    print(f"Performance plot saved as '{plot_path}'")
+    
+    overall_progress.close()
 
 if __name__ == "__main__":
     main()
