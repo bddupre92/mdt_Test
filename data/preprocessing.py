@@ -27,40 +27,49 @@ def preprocess_data(data: pd.DataFrame, strategy_numeric='mean', scale_method='m
     if exclude_cols is None:
         exclude_cols = ['migraine_occurred', 'severity', 'patient_id', 'migraine_probability', 'date']
     
-    # Handle timestamps
-    timestamp_cols = df.select_dtypes(include=['datetime64[ns]']).columns
+    # Convert timestamps to numeric features
+    timestamp_cols = df.select_dtypes(include=['datetime64[ns]', 'datetime64[ns, UTC]']).columns
     for col in timestamp_cols:
-        df[f"{col}_hour"] = df[col].dt.hour
-        df[f"{col}_day"] = df[col].dt.day
-        df[f"{col}_month"] = df[col].dt.month
-        df[f"{col}_dayofweek"] = df[col].dt.dayofweek
-        df = df.drop(columns=[col])
+        # Extract normalized time features before dropping
+        df[f"{col}_hour"] = (df[col].dt.hour / 23.0).astype(np.float32)
+        df[f"{col}_day"] = (df[col].dt.day / 31.0).astype(np.float32)
+        df[f"{col}_month"] = (df[col].dt.month / 12.0).astype(np.float32)
+        df[f"{col}_dayofweek"] = (df[col].dt.dayofweek / 6.0).astype(np.float32)
+        # Drop original timestamp column if not in exclude_cols
+        if col not in exclude_cols:
+            df = df.drop(columns=[col])
     
-    # Handle missing values
+    # Handle missing values in numeric columns
     numeric_cols = df.select_dtypes(include=[np.number]).columns
     numeric_cols = [col for col in numeric_cols if col not in exclude_cols]
     
     if numeric_cols:
         imputer = SimpleImputer(strategy=strategy_numeric)
         df[numeric_cols] = imputer.fit_transform(df[numeric_cols])
+        # Ensure float32 type for all numeric columns
+        df[numeric_cols] = df[numeric_cols].astype(np.float32)
     
     # Handle categorical variables
     cat_cols = df.select_dtypes(include=['object', 'category']).columns
     for col in cat_cols:
         if col not in exclude_cols:
             le = LabelEncoder()
-            df[col] = le.fit_transform(df[col].astype(str))
+            df[col] = le.fit_transform(df[col].astype(str)).astype(np.float32)
     
-    # Scale numeric features
-    if scale_method == 'minmax':
-        scaler = MinMaxScaler()
-    else:
-        scaler = StandardScaler()
+    # Get columns to scale (all except excluded)
+    scale_cols = [col for col in df.columns if col not in exclude_cols]
     
-    if numeric_cols:
-        df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
+    # Scale features
+    if scale_cols:
         if scale_method == 'minmax':
-            df[numeric_cols] = np.clip(df[numeric_cols], 0, 1)
+            scaler = MinMaxScaler()
+        else:
+            scaler = StandardScaler()
+            
+        # Convert to numpy array, scale, and convert back to dataframe
+        scale_data = df[scale_cols].values.astype(np.float32)
+        scaled_data = scaler.fit_transform(scale_data)
+        df[scale_cols] = pd.DataFrame(scaled_data, columns=scale_cols, index=df.index)
     
     return df
 

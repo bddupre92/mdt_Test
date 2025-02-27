@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Migraine Prediction Service{% endblock %}</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link href="{{ url_for('static', path='css/main.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', path='css/unified_dashboard.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', path='css/drift_dashboard.css') }}" rel="stylesheet">
+    
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">Migraine Prediction Service</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard#drift-content">Drift Detection</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard#performance-content">Performance</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard#optimization-content">Optimization</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard#meta-content">Meta Analysis</a>
+                    </li>
+                </ul>
+                <div class="navbar-text">
+                    {% if user %}
+                    Welcome, {{ user.username }} | <a href="/api/auth/logout" class="text-light">Logout</a>
+                    {% else %}
+                    <a href="/api/auth/login" class="text-light">Login</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container-fluid py-4">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer mt-auto py-3 bg-light">
+        <div class="container text-center">
+            <span class="text-muted">Migraine Prediction Service &copy; 2025</span>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- jQuery (for AJAX requests) -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="{{ url_for('static', path='js/main.js') }}"></script>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

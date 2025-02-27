@@ -12,13 +12,13 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
-from app.core.models.database import Base, User, DiaryEntry, Prediction
+from app.core.database import Base, get_db
+from app.core.models.database import User, DiaryEntry, Prediction
+from app.core.security.auth import auth_handler
 from app.main import app
-from app.api.dependencies import get_db
-from app.core.auth.jwt import get_current_user
+from app.api.dependencies import get_current_user
 from app.core.services.prediction import PredictionService
 
-# Create test database
 SQLALCHEMY_TEST_DATABASE_URL = "sqlite://"  # In-memory database
 engine = create_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
@@ -27,91 +27,86 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-@pytest.fixture(scope="function")
-def db_session():
-    """Create clean database for each test."""
-    Base.metadata.create_all(bind=engine)
-    db = TestingSessionLocal()
+def override_get_db():
+    """Override database session for testing."""
     try:
+        db = TestingSessionLocal()
         yield db
     finally:
         db.close()
-        Base.metadata.drop_all(bind=engine)
 
-@pytest.fixture(scope="function")
-def test_user(db_session):
+app.dependency_overrides[get_db] = override_get_db
+
+@pytest.fixture
+def client():
+    """Create test client."""
+    Base.metadata.create_all(bind=engine)
+    yield TestClient(app)
+    Base.metadata.drop_all(bind=engine)
+
+@pytest.fixture
+def test_user(client):
     """Create test user."""
-    from app.core.services.auth import AuthService
-    auth_service = AuthService(db_session)
+    user_data = {
+        "username": "testuser",
+        "email": "test@example.com",
+        "password": "testpass123"
+    }
+    db = TestingSessionLocal()
     user = User(
-        email="test@example.com",
-        username="testuser",
-        hashed_password=auth_service.get_password_hash("testpass123"),
-        is_active=True
+        username=user_data["username"],
+        email=user_data["email"],
+        hashed_password="hashed_" + user_data["password"]
     )
-    db_session.add(user)
-    db_session.commit()
-    db_session.refresh(user)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    db.close()
     return user
 
-@pytest.fixture(scope="function")
-def client(db_session, test_user):
-    """Create FastAPI test client."""
-    def override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
+@pytest.fixture
+def test_token(test_user):
+    """Create test token."""
+    return auth_handler.create_access_token({"sub": test_user.username})
 
-    def override_get_current_user():
-        return test_user
-
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_user] = override_get_current_user
-    
-    yield TestClient(app)
-    
-    # Clear overrides after test
-    app.dependency_overrides = {}
-
-@pytest.fixture(scope="function")
+@pytest.fixture
 def test_features():
     """Sample features for testing predictions."""
     return {
-        "sleep_hours": 7.5,
-        "stress_level": 3,
-        "weather_pressure": 1013.25,
+        "sleep_hours": 6.5,
+        "stress_level": 7,
+        "weather_pressure": 1013.2,
         "heart_rate": 75,
-        "hormonal_level": 2.5,
+        "hormonal_level": 65,
         "triggers": ["bright_lights", "noise"]
     }
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def test_model(test_features):
     """Create test model."""
     X = pd.DataFrame([test_features])
-    y = pd.Series([0])  # No migraine
+    y = pd.Series([1])
     model = RandomForestClassifier(n_estimators=10, random_state=42)
     model.fit(X, y)
     return model
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def prediction_service(db_session, test_model):
     """Create prediction service instance."""
     service = PredictionService(db_session)
     service.model = test_model
     return service
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def sample_patient_data():
     """Sample patient data for testing."""
     return pd.DataFrame({
-        "sleep_hours": [7.5, 6.0, 8.0],
-        "stress_level": [3, 4, 2],
-        "weather_pressure": [1013.25, 1012.0, 1014.5],
-        "heart_rate": [75, 80, 70],
-        "hormonal_level": [2.5, 3.0, 2.0],
-        "migraine_occurred": [0, 1, 0]
+        "sleep_hours": [6.5, 7.0, 8.0],
+        "stress_level": [7, 5, 3],
+        "weather_pressure": [1013.2, 1012.8, 1014.5],
+        "heart_rate": [75, 72, 68],
+        "hormonal_level": [65, 60, 55],
+        "migraine_occurred": [1, 0, 0]
     })
 
 """Pytest configuration and custom plugins."""

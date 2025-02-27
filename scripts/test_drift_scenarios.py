@@ -90,8 +90,8 @@ def main():
     print("Processing data...")
     for i in range(50, len(data)):
         detector.add_sample(data[i])
-        is_drift, severity = detector.detect_drift()
-        trend = detector.get_trend()
+        is_drift, severity, info = detector.detect_drift()
+        trend = info.get('trend', 0.0)
         
         severities.append(severity)
         trends.append(trend)

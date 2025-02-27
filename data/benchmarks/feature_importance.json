@@ -1,0 +1,36 @@
+{
+  "features": [
+    "recent_headache_frequency",
+    "hours_sleep",
+    "stress_level",
+    "menstrual_cycle_phase",
+    "hydration_level",
+    "barometric_pressure_change",
+    "caffeine_intake",
+    "screen_time",
+    "medication_adherence",
+    "physical_activity",
+    "alcohol_consumption",
+    "heartrate_variability",
+    "dietary_triggers",
+    "weather_temperature",
+    "previous_aura"
+  ],
+  "importance_scores": [
+    0.12834099570828458,
+    0.10210954734681281,
+    0.09934267528438348,
+    0.0868836401892676,
+    0.08352507419158606,
+    0.07769966177049983,
+    0.07337324519301071,
+    0.06636424076642404,
+    0.06183694976171117,
+    0.06054396715642577,
+    0.05400547070601048,
+    0.0320756150791923,
+    0.02664834941556381,
+    0.025423440660137037,
+    0.021827126770690337
+  ]
+}

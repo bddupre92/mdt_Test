@@ -6,12 +6,12 @@ from typing import List, Dict, Any
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
-from app.core.auth.jwt import get_current_user
 from app.core.database import get_db
 from app.core.models.database import User, DiaryEntry, Prediction
 from app.core.schemas.diary import DiaryEntryCreate, DiaryEntryResponse
 from app.core.schemas.prediction import PredictionRequest, PredictionResponse, PredictionHistoryResponse
 from app.core.services.prediction import PredictionService
+from app.api.dependencies import get_current_user
 
 router = APIRouter()
 
@@ -52,23 +52,23 @@ async def create_diary_entry(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> DiaryEntryResponse:
-    """Create a new diary entry."""
+    """Create new diary entry."""
     try:
-        diary_entry = DiaryEntry(
+        db_entry = DiaryEntry(
             user_id=current_user.id,
             created_at=datetime.now(timezone.utc),
             **entry.model_dump()
         )
-        db.add(diary_entry)
+        db.add(db_entry)
         db.commit()
-        db.refresh(diary_entry)
-        return DiaryEntryResponse.model_validate(diary_entry)
+        db.refresh(db_entry)
+        return DiaryEntryResponse.model_validate(db_entry)
     except Exception as e:
         db.rollback()
         print(f"Failed to create diary entry: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create diary entry: {str(e)}"
+            detail="Failed to create diary entry"
         )
 
 @router.get("/diary/{entry_id}", response_model=DiaryEntryResponse)
@@ -77,18 +77,16 @@ async def get_diary_entry(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> DiaryEntryResponse:
-    """Get a specific diary entry."""
+    """Get diary entry by ID."""
     entry = db.query(DiaryEntry).filter(
         DiaryEntry.id == entry_id,
         DiaryEntry.user_id == current_user.id
     ).first()
-    
     if not entry:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Diary entry not found"
         )
-    
     return DiaryEntryResponse.model_validate(entry)
 
 @router.get("/predictions", response_model=List[PredictionHistoryResponse])
@@ -97,22 +95,17 @@ async def get_prediction_history(
     db: Session = Depends(get_db)
 ) -> List[PredictionHistoryResponse]:
     """Get prediction history for user."""
-    try:
-        predictions = db.query(Prediction).filter(
-            Prediction.user_id == current_user.id
-        ).order_by(Prediction.created_at.desc()).all()
-        
-        return [PredictionHistoryResponse(
+    predictions = db.query(Prediction).filter(
+        Prediction.user_id == current_user.id
+    ).order_by(Prediction.created_at.desc()).all()
+    
+    return [
+        PredictionHistoryResponse(
             id=p.id,
             timestamp=p.created_at,
             prediction=p.prediction,
             actual=p.actual,
             probability=p.probability,
             feature_importance=p.feature_importance
-        ) for p in predictions]
-    except Exception as e:
-        print(f"Failed to get prediction history: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get prediction history: {str(e)}"
-        )
+        ) for p in predictions
+    ]

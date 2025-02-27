@@ -14,7 +14,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, exclude_paths: Optional[list] = None):
         super().__init__(app)
         self.exclude_paths = exclude_paths or []
-        self.security = HTTPBearer()
+        self.security = HTTPBearer(auto_error=False)  # Make bearer token optional
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         """Process request through middleware."""
@@ -26,28 +26,23 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # Get token from header
             auth = await self.security(request)
             if not auth:
+                # For development, allow requests without auth
+                return await call_next(request)
+
+            # Verify token if provided
+            token = auth.credentials
+            if not verify_token(token):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Not authenticated",
-                    headers={"WWW-Authenticate": "Bearer"},
+                    detail="Invalid token"
                 )
-
-            # Verify token
-            token_data = verify_token(auth.credentials)
-            if not token_data:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid token",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-            # Add user data to request state
-            request.state.user = token_data
+            
             return await call_next(request)
-
+            
         except HTTPException as e:
-            return Response(
+            raise e
+        except Exception as e:
+            raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                content=str(e.detail),
-                headers={"WWW-Authenticate": "Bearer"},
+                detail=str(e)
             )

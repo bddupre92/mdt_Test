@@ -13,9 +13,17 @@ from app.core.models.database import User, DiaryEntry, get_db
 from app.core.schemas.diary import DiaryEntryCreate, DiaryEntryResponse
 from app.core.schemas.prediction import PredictionRequest, PredictionResponse, PredictionHistoryResponse
 from app.core.services.prediction import PredictionService
+from app.api.routes.drift import router as drift_router
+from app.api.routes.dashboard import router as dashboard_router
 
 router = APIRouter()
 security = HTTPBearer(auto_error=True)
+
+# Include drift routes
+router.include_router(drift_router, prefix="/drift", tags=["drift"])
+
+# Include dashboard routes
+router.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
 
 @router.post("/predict")
 async def predict(

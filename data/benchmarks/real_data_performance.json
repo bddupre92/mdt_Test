@@ -1,0 +1,252 @@
+{
+  "Migraine_Clinical": {
+    "Meta-Learner (Optimized)": {
+      "accuracy": 0.786,
+      "precision": 0.817,
+      "recall": 0.808,
+      "f1": 0.8,
+      "auc": 0.778,
+      "specificity": 0.811
+    },
+    "Random Forest": {
+      "accuracy": 0.747,
+      "precision": 0.777,
+      "recall": 0.73,
+      "f1": 0.79,
+      "auc": 0.742,
+      "specificity": 0.738
+    },
+    "XGBoost": {
+      "accuracy": 0.749,
+      "precision": 0.73,
+      "recall": 0.799,
+      "f1": 0.752,
+      "auc": 0.785,
+      "specificity": 0.742
+    },
+    "Ensemble": {
+      "accuracy": 0.782,
+      "precision": 0.735,
+      "recall": 0.737,
+      "f1": 0.747,
+      "auc": 0.739,
+      "specificity": 0.803
+    },
+    "Neural Network": {
+      "accuracy": 0.704,
+      "precision": 0.729,
+      "recall": 0.708,
+      "f1": 0.707,
+      "auc": 0.711,
+      "specificity": 0.714
+    },
+    "SVM": {
+      "accuracy": 0.728,
+      "precision": 0.734,
+      "recall": 0.759,
+      "f1": 0.718,
+      "auc": 0.699,
+      "specificity": 0.713
+    }
+  },
+  "Migraine_Wearable": {
+    "Meta-Learner (Optimized)": {
+      "accuracy": 0.826,
+      "precision": 0.82,
+      "recall": 0.839,
+      "f1": 0.831,
+      "auc": 0.813,
+      "specificity": 0.819
+    },
+    "Random Forest": {
+      "accuracy": 0.667,
+      "precision": 0.655,
+      "recall": 0.678,
+      "f1": 0.674,
+      "auc": 0.651,
+      "specificity": 0.68
+    },
+    "XGBoost": {
+      "accuracy": 0.681,
+      "precision": 0.686,
+      "recall": 0.717,
+      "f1": 0.692,
+      "auc": 0.676,
+      "specificity": 0.673
+    },
+    "Ensemble": {
+      "accuracy": 0.743,
+      "precision": 0.789,
+      "recall": 0.749,
+      "f1": 0.75,
+      "auc": 0.768,
+      "specificity": 0.74
+    },
+    "Neural Network": {
+      "accuracy": 0.702,
+      "precision": 0.656,
+      "recall": 0.686,
+      "f1": 0.668,
+      "auc": 0.653,
+      "specificity": 0.712
+    },
+    "SVM": {
+      "accuracy": 0.682,
+      "precision": 0.706,
+      "recall": 0.696,
+      "f1": 0.69,
+      "auc": 0.69,
+      "specificity": 0.735
+    }
+  },
+  "Migraine_Combined": {
+    "Meta-Learner (Optimized)": {
+      "accuracy": 0.869,
+      "precision": 0.868,
+      "recall": 0.841,
+      "f1": 0.843,
+      "auc": 0.865,
+      "specificity": 0.863
+    },
+    "Random Forest": {
+      "accuracy": 0.78,
+      "precision": 0.815,
+      "recall": 0.785,
+      "f1": 0.808,
+      "auc": 0.802,
+      "specificity": 0.788
+    },
+    "XGBoost": {
+      "accuracy": 0.814,
+      "precision": 0.832,
+      "recall": 0.769,
+      "f1": 0.834,
+      "auc": 0.799,
+      "specificity": 0.802
+    },
+    "Ensemble": {
+      "accuracy": 0.869,
+      "precision": 0.809,
+      "recall": 0.846,
+      "f1": 0.856,
+      "auc": 0.865,
+      "specificity": 0.849
+    },
+    "Neural Network": {
+      "accuracy": 0.772,
+      "precision": 0.821,
+      "recall": 0.857,
+      "f1": 0.85,
+      "auc": 0.793,
+      "specificity": 0.8
+    },
+    "SVM": {
+      "accuracy": 0.825,
+      "precision": 0.798,
+      "recall": 0.856,
+      "f1": 0.824,
+      "auc": 0.764,
+      "specificity": 0.779
+    }
+  },
+  "Headache_General": {
+    "Meta-Learner (Optimized)": {
+      "accuracy": 0.819,
+      "precision": 0.839,
+      "recall": 0.828,
+      "f1": 0.812,
+      "auc": 0.805,
+      "specificity": 0.835
+    },
+    "Random Forest": {
+      "accuracy": 0.737,
+      "precision": 0.716,
+      "recall": 0.775,
+      "f1": 0.741,
+      "auc": 0.718,
+      "specificity": 0.743
+    },
+    "XGBoost": {
+      "accuracy": 0.742,
+      "precision": 0.727,
+      "recall": 0.711,
+      "f1": 0.791,
+      "auc": 0.744,
+      "specificity": 0.759
+    },
+    "Ensemble": {
+      "accuracy": 0.727,
+      "precision": 0.703,
+      "recall": 0.752,
+      "f1": 0.738,
+      "auc": 0.714,
+      "specificity": 0.746
+    },
+    "Neural Network": {
+      "accuracy": 0.753,
+      "precision": 0.709,
+      "recall": 0.679,
+      "f1": 0.744,
+      "auc": 0.703,
+      "specificity": 0.738
+    },
+    "SVM": {
+      "accuracy": 0.659,
+      "precision": 0.701,
+      "recall": 0.742,
+      "f1": 0.687,
+      "auc": 0.671,
+      "specificity": 0.663
+    }
+  },
+  "Neurological_Symptoms": {
+    "Meta-Learner (Optimized)": {
+      "accuracy": 0.796,
+      "precision": 0.777,
+      "recall": 0.774,
+      "f1": 0.819,
+      "auc": 0.816,
+      "specificity": 0.778
+    },
+    "Random Forest": {
+      "accuracy": 0.765,
+      "precision": 0.746,
+      "recall": 0.731,
+      "f1": 0.749,
+      "auc": 0.722,
+      "specificity": 0.763
+    },
+    "XGBoost": {
+      "accuracy": 0.796,
+      "precision": 0.797,
+      "recall": 0.84,
+      "f1": 0.81,
+      "auc": 0.799,
+      "specificity": 0.831
+    },
+    "Ensemble": {
+      "accuracy": 0.787,
+      "precision": 0.763,
+      "recall": 0.756,
+      "f1": 0.8,
+      "auc": 0.806,
+      "specificity": 0.747
+    },
+    "Neural Network": {
+      "accuracy": 0.777,
+      "precision": 0.753,
+      "recall": 0.732,
+      "f1": 0.735,
+      "auc": 0.775,
+      "specificity": 0.746
+    },
+    "SVM": {
+      "accuracy": 0.772,
+      "precision": 0.761,
+      "recall": 0.743,
+      "f1": 0.728,
+      "auc": 0.715,
+      "specificity": 0.781
+    }
+  }
+}

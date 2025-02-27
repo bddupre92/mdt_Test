@@ -9,10 +9,12 @@ import os
 import concurrent.futures
 from dataclasses import dataclass
 from threading import Lock
+import time
 
 from .optimization_history import OptimizationHistory
 from .problem_analysis import ProblemAnalyzer
 from .selection_tracker import SelectionTracker
+from optimizers.base_optimizer import BaseOptimizer
 
 
 @dataclass
@@ -31,7 +33,7 @@ class MetaOptimizer:
     def __init__(self, 
                  dim: int,
                  bounds: List[Tuple[float, float]],
-                 optimizers: Dict,
+                 optimizers: Dict[str, BaseOptimizer],
                  history_file: Optional[str] = None,
                  selection_file: Optional[str] = None,
                  n_parallel: int = 2):
@@ -149,55 +151,47 @@ class MetaOptimizer:
                     for opt, _ in sorted_opts[:n_exploit]:
                         selected_optimizers.append(opt)
                         remaining_slots -= 1
-        
-        # If we still have slots, use optimization history
-        if remaining_slots > 0:
-            similar_problems = self.history.find_similar_problems(
+                        
+        # Next, try to use optimization history
+        if remaining_slots > 0 and len(self.history.records) > 0:
+            # Find similar problems in history
+            similar_records = self.history.find_similar_problems(
                 self.current_features,
-                k=min(10, len(self.optimizers))
+                k=min(10, len(self.history.records))
             )
             
-            if similar_problems:
-                # Calculate success probabilities
-                optimizer_scores = {}
-                for sim_score, record in similar_problems:
-                    if record['optimizer'] not in optimizer_scores:
-                        optimizer_scores[record['optimizer']] = []
-                    # Higher score is better (we minimize objective)
-                    performance_score = 1.0 / (1.0 + record['performance'])
-                    optimizer_scores[record['optimizer']].append(
-                        (sim_score, performance_score)
-                    )
-                
-                # Aggregate scores with confidence
-                final_scores = {}
-                for opt, scores in optimizer_scores.items():
-                    if opt in selected_optimizers:
-                        continue
-                    # Weight recent results more heavily
-                    weights = np.exp(-np.arange(len(scores)) / 5)
-                    sim_scores = np.array([s[0] for s in scores])
-                    perf_scores = np.array([s[1] for s in scores])
-                    final_scores[opt] = np.average(
-                        perf_scores,
-                        weights=weights * sim_scores
-                    )
-                
-                if final_scores:
-                    # Select remaining optimizers probabilistically
-                    remaining_opts = list(final_scores.keys())
-                    probs = np.array(list(final_scores.values()))
-                    probs = probs / probs.sum()
+            if similar_records:
+                # Count optimizer successes
+                opt_counts = {}
+                for record in similar_records:
+                    opt = record['optimizer']
+                    if opt not in opt_counts:
+                        opt_counts[opt] = {'success': 0, 'total': 0}
                     
-                    n_history = min(
-                        remaining_slots,
-                        int(remaining_slots * (1 - exploration_rate))
-                    )
+                    opt_counts[opt]['total'] += 1
+                    if record['success']:
+                        opt_counts[opt]['success'] += 1
+                
+                # Calculate success rates
+                success_rates = {
+                    opt: counts['success'] / counts['total']
+                    for opt, counts in opt_counts.items()
+                    if counts['total'] > 0 and opt not in selected_optimizers
+                }
+                
+                if success_rates:
+                    # Select optimizers based on history
+                    n_history = int(remaining_slots * 0.7)  # Use 70% of remaining slots
                     
-                    if n_history > 0:
+                    # Convert to probabilities
+                    total = sum(success_rates.values())
+                    if total > 0:
+                        probs = [success_rates[opt] / total for opt in success_rates.keys()]
+                        
+                        # Sample based on success rates
                         history_selections = np.random.choice(
-                            remaining_opts,
-                            size=n_history,
+                            list(success_rates.keys()),
+                            size=min(n_history, len(success_rates)),
                             p=probs,
                             replace=False
                         )
@@ -222,7 +216,7 @@ class MetaOptimizer:
 
     def _run_single_optimizer(self,
                             optimizer_name: str,
-                            optimizer,
+                            optimizer: BaseOptimizer,
                             objective_func: Callable,
                             max_evals: int,
                             record_history: bool = True) -> Optional[OptimizationResult]:
@@ -231,13 +225,19 @@ class MetaOptimizer:
             # Reset optimizer state
             optimizer.reset()
             
+            # Set max evaluations
+            optimizer.max_evals = max_evals
+            
             # Create wrapped objective that ensures numpy array input
             def wrapped_objective(x):
                 x = np.asarray(x)
                 return float(objective_func(x))
             
             # Run optimization
+            start_time = time.time()
             solution, score = optimizer._optimize(wrapped_objective)
+            end_time = time.time()
+            
             if solution is None:
                 return None
                 
@@ -246,8 +246,8 @@ class MetaOptimizer:
             score = float(score)
             
             with self._eval_lock:
-                self.total_evaluations += 1
-                if record_history:
+                self.total_evaluations += optimizer.evaluations
+                if record_history and hasattr(self, 'optimization_history'):
                     # Record optimization history
                     self.optimization_history.append(score)
                     if self.current_features:
@@ -264,7 +264,7 @@ class MetaOptimizer:
                 optimizer_name=optimizer_name,
                 solution=solution,
                 score=score,
-                n_evals=optimizer.n_evals if hasattr(optimizer, 'n_evals') else max_evals,
+                n_evals=optimizer.evaluations,
                 success=success
             )
             
@@ -348,6 +348,10 @@ class MetaOptimizer:
                         return best_solution, best_score
             
             self._current_iteration += 1
+            
+            # Check if we've used up all evaluations
+            if self.total_evaluations >= max_evals:
+                break
             
         # If no solution found, return best from random search
         if best_solution is None:

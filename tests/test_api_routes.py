@@ -6,14 +6,14 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 from app.main import app
-from app.core.auth.jwt import create_access_token
+from app.core.security.auth import auth_handler
 
 def test_predict_endpoint(client, test_user, test_features):
     """Test prediction endpoint."""
     response = client.post(
         "/api/predict",
         json=test_features,
-        headers={"Authorization": f"Bearer {create_access_token({'sub': test_user.username})}"}
+        headers={"Authorization": f"Bearer {auth_handler.create_access_token({'sub': test_user.username})}"}
     )
     
     assert response.status_code == status.HTTP_200_OK
@@ -36,7 +36,7 @@ def test_create_diary_entry(client, test_user, test_features):
     response = client.post(
         "/api/diary",
         json=entry_data,
-        headers={"Authorization": f"Bearer {create_access_token({'sub': test_user.username})}"}
+        headers={"Authorization": f"Bearer {auth_handler.create_access_token({'sub': test_user.username})}"}
     )
     
     assert response.status_code == status.HTTP_200_OK
@@ -48,7 +48,7 @@ def test_create_diary_entry(client, test_user, test_features):
     # Test that we can get the entry back
     response = client.get(
         f"/api/diary/{data['id']}",
-        headers={"Authorization": f"Bearer {create_access_token({'sub': test_user.username})}"}
+        headers={"Authorization": f"Bearer {auth_handler.create_access_token({'sub': test_user.username})}"}
     )
     
     assert response.status_code == status.HTTP_200_OK
@@ -61,7 +61,7 @@ def test_get_prediction_history(client, test_user):
     """Test prediction history endpoint."""
     response = client.get(
         "/api/predictions",
-        headers={"Authorization": f"Bearer {create_access_token({'sub': test_user.username})}"}
+        headers={"Authorization": f"Bearer {auth_handler.create_access_token({'sub': test_user.username})}"}
     )
     
     assert response.status_code == status.HTTP_200_OK

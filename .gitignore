@@ -70,7 +70,9 @@ plots/
 *.png
 *.jpg
 *.pdf
-*.html
+# Allow HTML files in templates directory
+!app/templates/**/*.html
+# *.html  # Commented out to allow working with HTML files
 
 # OS specific
 .DS_Store

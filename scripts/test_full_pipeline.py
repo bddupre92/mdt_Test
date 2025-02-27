@@ -70,37 +70,37 @@ def plot_performance(drift_detector: DriftDetector,
     # Create figure
     plt.figure(figsize=(12, 10))
     
-    # Plot 1: Drift Scores
+    # Plot 1: Drift Scores and Severity
     plt.subplot(3, 1, 1)
-    plt.plot(drift_detector.drift_scores, label='Drift Score')
+    plt.plot(drift_detector.severity_history, label='Drift Severity', color='blue')
+    plt.plot(drift_detector.mean_shift_history, label='Mean Shift', color='green', alpha=0.5)
     plt.axhline(y=drift_detector.drift_threshold, color='r', linestyle='--',
                label='Drift Threshold')
-    plt.title('Drift Scores Over Time')
+    plt.title('Drift Detection Metrics Over Time')
     plt.ylabel('Score')
     plt.legend()
     
-    # Plot 2: Feature Drift Severities
+    # Plot 2: Feature Drifts
     plt.subplot(3, 1, 2)
-    for name in feature_names:
-        if name in drift_detector.feature_drift_scores:
-            scores = drift_detector.feature_drift_scores[name]
-            plt.plot(scores, label=name)
-    plt.title('Feature Drift Severities')
-    plt.ylabel('Severity')
+    for i, name in enumerate(feature_names):
+        drifts = [1 if name in d else 0 for d in drift_detector.drifting_features_history]
+        if any(drifts):  # Only plot if feature had any drifts
+            plt.plot(drifts, label=name, alpha=0.7)
+    plt.title('Feature Drift Occurrences')
+    plt.ylabel('Drift Detected')
     plt.legend()
     
-    # Plot 3: Confidence Scores
+    # Plot 3: Statistical Measures
     plt.subplot(3, 1, 3)
-    plt.plot(drift_detector.confidence_scores, label='Confidence')
-    plt.axhline(y=drift_detector.confidence_threshold, color='r', linestyle='--',
-               label='Confidence Threshold')
-    plt.title('Model Confidence Over Time')
-    plt.ylabel('Confidence')
+    plt.plot(drift_detector.ks_stat_history, label='KS Statistic', color='purple')
+    plt.plot(drift_detector.p_value_history, label='p-value', color='orange', alpha=0.5)
+    plt.axhline(y=0.05, color='r', linestyle='--', label='Significance Level')
+    plt.title('Statistical Measures Over Time')
+    plt.ylabel('Value')
     plt.legend()
     
     plt.tight_layout()
     plt.savefig(save_path)
-    print(f"Saving plot to: {os.path.abspath(save_path)}")
     plt.close()
 
 def main():
