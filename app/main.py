@@ -3,10 +3,12 @@ Main FastAPI application.
 """
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
+import json
+import os
 
 from app.api.routes import router as api_router
 from app.core.middleware.auth import AuthMiddleware
-from benchmarking.benchmark_runner import run_comprehensive_benchmark
+from benchmarking.benchmark_runner import run_comprehensive_benchmark, run_benchmark_comparison
 
 app = FastAPI(title="Migraine Prediction Service")
 
@@ -40,13 +42,16 @@ benchmark_router = APIRouter()
 
 @benchmark_router.get("/benchmarks")
 async def get_benchmark_results():
-    # Placeholder for fetching benchmark results
-    return {"message": "Benchmark results"}
+    benchmark_file = 'benchmark_comparison_results/theoretical_results.csv'
+    if os.path.exists(benchmark_file):
+        with open(benchmark_file, 'r') as f:
+            benchmarks = json.load(f)
+        return benchmarks
+    return {"error": "Benchmark data not found."}, 404
 
 @benchmark_router.post("/dashboard/run-benchmark-comparison")
 async def run_benchmark_comparison():
-    # Placeholder for running benchmark comparison
-    run_comprehensive_benchmark()
-    return {"message": "Benchmark comparison triggered"}
+    results = run_benchmark_comparison()
+    return results
 
 app.include_router(benchmark_router, prefix="/api")

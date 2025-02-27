@@ -61,6 +61,37 @@ document.addEventListener('DOMContentLoaded', function() {
         table.appendChild(thead);
         table.appendChild(tbody);
         resultsSection.appendChild(table);
+
+        // Create a chart to visualize benchmark results
+        const chartContainer = document.createElement('div');
+        chartContainer.classList.add('chart-container');
+        const chartCanvas = document.createElement('canvas');
+        chartContainer.appendChild(chartCanvas);
+        resultsSection.appendChild(chartContainer);
+
+        const ctx = chartCanvas.getContext('2d');
+        const chartData = {
+            labels: results.map(result => result.Function),
+            datasets: [{
+                label: 'Best Fitness',
+                data: results.map(result => result['Best Fitness']),
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                borderColor: 'rgba(75, 192, 192, 1)',
+                borderWidth: 1
+            }]
+        };
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: chartData,
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
     }
 
     // Fetch initial benchmark results on page load
