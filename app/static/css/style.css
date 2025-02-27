@@ -1,0 +1,63 @@
+/* Styles for Benchmark Dashboard */
+
+.benchmark-dashboard {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    background-color: #f9f9f9;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.benchmark-dashboard h2 {
+    font-size: 24px;
+    margin-bottom: 20px;
+    color: #333;
+}
+
+.benchmark-dashboard .run-benchmarks-btn {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.3s;
+}
+
+.benchmark-dashboard .run-benchmarks-btn:hover {
+    background-color: #45a049;
+}
+
+.benchmark-dashboard .results-section {
+    margin-top: 20px;
+    width: 100%;
+    max-width: 800px;
+}
+
+.benchmark-dashboard .results-section table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.benchmark-dashboard .results-section table th,
+.benchmark-dashboard .results-section table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+.benchmark-dashboard .results-section table th {
+    background-color: #f2f2f2;
+    color: #333;
+}
+
+.benchmark-dashboard .results-section table tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+.benchmark-dashboard .results-section table tr:hover {
+    background-color: #f1f1f1;
+}

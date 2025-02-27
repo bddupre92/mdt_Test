@@ -413,3 +413,19 @@ def run_comprehensive_benchmark(
                 f.write(f"  Dimension {row['dimension']}:\n")
                 f.write(f"    Best: {row['best_fitness']:.6f}\n")
                 f.write(f"    Time: {row['time_taken']:.2f}s\n")
+
+def run_benchmark_comparison() -> Dict[str, Any]:
+    """Run benchmark comparison and return results"""
+    output_dir = 'benchmark_comparison_results'
+    run_comprehensive_benchmark(output_dir=output_dir)
+    
+    # Load and return results
+    theoretical_results = pd.read_csv(f'{output_dir}/theoretical_results.csv')
+    ml_results = pd.read_csv(f'{output_dir}/ml_results.csv')
+    cmaes_results = pd.read_csv(f'{output_dir}/cmaes_comparison.csv')
+    
+    return {
+        'theoretical_results': theoretical_results.to_dict(orient='records'),
+        'ml_results': ml_results.to_dict(orient='records'),
+        'cmaes_results': cmaes_results.to_dict(orient='records')
+    }
