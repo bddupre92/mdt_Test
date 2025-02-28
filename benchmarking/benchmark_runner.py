@@ -305,6 +305,11 @@ class BenchmarkRunner:
             plt.savefig(f'{func_name}_convergence.png')
             plt.close()
 
+    def run_benchmark_comparison(self) -> Dict[str, Any]:
+        """Run benchmark comparison and return results"""
+        results = self.run_theoretical_benchmarks()
+        return results
+
 def run_comprehensive_benchmark(
     data_size: int = 1000,
     use_ray: bool = True,
