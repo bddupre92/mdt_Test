@@ -1,35 +1,38 @@
 """
-Main FastAPI application.
+Main Flask application.
 """
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from flask import Flask, render_template, jsonify, request
+import json
+import os
+from benchmarking.benchmark_runner import BenchmarkRunner
 
-from app.api.routes import router as api_router
-from app.core.middleware.auth import AuthMiddleware
+app = Flask(__name__)
 
-app = FastAPI(title="Migraine Prediction Service")
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@app.route('/api/benchmarks', methods=['GET'])
+def get_benchmarks():
+    benchmark_file = os.path.join('data', 'benchmarks', 'benchmark_comparison.json')
+    if os.path.exists(benchmark_file):
+        with open(benchmark_file, 'r') as f:
+            benchmarks = json.load(f)
+        return jsonify(benchmarks)
+    return jsonify({"error": "Benchmark data not found."}), 404
 
-# Add authentication middleware
-app.add_middleware(
-    AuthMiddleware,
-    exclude_paths=[
-        "/docs",
-        "/redoc",
-        "/openapi.json",
-        "/api/auth/login",
-        "/api/auth/register",
-        "/api/auth/token"  # Keep this for backward compatibility
-    ]
-)
+@app.route('/api/dashboard/run-benchmark-comparison', methods=['POST'])
+def run_benchmark_comparison():
+    # Initialize benchmark runner with desired settings
+    runner = BenchmarkRunner(
+        optimizers=[],  # Add your optimizers here
+        n_runs=1,
+        max_evaluations=1000,
+        use_ray=False
+    )
+    # Run benchmark comparison
+    results = runner.run_theoretical_benchmarks()
+    return jsonify(results)
 
-# Mount API routes
-app.include_router(api_router, prefix="/api")
+if __name__ == '__main__':
+    app.run(debug=True)

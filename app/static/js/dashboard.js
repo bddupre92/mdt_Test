@@ -1,4 +1,3 @@
-// Dashboard JavaScript for migraine prediction app
 const RISK_COLORS = {
     low: '#4CAF50',
     medium: '#FFC107',
@@ -66,6 +65,11 @@ class MigraineDashboard {
         document.getElementById('dateRange').addEventListener('change', (e) => {
             this.updateDashboard(e.target.value);
         });
+
+        // Setup Run Benchmarks button
+        document.getElementById('runBenchmarks').addEventListener('click', () => {
+            this.runBenchmarks();
+        });
     }
 
     async updateDashboard(days = 30) {
@@ -108,6 +112,43 @@ class MigraineDashboard {
         const response = await fetch('/api/predictions/drift-status');
         if (!response.ok) throw new Error('Failed to fetch drift status');
         return await response.json();
+    }
+
+    async runBenchmarks() {
+        try {
+            const response = await fetch('/api/dashboard/run-benchmark-comparison', {
+                method: 'POST'
+            });
+            if (!response.ok) throw new Error('Failed to run benchmarks');
+            const results = await response.json();
+            this.displayBenchmarkResults(results);
+        } catch (error) {
+            console.error('Error running benchmarks:', error);
+            this.showError('Failed to run benchmarks');
+        }
+    }
+
+    displayBenchmarkResults(results) {
+        const resultsSection = document.getElementById('benchmarkResults');
+        resultsSection.innerHTML = '';
+
+        results.forEach(result => {
+            const resultDiv = document.createElement('div');
+            resultDiv.classList.add('result');
+            resultDiv.innerHTML = `
+                <h2>${result.optimizer_name}</h2>
+                <p>Function: ${result.function_name}</p>
+                <p>Dimension: ${result.dimension}</p>
+                <p>Best Fitness: ${result.best_fitness}</p>
+                <p>Mean Fitness: ${result.mean_fitness}</p>
+                <p>Std Fitness: ${result.std_fitness}</p>
+                <p>Iterations: ${result.iterations}</p>
+                <p>Evaluations: ${result.evaluations}</p>
+                <p>Time Taken: ${result.time_taken}</p>
+                <p>Memory Peak: ${result.memory_peak}</p>
+            `;
+            resultsSection.appendChild(resultDiv);
+        });
     }
 
     updateRiskChart(history) {

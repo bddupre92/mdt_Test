@@ -171,3 +171,51 @@ button:hover {
         font-size: 36px;
     }
 }
+
+/* Benchmark Dashboard Styles */
+.benchmark-dashboard {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+}
+
+.benchmark-dashboard h1 {
+    font-size: 2em;
+    margin-bottom: 20px;
+}
+
+.benchmark-dashboard button {
+    margin-bottom: 20px;
+}
+
+.benchmark-results {
+    width: 100%;
+    max-width: 800px;
+    margin: 20px 0;
+}
+
+.benchmark-results table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.benchmark-results th,
+.benchmark-results td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+.benchmark-results th {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.benchmark-results tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+.benchmark-results tr:hover {
+    background-color: #ddd;
+}
