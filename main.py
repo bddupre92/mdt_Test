@@ -877,6 +877,202 @@ def run_explainability_analysis(
         traceback.print_exc()
         return None
 
+def run_meta_learning(method='bayesian', surrogate=None, selection=None, exploration=0.2, history_weight=0.7):
+    """Run meta-learning process to find the best optimizer for a given problem."""
+    logging.info(f"Running meta-learning with method={method}, surrogate={surrogate}, selection={selection}")
+    
+    # Create directories if they don't exist
+    os.makedirs('results/meta_learning', exist_ok=True)
+    
+    # Define test functions
+    test_functions = {
+        'sphere': lambda x: np.sum(x**2),
+        'rosenbrock': lambda x: np.sum(100.0 * (x[1:] - x[:-1]**2)**2 + (1 - x[:-1])**2),
+        'rastrigin': lambda x: 10 * len(x) + np.sum(x**2 - 10 * np.cos(2 * np.pi * x)),
+        'ackley': lambda x: -20 * np.exp(-0.2 * np.sqrt(np.sum(x**2) / len(x))) - np.exp(np.sum(np.cos(2 * np.pi * x)) / len(x)) + 20 + np.e
+    }
+    
+    # Initialize optimizers
+    dim = 30
+    bounds = [(-5, 5)] * dim
+    
+    # Initialize optimizer wrappers
+    aco_opt = AntColonyWrapper(dim=dim, bounds=bounds)
+    gwo_opt = GreyWolfWrapper(dim=dim, bounds=bounds)
+    de_opt = DifferentialEvolutionWrapper(dim=dim, bounds=bounds)
+    es_opt = EvolutionStrategyWrapper(dim=dim, bounds=bounds)
+    de_adaptive_opt = DifferentialEvolutionWrapper(dim=dim, bounds=bounds, adaptive=True)
+    es_adaptive_opt = EvolutionStrategyWrapper(dim=dim, bounds=bounds, adaptive=True)
+    
+    # Create dictionary of optimizers
+    optimizers = {
+        'ACO': aco_opt,
+        'GWO': gwo_opt,
+        'DE': de_opt,
+        'ES': es_opt,
+        'DE (Adaptive)': de_adaptive_opt,
+        'ES (Adaptive)': es_adaptive_opt
+    }
+    
+    # Initialize meta-optimizer with the correct parameters
+    meta_opt = MetaOptimizer(
+        dim=dim,
+        bounds=bounds,
+        optimizers=optimizers,
+        n_parallel=2,
+        history_file='results/meta_learning/history.json',
+        selection_file='results/meta_learning/selection.json'
+    )
+    
+    # Run meta-optimizer on each benchmark function
+    results = {}
+    best_algorithms = {}
+    performance_metrics = {}
+    
+    for func_name, func in test_functions.items():
+        logging.info(f"Running meta-learning on {func_name} function")
+        
+        # Run meta-optimizer
+        meta_opt.reset()  # Reset optimizer state
+        
+        # Use the correct parameters for optimize
+        result = meta_opt.optimize(
+            func, 
+            max_evals=1000,  # Reduced for quicker results
+            context={"function_name": func_name}
+        )
+        
+        # Extract results
+        best_score = meta_opt.best_score
+        best_solution = meta_opt.best_solution
+        history = meta_opt.optimization_history
+        
+        # Store results
+        results[func_name] = {
+            'best_score': best_score,
+            'best_solution': best_solution,
+            'history': history
+        }
+        
+        # Track which optimizer was selected most often
+        optimizer_counts = {}
+        for entry in history:
+            optimizer = entry.get('selected_optimizer', 'unknown')
+            optimizer_counts[optimizer] = optimizer_counts.get(optimizer, 0) + 1
+        
+        # Determine best algorithm
+        best_algorithm = max(optimizer_counts.items(), key=lambda x: x[1])[0]
+        best_algorithms[func_name] = best_algorithm
+        
+        # Calculate performance metrics
+        performance_metrics[func_name] = {
+            'best_score': best_score,
+            'optimizer_selections': optimizer_counts,
+            'convergence_rate': len(history) / 1000  # Simple metric
+        }
+    
+    # Determine overall best algorithm
+    all_selections = {}
+    for func_name, algorithm in best_algorithms.items():
+        all_selections[algorithm] = all_selections.get(algorithm, 0) + 1
+    
+    overall_best_algorithm = max(all_selections.items(), key=lambda x: x[1])[0]
+    
+    # Create summary plot
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Plot optimizer selection frequency
+    algorithms = list(all_selections.keys())
+    frequencies = [all_selections[alg] for alg in algorithms]
+    
+    ax.bar(algorithms, frequencies)
+    ax.set_xlabel('Optimizer')
+    ax.set_ylabel('Selection Frequency')
+    ax.set_title('Meta-Learner Optimizer Selection Frequency')
+    
+    # Save plot
+    save_plot(fig, 'meta_learner_selection_frequency', plot_type='meta')
+    
+    return {
+        'best_algorithm': overall_best_algorithm,
+        'algorithm_selections': best_algorithms,
+        'performance': performance_metrics,
+        'results': results
+    }
+
+def run_evaluation(model=None, X_test=None, y_test=None):
+    """
+    Evaluate a trained model on test data.
+    
+    Args:
+        model: Trained model to evaluate (if None, creates a default model)
+        X_test: Test features (if None, creates synthetic data)
+        y_test: Test targets (if None, creates synthetic data)
+        
+    Returns:
+        Dictionary with evaluation results
+    """
+    logging.info("Running model evaluation")
+    
+    # Create results directory
+    results_dir = Path('results')
+    results_dir.mkdir(exist_ok=True, parents=True)
+    
+    # Create model and data if not provided
+    if model is None or X_test is None or y_test is None:
+        from sklearn.ensemble import RandomForestRegressor
+        from sklearn.datasets import make_regression
+        from sklearn.model_selection import train_test_split
+        
+        # Create synthetic data
+        X, y = make_regression(n_samples=1000, n_features=10, noise=0.1, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        # Create and train model
+        model = RandomForestRegressor(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
+    
+    # Evaluate model
+    y_pred = model.predict(X_test)
+    
+    # Calculate metrics
+    mse = mean_squared_error(y_test, y_pred)
+    rmse = np.sqrt(mse)
+    r2 = r2_score(y_test, y_pred)
+    
+    # Create evaluation plot
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Plot actual vs predicted
+    ax.scatter(y_test, y_pred, alpha=0.5)
+    
+    # Add perfect prediction line
+    min_val = min(np.min(y_test), np.min(y_pred))
+    max_val = max(np.max(y_test), np.max(y_pred))
+    ax.plot([min_val, max_val], [min_val, max_val], 'r--')
+    
+    ax.set_xlabel('Actual')
+    ax.set_ylabel('Predicted')
+    ax.set_title('Model Evaluation: Actual vs Predicted')
+    
+    # Add metrics to plot
+    ax.text(0.05, 0.95, f'MSE: {mse:.4f}\nRMSE: {rmse:.4f}\nR²: {r2:.4f}',
+            transform=ax.transAxes, verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    # Save plot
+    save_plot(fig, 'model_evaluation', plot_type='evaluation')
+    
+    return {
+        'score': r2,
+        'metrics': {
+            'mse': mse,
+            'rmse': rmse,
+            'r2': r2
+        },
+        'predictions': y_pred.tolist()
+    }
+
 def main():
     """Main function."""
     # Parse command-line arguments
@@ -898,16 +1094,28 @@ def main():
                         help='Specific plot types to generate (e.g., summary waterfall force dependence)')
     parser.add_argument('--explain-samples', type=int, default=50, help='Number of samples to use for explainability')
     
+    # Meta-learner and optimization parameters
     parser.add_argument('--method', type=str, default='bayesian', help='Method for meta-learner')
     parser.add_argument('--surrogate', type=str, default=None, help='Surrogate model for meta-learner')
     parser.add_argument('--selection', type=str, default=None, help='Selection strategy for meta-learner')
     parser.add_argument('--exploration', type=float, default=0.2, help='Exploration factor for meta-learner')
     parser.add_argument('--history', type=float, default=0.7, help='History weight for meta-learner')
+    
+    # Drift detection parameters
     parser.add_argument('--drift-window', type=int, default=10, help='Window size for drift detection')
     parser.add_argument('--drift-threshold', type=float, default=0.01, help='Threshold for drift detection')
     parser.add_argument('--drift-significance', type=float, default=0.9, help='Significance level for drift detection')
+    
+    # Visualization and summary options
     parser.add_argument('--visualize', action='store_true', help='Visualize results')
-    args = parser.parse_args()
+    parser.add_argument('--summary', action='store_true', help='Print summary of results')
+    
+    # Parse arguments, handling unknown arguments gracefully
+    args, unknown = parser.parse_known_args()
+    
+    # Warn about unknown arguments
+    if unknown:
+        logging.warning(f"Unknown arguments: {unknown}")
     
     # Set up logging
     logging.basicConfig(
@@ -933,32 +1141,75 @@ def main():
             logging.info(f"Drift detection complete.")
             logging.info(f"Detected drifts: {results['detected_drifts']}")
             logging.info(f"Known drift points: {results['known_drift_points']}")
+            
+            # Print summary if requested
+            if args.summary:
+                print("\nDrift Detection Summary:")
+                print(f"  Window Size: {args.drift_window}")
+                print(f"  Threshold: {args.drift_threshold}")
+                print(f"  Significance Level: {args.drift_significance}")
+                print(f"  Detected Drifts: {results['detected_drifts']}")
+                print(f"  Known Drift Points: {results['known_drift_points']}")
+                print(f"  Detection Accuracy: {results.get('detection_accuracy', 'N/A')}")
             return
         
         # Run meta-learner if requested
         if args.meta:
             logging.info("Running meta-learning")
-            results = run_meta_learning()
+            meta_params = {
+                'method': args.method,
+                'surrogate': args.surrogate,
+                'selection': args.selection,
+                'exploration': args.exploration,
+                'history_weight': args.history
+            }
+            results = run_meta_learning(**meta_params)
             logging.info(f"Meta-learning complete. Best algorithm: {results['best_algorithm']}")
+            
+            # Print summary if requested
+            if args.summary:
+                print("\nMeta-Learning Summary:")
+                print(f"  Method: {args.method}")
+                print(f"  Surrogate Model: {args.surrogate or 'Default'}")
+                print(f"  Selection Strategy: {args.selection or 'Default'}")
+                print(f"  Exploration Factor: {args.exploration}")
+                print(f"  History Weight: {args.history}")
+                print(f"  Best Algorithm: {results['best_algorithm']}")
+                print(f"  Performance: {results.get('performance', 'N/A')}")
             return
             
         # Run optimization if requested
         if args.optimize:
             logging.info("Running optimization")
             results, results_df = run_optimization()
-            logging.info(f"Optimization complete. Best score: {results['best_score']:.4f}")
+            logging.info(f"Optimization complete. Best score: {results.get('best_score', 'N/A')}")
             
             # Save results
             results_df.to_csv('results/optimization_results.csv', index=False)
+            
+            # Print summary if requested
+            if args.summary:
+                print("\nOptimization Summary:")
+                print(f"  Best Score: {results.get('best_score', 'N/A')}")
+                print("\nTop Performing Optimizers:")
+                for i, (optimizer, score) in enumerate(results.get('top_optimizers', {}).items()):
+                    print(f"  {i+1}. {optimizer}: {score:.6f}")
             return
             
         # Run evaluation if requested
         if args.evaluate:
             logging.info("Evaluating model")
             results = run_evaluation()
-            logging.info(f"Evaluation complete. Score: {results['score']:.4f}")
-            return
+            logging.info(f"Evaluation complete. Score: {results.get('score', 'N/A')}")
             
+            # Print summary if requested
+            if args.summary:
+                print("\nEvaluation Summary:")
+                print(f"  Score: {results['score']:.6f}")
+                print(f"  Metrics: {results['metrics']}")
+                print(f"  Predictions: {results['predictions']}")
+            return
+        
         # Run explainability analysis if requested
         if args.explain:
             logging.info("Running explainability analysis")
@@ -966,52 +1217,63 @@ def main():
             # Create a model and data for explanation
             from sklearn.ensemble import RandomForestRegressor
             from sklearn.datasets import make_regression
+            from sklearn.model_selection import train_test_split
             
+            # Create synthetic data
             X, y = make_regression(n_samples=500, n_features=10, noise=0.1, random_state=42)
-            model = RandomForestRegressor(n_estimators=100, random_state=42)
-            model.fit(X, y)
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
             
-            # Set up explainability parameters
-            explainability_params = {}
+            # Create and train model
+            model = RandomForestRegressor(n_estimators=100, random_state=42)
+            model.fit(X_train, y_train)
             
             # Run explainability analysis
-            explanation_results = run_explainability_analysis(
-                model=model,
-                X=X,
-                y=y,
-                explainer_type=args.explainer,
-                plot_types=args.explain_plot_types,
-                generate_plots=args.explain_plots,
-                n_samples=args.explain_samples
-            )
+            explainer_params = {
+                'model': model,
+                'X': X_test,
+                'y': y_test,
+                'explainer_type': args.explainer,
+                'plot_types': args.explain_plot_types,
+                'generate_plots': args.explain_plots,
+                'n_samples': args.explain_samples
+            }
             
-            if explanation_results:
-                # Print feature importance
-                print("\nFeature Importance:")
-                for feature, importance in sorted(
-                    explanation_results['feature_importance'].items(),
-                    key=lambda x: abs(x[1]),
-                    reverse=True
-                ):
-                    print(f"{feature}: {importance:.4f}")
-        
-            logging.info("Explainability analysis complete")
+            results = run_explainability_analysis(**explainer_params)
+            logging.info(f"Explainability analysis complete.")
+            
+            # Print summary if requested
+            if args.summary:
+                print("\nExplainability Summary:")
+                print(f"  Explainer Type: {explainer_params['explainer_type']}")
+                print(f"  Feature Importance: {results['feature_importance']}")
+                print(f"  Explanation: {results['explanation']}")
+                print(f"  Plot Paths: {results['plot_paths']}")
             return
         
-        # Run default optimization if no specific action is requested
-        logging.info("Running default optimization")
+        # Default to running optimization
+        logging.info("Running optimization by default")
         results, results_df = run_optimization()
-        logging.info(f"Optimization complete. Best score: {results['best_score']:.4f}")
+        logging.info(f"Optimization complete. Best score: {results.get('best_score', 'N/A')}")
         
         # Save results
         results_df.to_csv('results/optimization_results.csv', index=False)
-            
+        
+        # Print summary if requested
+        if args.summary:
+            print("\nOptimization Summary:")
+            print(f"  Best Score: {results.get('best_score', 'N/A')}")
+            print("\nTop Performing Optimizers:")
+            for i, (optimizer, score) in enumerate(results.get('top_optimizers', {}).items()):
+                print(f"  {i+1}. {optimizer}: {score:.6f}")
+        return
+        
     except Exception as e:
-        logging.error(f"Error in main: {str(e)}", exc_info=True)
+        logging.error(f"Error: {str(e)}")
         traceback.print_exc()
 
 if __name__ == '__main__':
     try:
         main()
     except Exception as e:
-        logging.error(f"Error in main: {str(e)}", exc_info=True)
+        logging.error(f"Error: {str(e)}")
+        traceback.print_exc()
