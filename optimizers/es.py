@@ -34,11 +34,14 @@ class EvolutionStrategyOptimizer(BaseOptimizer):
             timeout: Timeout in seconds (default: 30.0)
         """
         super().__init__(dim=dim, bounds=bounds, population_size=population_size,
-                        max_evals=max_evals, adaptive=adaptive)
+                        adaptive=adaptive)
         
         # ES parameters
         self.offspring_size = offspring_size or population_size
         self.strategy_params = np.ones(population_size) * initial_step_size
+        
+        # Store max_evals as instance variable
+        self.max_evals = max_evals
         
         # Initialize population
         self.population = self._init_population()

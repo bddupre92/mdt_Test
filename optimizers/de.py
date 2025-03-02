@@ -32,7 +32,10 @@ class DifferentialEvolutionOptimizer(BaseOptimizer):
             adaptive: Whether to use parameter adaptation
         """
         super().__init__(dim=dim, bounds=bounds, population_size=population_size,
-                        max_evals=max_evals, adaptive=adaptive)
+                        adaptive=adaptive)
+        
+        # Store max_evals as instance variable
+        self.max_evals = max_evals
         
         # DE parameters
         self.F_init = F

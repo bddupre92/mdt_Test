@@ -16,46 +16,88 @@ class MigraineDashboard {
 
     initializeCharts() {
         // Risk trend chart
-        const riskCtx = document.getElementById('riskTrend').getContext('2d');
-        this.riskChart = new Chart(riskCtx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Migraine Risk',
-                    data: [],
-                    borderColor: '#2196F3',
-                    tension: 0.1
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        max: 1
+        const riskElement = document.getElementById('riskTrend');
+        if (riskElement) {
+            const riskCtx = riskElement.getContext('2d');
+            this.riskChart = new Chart(riskCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Migraine Risk',
+                        data: [],
+                        borderColor: '#2196F3',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1
+                        }
                     }
                 }
-            }
-        });
+            });
+        } else {
+            console.error('Risk trend chart element not found.');
+        }
 
         // Top triggers chart
-        const triggerCtx = document.getElementById('topTriggers').getContext('2d');
-        this.triggerChart = new Chart(triggerCtx, {
-            type: 'bar',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Trigger Importance',
-                    data: [],
-                    backgroundColor: '#4CAF50'
-                }]
-            },
-            options: {
-                responsive: true,
-                indexAxis: 'y'
-            }
-        });
+        const triggerElement = document.getElementById('topTriggers');
+        if (triggerElement) {
+            const triggerCtx = triggerElement.getContext('2d');
+            this.triggerChart = new Chart(triggerCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Trigger Importance',
+                        data: [],
+                        backgroundColor: '#4CAF50'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        } else {
+            console.error('Top triggers chart element not found.');
+        }
+
+        // Drift chart
+        const driftElement = document.getElementById('driftChart');
+        if (driftElement) {
+            const driftCtx = driftElement.getContext('2d');
+            this.driftChart = new Chart(driftCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Drift Data',
+                        data: [],
+                        borderColor: '#FFC107',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        } else {
+            console.error('Drift chart element not found.');
+        }
     }
 
     setupEventListeners() {
@@ -68,27 +110,50 @@ class MigraineDashboard {
         });
     }
 
-    async updateDashboard(days = 30) {
+    updateDashboard() {
+        this.fetchPatientData();
+        this.fetchDriftResults();
+        // Fetch drift detection data
+        fetch('/api/dashboard/get_drift_data')
+            .then(response => response.json())
+            .then(data => {
+                // Update risk chart
+                this.riskChart.data.labels = data.labels;
+                this.riskChart.data.datasets[0].data = data.risk_data;
+                this.riskChart.update();
+
+                // Update trigger chart
+                this.triggerChart.data.labels = data.trigger_labels;
+                this.triggerChart.data.datasets[0].data = data.trigger_data;
+                this.triggerChart.update();
+
+                // Update drift chart
+                this.driftChart.data.labels = data.drift_labels;
+                this.driftChart.data.datasets[0].data = data.drift_data;
+                this.driftChart.update();
+            })
+            .catch(error => console.error('Error fetching data:', error));
+    }
+
+    async fetchPatientData() {
         try {
-            // Get prediction history
-            const history = await this.fetchPredictionHistory(days);
-            this.updateRiskChart(history);
-            
-            // Get feature importance
-            const triggers = await this.fetchTriggerImportance();
-            this.updateTriggerChart(triggers);
-            
-            // Update current risk display
-            const currentRisk = history.predictions[history.predictions.length - 1];
-            this.updateRiskDisplay(currentRisk);
-            
-            // Check for drift alerts
-            const driftStatus = await this.fetchDriftStatus();
-            this.updateDriftAlerts(driftStatus);
-            
+            const response = await fetch('/api/dashboard/get_patient_data');
+            const data = await response.json();
+            // Populate patient data section
+            document.getElementById('patientData').innerHTML = `<p>${data.patient_info}</p>`;
         } catch (error) {
-            console.error('Error updating dashboard:', error);
-            this.showError('Failed to update dashboard');
+            console.error('Error fetching patient data:', error);
+        }
+    }
+
+    async fetchDriftResults() {
+        try {
+            const response = await fetch('/api/dashboard/get_drift_results');
+            const data = await response.json();
+            // Populate drift results section
+            document.getElementById('driftResults').innerHTML = `<p>${data.drift_info}</p>`;
+        } catch (error) {
+            console.error('Error fetching drift results:', error);
         }
     }
 

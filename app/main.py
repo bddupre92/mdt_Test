@@ -38,7 +38,9 @@ app.add_middleware(
         "/api/auth/register",
         "/api/dashboard",  
         "/static",
-        "/"  # Allow access to root URL
+        "/",  # Allow access to root URL
+        "/test",  # Allow access to test dashboard
+        "/benchmark-test"  # Allow access to benchmark test
     ]
 )
 
@@ -60,3 +62,13 @@ async def root(request: Request):
 async def dashboard(request: Request):
     """Serve the dashboard page."""
     return templates.TemplateResponse("pages/dashboard.html", {"request": request})
+
+@app.get("/test", response_class=HTMLResponse)
+async def test_dashboard(request: Request):
+    """Serve the test dashboard page."""
+    return templates.TemplateResponse("test_dashboard.html", {"request": request})
+
+@app.get("/benchmark-test", response_class=HTMLResponse)
+async def benchmark_test(request: Request):
+    """Serve the benchmark test page."""
+    return templates.TemplateResponse("benchmark_test.html", {"request": request})

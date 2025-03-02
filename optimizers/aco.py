@@ -47,8 +47,11 @@ class AntColonyOptimizer(BaseOptimizer):
             rho: Pheromone evaporation rate
             q0: Exploration-exploitation trade-off
         """
-        super().__init__(dim=dim, bounds=bounds, population_size=population_size,
-                        max_evals=max_evals, adaptive=adaptive)
+        # Only pass parameters that BaseOptimizer accepts
+        super().__init__(dim=dim, bounds=bounds, population_size=population_size, adaptive=adaptive)
+        
+        # Store max_evals as instance variable
+        self.max_evals = max_evals
         
         # ACO parameters
         self.evaporation_rate = evaporation_rate

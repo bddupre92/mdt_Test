@@ -1320,24 +1320,36 @@ class UnifiedDashboard {
             // Clear timeout
             clearTimeout(loadingTimeout);
             
+            // Log the raw response for debugging
+            console.log('UnifiedDashboard: Raw response:', response);
+            
             if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Server error: ${response.status} - ${errorText}`);
+                let errorMessage;
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.detail || errorData.message || `HTTP error ${response.status}`;
+                } catch (e) {
+                    // If parsing JSON fails, try to get text
+                    const errorText = await response.text();
+                    errorMessage = errorText || `HTTP error ${response.status}`;
+                }
+                throw new Error(errorMessage);
             }
             
             const result = await response.json();
             console.log('UnifiedDashboard: Benchmark comparison result:', result);
             
-            if (result.status === 'success') {
-                // Reload benchmark data to update the charts
-                await this.loadBenchmarkData();
-                this.showSuccess('Benchmark comparison completed successfully');
-            } else {
-                throw new Error(result.message || 'Failed to run benchmark comparison');
+            if (!result) {
+                throw new Error('No data received from server');
             }
+            
+            // Reload benchmark data to update the charts
+            await this.loadBenchmarkData();
+            this.showSuccess('Benchmark comparison completed successfully');
+            
         } catch (error) {
             console.error('UnifiedDashboard: Error running benchmark comparison:', error);
-            this.showError(`Failed to run benchmark comparison: ${error.message}`);
+            this.showError('Failed to run benchmark comparison: ' + error.message);
         } finally {
             this.showLoading(false);
         }

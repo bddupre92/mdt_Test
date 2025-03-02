@@ -29,8 +29,11 @@ class GreyWolfOptimizer(BaseOptimizer):
             adaptive: Whether to use parameter adaptation
             a_init: Initial value of a parameter
         """
-        super().__init__(dim=dim, bounds=bounds, population_size=population_size,
-                        max_evals=max_evals, adaptive=adaptive)
+        # Only pass parameters that BaseOptimizer accepts
+        super().__init__(dim=dim, bounds=bounds, population_size=population_size, adaptive=adaptive)
+        
+        # Store max_evals as instance variable
+        self.max_evals = max_evals
         
         # GWO parameters
         self.a_init = a_init

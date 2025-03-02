@@ -6,6 +6,10 @@
 
 class BenchmarkDashboard {
     constructor(parentDashboard) {
+        if (!parentDashboard) {
+            throw new Error('Parent dashboard is required');
+        }
+        
         this.parent = parentDashboard;
         this.charts = {};
         this.data = {
@@ -15,42 +19,39 @@ class BenchmarkDashboard {
             featureImportance: null
         };
         
-        console.log('BenchmarkDashboard: Constructor initialized');
-        console.log('BenchmarkDashboard: Chart library available:', typeof Chart !== 'undefined');
+        // Verify Chart.js is available
+        if (typeof Chart === 'undefined') {
+            throw new Error('Chart.js must be loaded before initializing BenchmarkDashboard');
+        }
         
-        this.initialize();
+        // Initialize after dependencies are verified
+        this.initialize().catch(error => {
+            console.error('BenchmarkDashboard initialization failed:', error);
+            this.parent.showError('Failed to initialize benchmark dashboard: ' + error.message);
+        });
     }
     
-    /**
-     * Initialize dashboard
-     */
-    initialize() {
+    async initialize() {
         console.log('BenchmarkDashboard: Initializing...');
         
         // Set up event listeners
-        const runBenchmarkButton = document.getElementById('runBenchmarkComparison');
-        if (runBenchmarkButton) {
-            console.log('BenchmarkDashboard: Found benchmark comparison button, setting up listener');
-            runBenchmarkButton.addEventListener('click', () => this.runBenchmarkComparison());
-        } else {
-            console.log('BenchmarkDashboard: Benchmark comparison button not found');
-        }
-        
-        // Initialize additional event listeners
-        this.init();
+        this.setupEventListeners();
         
         // Load initial data
-        this.loadAllData();
+        await this.loadAllData();
+        
+        console.log('BenchmarkDashboard: Initialization complete');
     }
     
-    /**
-     * Initialize benchmark dashboard
-     */
-    init() {
-        // Set up event listeners
+    setupEventListeners() {
+        const runBenchmarkButton = document.getElementById('runBenchmarkComparison');
+        if (runBenchmarkButton) {
+            runBenchmarkButton.addEventListener('click', () => this.runBenchmarkComparison());
+        }
+        
         const convergenceSelect = document.getElementById('convergenceFunction');
         if (convergenceSelect) {
-            convergenceSelect.addEventListener('change', () => this.updateConvergenceChart());
+            convergenceSelect.addEventListener('change', () => this.updateConvergencePlot());
         }
         
         const datasetSelect = document.getElementById('datasetSelector');
@@ -59,137 +60,50 @@ class BenchmarkDashboard {
         }
     }
     
-    /**
-     * Load all benchmark data
-     */
     async loadAllData() {
-        console.log('BenchmarkDashboard: Loading all benchmark data...');
-        this.parent.showLoading(true);
-        
         try {
-            // Load all data in parallel
-            console.log('BenchmarkDashboard: Fetching data from API endpoints...');
+            this.parent.showLoading(true);
             
-            // Use Promise.allSettled instead of Promise.all to handle partial failures
-            const results = await Promise.allSettled([
-                this.fetchData('/api/dashboard/benchmarks/comparison'),
-                this.fetchData('/api/dashboard/benchmarks/convergence'),
-                this.fetchData('/api/dashboard/benchmarks/real-data-performance'),
-                this.fetchData('/api/dashboard/benchmarks/feature-importance')
-            ]);
+            const endpoints = [
+                '/api/dashboard/benchmarks/comparison',
+                '/api/dashboard/benchmarks/convergence',
+                '/api/dashboard/benchmarks/real-data-performance',
+                '/api/dashboard/benchmarks/feature-importance'
+            ];
             
-            // Process results
-            const [benchmarkResult, convergenceResult, realDataResult, featureImportanceResult] = results;
+            const results = await Promise.allSettled(
+                endpoints.map(endpoint => this.parent.fetchData(endpoint))
+            );
             
-            // Handle each result individually
-            if (benchmarkResult.status === 'fulfilled') {
-                this.data.benchmarkComparison = benchmarkResult.value;
-                console.log('BenchmarkDashboard: Successfully loaded benchmark comparison data');
+            // Process results and handle errors individually
+            results.forEach((result, index) => {
+                if (result.status === 'fulfilled') {
+                    const dataKeys = ['benchmarkComparison', 'convergence', 'realDataPerformance', 'featureImportance'];
+                    this.data[dataKeys[index]] = result.value;
+                } else {
+                    console.error(`Failed to load ${endpoints[index]}:`, result.reason);
+                }
+            });
+            
+            // Initialize charts if we have any data
+            if (Object.values(this.data).some(value => value !== null)) {
+                this.initializeCharts();
             } else {
-                console.error('BenchmarkDashboard: Failed to load benchmark comparison data:', benchmarkResult.reason);
-                // Use fallback data
-                this.data.benchmarkComparison = this.getFallbackBenchmarkData();
+                throw new Error('No benchmark data could be loaded');
             }
-            
-            if (convergenceResult.status === 'fulfilled') {
-                this.data.convergence = convergenceResult.value;
-                console.log('BenchmarkDashboard: Successfully loaded convergence data');
-            } else {
-                console.error('BenchmarkDashboard: Failed to load convergence data:', convergenceResult.reason);
-                // Use fallback data
-                this.data.convergence = this.getFallbackConvergenceData();
-            }
-            
-            if (realDataResult.status === 'fulfilled') {
-                this.data.realDataPerformance = realDataResult.value;
-                console.log('BenchmarkDashboard: Successfully loaded real data performance');
-            } else {
-                console.error('BenchmarkDashboard: Failed to load real data performance:', realDataResult.reason);
-                // Use fallback data
-                this.data.realDataPerformance = this.getFallbackRealDataPerformance();
-            }
-            
-            if (featureImportanceResult.status === 'fulfilled') {
-                this.data.featureImportance = featureImportanceResult.value;
-                console.log('BenchmarkDashboard: Successfully loaded feature importance data');
-            } else {
-                console.error('BenchmarkDashboard: Failed to load feature importance data:', featureImportanceResult.reason);
-                // Use fallback data
-                this.data.featureImportance = this.getFallbackFeatureImportance();
-            }
-            
-            console.log('BenchmarkDashboard: Data processing complete');
-            
-            // Initialize charts
-            this.initBenchmarkComparisonChart();
-            this.initConvergenceChart();
-            this.initRealDataChart();
-            this.initFeatureImportanceChart();
-            
-            console.log('BenchmarkDashboard: Charts initialized');
-            
         } catch (error) {
-            console.error('BenchmarkDashboard: Error loading benchmark data:', error);
-            this.parent.showError('Failed to load benchmark data: ' + error.message);
-            
-            // Use fallback data for all charts
-            this.data.benchmarkComparison = this.getFallbackBenchmarkData();
-            this.data.convergence = this.getFallbackConvergenceData();
-            this.data.realDataPerformance = this.getFallbackRealDataPerformance();
-            this.data.featureImportance = this.getFallbackFeatureImportance();
-            
-            // Still try to render charts with fallback data
-            this.initBenchmarkComparisonChart();
-            this.initConvergenceChart();
-            this.initRealDataChart();
-            this.initFeatureImportanceChart();
+            console.error('Failed to load benchmark data:', error);
+            throw error;
         } finally {
             this.parent.showLoading(false);
         }
     }
     
-    /**
-     * Fetch data from an endpoint
-     */
-    async fetchData(url) {
-        console.log(`BenchmarkDashboard: Fetching data from ${url}`);
-        try {
-            // Add timeout for fetch to prevent hanging
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-            
-            const response = await fetch(url, { signal: controller.signal });
-            clearTimeout(timeoutId);
-            
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error(`BenchmarkDashboard: HTTP error ${response.status} from ${url}:`, errorText);
-                throw new Error(`HTTP error ${response.status}: ${errorText.substring(0, 100)}`);
-            }
-            
-            const data = await response.json();
-            console.log(`BenchmarkDashboard: Successfully fetched data from ${url}`);
-            return data;
-        } catch (error) {
-            console.error(`BenchmarkDashboard: Error fetching from ${url}:`, error);
-            
-            // Enhanced error handling
-            if (error.name === 'AbortError') {
-                console.warn(`BenchmarkDashboard: Request to ${url} timed out`);
-                throw new Error(`Request to ${url.split('/').pop()} timed out. The server may be unavailable.`);
-            }
-            if (error.message.includes('NetworkError') || error.message.includes('Failed to fetch')) {
-                console.warn(`BenchmarkDashboard: Network error when fetching from ${url}`);
-                throw new Error(`Network error when fetching ${url.split('/').pop()}. Check if the server is running.`);
-            }
-            if (error.message.includes('SyntaxError')) {
-                console.warn(`BenchmarkDashboard: Invalid JSON response from ${url}`);
-                throw new Error(`Invalid response format from ${url.split('/').pop()}. The server may be returning invalid data.`);
-            }
-            
-            // For any other errors
-            throw new Error(`Error fetching ${url.split('/').pop()}: ${error.message}`);
-        }
+    initializeCharts() {
+        this.initBenchmarkComparisonChart();
+        this.initConvergenceChart();
+        this.initRealDataChart();
+        this.initFeatureImportanceChart();
     }
     
     /**

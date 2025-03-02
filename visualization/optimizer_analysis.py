@@ -45,7 +45,8 @@ class OptimizerAnalyzer:
             self,
             test_functions: Dict[str, Any],
             n_runs: int = 30,
-            record_convergence: bool = True
+            record_convergence: bool = True,
+            max_evals: Optional[int] = None
         ) -> Dict[str, Dict[str, List[OptimizationResult]]]:
         """
         Run optimization comparison.
@@ -54,6 +55,7 @@ class OptimizerAnalyzer:
             test_functions: Dictionary mapping function names to test functions
             n_runs: Number of independent runs per optimizer
             record_convergence: Whether to record convergence history
+            max_evals: Maximum number of function evaluations per run
             
         Returns:
             Dictionary mapping function names to dictionaries mapping optimizer names to lists of results
@@ -72,12 +74,16 @@ class OptimizerAnalyzer:
                     start_time = time.time()
                     optimizer.reset()  # Reset optimizer state
                     
-                    # Run optimization
+                    # Run optimization with specified max_evals
                     best_solution = optimizer.optimize(
                         func,
-                        max_evals=10000,
-                        record_history=record_convergence
+                        max_evals=max_evals if max_evals is not None else optimizer.max_evals
                     )
+                    
+                    # Get parameters including actual evaluations used
+                    params = optimizer.get_parameters()
+                    if hasattr(optimizer, 'evaluations'):
+                        params['evaluations'] = optimizer.evaluations
                     
                     # Store results
                     results.append(OptimizationResult(
@@ -87,7 +93,7 @@ class OptimizerAnalyzer:
                         best_score=optimizer.best_score,
                         convergence_curve=optimizer.convergence_curve if record_convergence else [],
                         execution_time=time.time() - start_time,
-                        hyperparameters=optimizer.get_parameters(),
+                        hyperparameters=params,
                         success_rate=optimizer.success_rate if hasattr(optimizer, 'success_rate') else None,
                         diversity_history=optimizer.diversity_history if hasattr(optimizer, 'diversity_history') else None,
                         param_history=optimizer.param_history if hasattr(optimizer, 'param_history') else None
