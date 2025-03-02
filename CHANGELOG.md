@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.1.0] - 2025-03-02
+
+### Added
+- Real-time visualization for optimization processes with LiveOptimizationMonitor
+- Multi-panel visualization showing optimization progress, improvement rate, convergence speed, and statistics
+- Command-line interface with --live-viz and --save-plots flags
+- Enhanced MetaLearner for migraine prediction with feature importance analysis
+- Improved synthetic data generation for migraine temporal patterns
+
+### Changed
+- Optimized Differential Evolution to properly respect maximum evaluation limits
+- Reduced population size for DE optimizer to ensure evaluation constraints
+- Updated OptimizerAnalyzer to accept max_evals parameter
+- Enhanced DifferentialEvolutionWrapper with better evaluation counting
+- Improved benchmark tests for faster execution and consistent evaluation limits
+
+### Fixed
+- Fixed issue with DE optimizer exceeding specified max_evals limit
+- Implemented wrapper function to count evaluations and enforce limits
+- Adjusted maxiter parameter based on max_evals to prevent excessive evaluations
+- Improved test efficiency with smaller population sizes
+- Enhanced tracking of actual evaluations used during optimization
+
 ## [6.0.1] - 2025-02-25
 
 ### Fixed
