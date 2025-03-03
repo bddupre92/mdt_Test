@@ -148,13 +148,15 @@ def main():
         meta_learner.optimize(
             X_train, y_train,
             progress_callback=progress_callback,
-            feature_names=feature_names
+            feature_names=feature_names,
+            context={'task_type': 'classification'}  # Specify classification task
         )
     
     overall_progress.update(1)
     
     # Get best configuration
     config = meta_learner.get_best_configuration()
+    config['task_type'] = 'classification'  # Ensure task type is set
     print("\nBest model configuration:")
     print(config)
     

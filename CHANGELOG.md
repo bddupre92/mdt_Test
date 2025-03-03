@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.1.1] - 2025-03-02
+
+### Fixed
+- Fixed model factory to properly handle classification tasks:
+  - Added task_type parameter to determine model type (classifier vs regressor)
+  - Updated ModelFactory to use RandomForestClassifier for classification tasks
+  - Fixed predict_proba returning None for regression models
+- Enhanced test pipeline to specify classification task type:
+  - Added task_type context in meta-optimization
+  - Ensured proper model type selection in test_full_pipeline.py
+
 ## [6.1.0] - 2025-03-02
 
 ### Added

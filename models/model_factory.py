@@ -6,7 +6,7 @@ Factory for creating model instances with appropriate wrappers
 
 from typing import Dict, Any, Optional, List
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from .base_model import BaseModel
 
 class SklearnModelWrapper(BaseModel):
@@ -45,8 +45,12 @@ class SklearnModelWrapper(BaseModel):
         return self.model.predict(X)
     
     def predict_proba(self, X):
-        """Get prediction probabilities"""
-        return self.model.predict_proba(X)
+        """Get prediction probabilities if available"""
+        if hasattr(self.model, 'predict_proba'):
+            return self.model.predict_proba(X)
+        else:
+            # For regressors, return None
+            return None
     
     def score(self, X, y):
         """Get model score"""
@@ -69,14 +73,73 @@ class ModelFactory:
         Returns:
             Wrapped model instance
         """
-        # For now, we only support RandomForest
-        model = RandomForestClassifier(
-            n_estimators=config.get('n_estimators', 100),
-            max_depth=config.get('max_depth', None),
-            min_samples_split=config.get('min_samples_split', 10),
-            min_samples_leaf=config.get('min_samples_leaf', 4),
-            max_features=config.get('max_features', 'sqrt'),
-            random_state=42
-        )
+        # Validate and sanitize all parameters to ensure they're valid
+        # n_estimators: must be a positive integer
+        n_estimators = config.get('n_estimators', 100)
+        if not isinstance(n_estimators, int) or n_estimators < 1:
+            n_estimators = 100
+        
+        # max_depth: must be a positive integer or None
+        max_depth = config.get('max_depth', None)
+        if max_depth is not None:
+            if not isinstance(max_depth, (int, float)) or max_depth < 1:
+                max_depth = None
+            else:
+                max_depth = int(max_depth)
+        
+        # min_samples_split: must be an int >= 2 or a float in (0,1)
+        min_samples_split = config.get('min_samples_split', 2)
+        if isinstance(min_samples_split, (int, float)):
+            if isinstance(min_samples_split, int) and min_samples_split < 2:
+                min_samples_split = 2
+            elif isinstance(min_samples_split, float) and (min_samples_split <= 0 or min_samples_split >= 1):
+                min_samples_split = 2
+        else:
+            min_samples_split = 2
+        
+        # min_samples_leaf: must be a positive integer or a float in (0,0.5)
+        min_samples_leaf = config.get('min_samples_leaf', 1)
+        if isinstance(min_samples_leaf, (int, float)):
+            if isinstance(min_samples_leaf, int) and min_samples_leaf < 1:
+                min_samples_leaf = 1
+            elif isinstance(min_samples_leaf, float) and (min_samples_leaf <= 0 or min_samples_leaf >= 0.5):
+                min_samples_leaf = 1
+        else:
+            min_samples_leaf = 1
+        
+        # max_features: must be 'sqrt', 'log2', None, int, or float
+        max_features = config.get('max_features', 'sqrt')
+        valid_str_features = ['sqrt', 'log2', 'auto', None]
+        if isinstance(max_features, str) and max_features not in valid_str_features:
+            max_features = 'sqrt'
+        elif isinstance(max_features, (int, float)) and max_features <= 0:
+            max_features = 'sqrt'
+            
+        # Get additional classification parameters
+        bootstrap = config.get('bootstrap', True)
+        class_weight = config.get('class_weight', None)
+        
+        # Determine whether to use classifier or regressor
+        task_type = config.get('task_type', 'regression')
+        if task_type == 'classification':
+            model = RandomForestClassifier(
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+                min_samples_split=min_samples_split,
+                min_samples_leaf=min_samples_leaf,
+                max_features=max_features,
+                bootstrap=bootstrap,
+                class_weight=class_weight,
+                random_state=42
+            )
+        else:
+            model = RandomForestRegressor(
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+                min_samples_split=min_samples_split,
+                min_samples_leaf=min_samples_leaf,
+                max_features=max_features,
+                random_state=42
+            )
         
         return SklearnModelWrapper(model)
