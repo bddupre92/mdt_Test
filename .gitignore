@@ -26,6 +26,11 @@ venv_migraine/
 ENV/
 env/
 .env
+.venv/
+.venv_minimal/
+env.bak/
+venv.bak/
+.python-version
 
 # IDE
 .idea/
@@ -82,3 +87,17 @@ plots/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Local development
+*.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Cache directories
+.cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
