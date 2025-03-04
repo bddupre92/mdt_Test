@@ -218,59 +218,81 @@ class OptimizerAnalyzer:
             
         fig = plt.figure(figsize=(15, 10))
         
+        # Close previously opened figures to avoid warnings
+        for fig_num in plt.get_fignums():
+            if fig_num != fig.number:
+                plt.close(fig_num)
+        
         # Plot 1: Ruggedness Analysis
         plt.subplot(2, 2, 1)
+        has_ruggedness_data = False
         for func_name in self.results:
             for opt_name, results in self.results[func_name].items():
                 metrics = [r.landscape_metrics for r in results if r.landscape_metrics]
                 if metrics:
-                    ruggedness = [m.get('ruggedness', 0) for m in metrics]
-                    plt.boxplot(ruggedness, positions=[len(plt.gca().get_xticks())],
-                              labels=[f"{opt_name}\n{func_name}"])
+                    ruggedness = [m.get('ruggedness', 0) for m in metrics if 'ruggedness' in m]
+                    if ruggedness:
+                        plt.boxplot(ruggedness, positions=[len(plt.gca().get_xticks())],
+                                  labels=[f"{opt_name}\n{func_name}"])
+                        has_ruggedness_data = True
         plt.title('Landscape Ruggedness')
         plt.xticks(rotation=45)
         
         # Plot 2: Local Optima Analysis
         plt.subplot(2, 2, 2)
+        has_optima_data = False
         for func_name in self.results:
             for opt_name, results in self.results[func_name].items():
                 metrics = [r.landscape_metrics for r in results if r.landscape_metrics]
                 if metrics:
-                    optima = [m.get('local_optima_count', 0) for m in metrics]
-                    plt.boxplot(optima, positions=[len(plt.gca().get_xticks())],
-                              labels=[f"{opt_name}\n{func_name}"])
+                    optima = [m.get('local_optima_count', 0) for m in metrics if 'local_optima_count' in m]
+                    if optima:
+                        plt.boxplot(optima, positions=[len(plt.gca().get_xticks())],
+                                  labels=[f"{opt_name}\n{func_name}"])
+                        has_optima_data = True
         plt.title('Local Optima Count')
         plt.xticks(rotation=45)
         
         # Plot 3: Fitness-Distance Correlation
         plt.subplot(2, 2, 3)
+        has_fdc_data = False
         for func_name in self.results:
             for opt_name, results in self.results[func_name].items():
                 metrics = [r.landscape_metrics for r in results if r.landscape_metrics]
                 if metrics:
-                    fdc = [m.get('fitness_distance_correlation', 0) for m in metrics]
-                    plt.boxplot(fdc, positions=[len(plt.gca().get_xticks())],
-                              labels=[f"{opt_name}\n{func_name}"])
+                    fdc = [m.get('fitness_distance_correlation', 0) for m in metrics if 'fitness_distance_correlation' in m]
+                    if fdc:
+                        plt.boxplot(fdc, positions=[len(plt.gca().get_xticks())],
+                                  labels=[f"{opt_name}\n{func_name}"])
+                        has_fdc_data = True
         plt.title('Fitness-Distance Correlation')
         plt.xticks(rotation=45)
         
         # Plot 4: Landscape Smoothness
         plt.subplot(2, 2, 4)
+        has_smoothness_data = False
         for func_name in self.results:
             for opt_name, results in self.results[func_name].items():
                 metrics = [r.landscape_metrics for r in results if r.landscape_metrics]
                 if metrics:
-                    smoothness = [m.get('smoothness', 0) for m in metrics]
-                    plt.boxplot(smoothness, positions=[len(plt.gca().get_xticks())],
-                              labels=[f"{opt_name}\n{func_name}"])
+                    smoothness = [m.get('smoothness', 0) for m in metrics if 'smoothness' in m]
+                    if smoothness:
+                        plt.boxplot(smoothness, positions=[len(plt.gca().get_xticks())],
+                                  labels=[f"{opt_name}\n{func_name}"])
+                        has_smoothness_data = True
         plt.title('Landscape Smoothness')
         plt.xticks(rotation=45)
         
-        plt.tight_layout()
+        try:
+            plt.tight_layout()
+        except Exception as e:
+            print(f"Warning: Could not apply tight_layout: {e}")
+            
         if save_path:
             plt.savefig(save_path)
+            
         plt.close()
-    
+        
     def plot_gradient_analysis(self, save_path: Optional[str] = None):
         """Plot gradient-based analysis"""
         if not self.results:
@@ -278,67 +300,136 @@ class OptimizerAnalyzer:
             
         fig = plt.figure(figsize=(15, 10))
         
+        # Close previously opened figures to avoid warnings
+        for fig_num in plt.get_fignums():
+            if fig_num != fig.number:
+                plt.close(fig_num)
+        
         # Plot 1: Gradient Magnitude Evolution
-        plt.subplot(2, 2, 1)
+        ax1 = plt.subplot(2, 2, 1)
+        has_magnitude_data = False
+        
         for func_name in self.results:
             for opt_name, results in self.results[func_name].items():
                 for result in results:
-                    if result.gradient_history:
-                        magnitudes = [np.linalg.norm(g) for g in result.gradient_history]
-                        plt.plot(magnitudes, label=f"{opt_name}-{func_name}")
-        plt.title('Gradient Magnitude Evolution')
-        plt.xlabel('Iteration')
-        plt.ylabel('Gradient Magnitude')
-        plt.legend()
+                    if result.gradient_history and len(result.gradient_history) > 0:
+                        try:
+                            magnitudes = [np.linalg.norm(g) for g in result.gradient_history]
+                            ax1.plot(magnitudes, label=f"{opt_name}-{func_name}")
+                            has_magnitude_data = True
+                        except (ValueError, TypeError):
+                            continue
+                            
+        ax1.set_title('Gradient Magnitude Evolution')
+        ax1.set_xlabel('Iteration')
+        ax1.set_ylabel('Gradient Magnitude')
+        if has_magnitude_data:  # Only add legend if we have data
+            ax1.legend()
         
         # Plot 2: Gradient Direction Change
-        plt.subplot(2, 2, 2)
+        ax2 = plt.subplot(2, 2, 2)
+        has_angle_data = False
+        
         for func_name in self.results:
             for opt_name, results in self.results[func_name].items():
                 for result in results:
                     if result.gradient_history and len(result.gradient_history) > 1:
-                        angles = []
-                        for i in range(1, len(result.gradient_history)):
-                            g1 = result.gradient_history[i-1]
-                            g2 = result.gradient_history[i]
-                            cos_angle = np.dot(g1, g2) / (np.linalg.norm(g1) * np.linalg.norm(g2))
-                            angle = np.arccos(np.clip(cos_angle, -1.0, 1.0))
-                            angles.append(angle)
-                        plt.plot(angles, label=f"{opt_name}-{func_name}")
-        plt.title('Gradient Direction Change')
-        plt.xlabel('Iteration')
-        plt.ylabel('Angle (radians)')
-        plt.legend()
+                        try:
+                            angles = []
+                            for i in range(1, len(result.gradient_history)):
+                                g1 = result.gradient_history[i-1]
+                                g2 = result.gradient_history[i]
+                                
+                                # Check if vectors are valid
+                                if not isinstance(g1, np.ndarray) or not isinstance(g2, np.ndarray):
+                                    continue
+                                
+                                # Ensure non-zero vectors
+                                norm1 = np.linalg.norm(g1)
+                                norm2 = np.linalg.norm(g2)
+                                if norm1 == 0 or norm2 == 0:
+                                    continue
+                                    
+                                cos_angle = np.dot(g1, g2) / (norm1 * norm2)
+                                angle = np.arccos(np.clip(cos_angle, -1.0, 1.0))
+                                angles.append(angle)
+                                
+                            if angles:  # Only plot if we have angles
+                                ax2.plot(angles, label=f"{opt_name}-{func_name}")
+                                has_angle_data = True
+                        except (ValueError, TypeError):
+                            continue
+                            
+        ax2.set_title('Gradient Direction Change')
+        ax2.set_xlabel('Iteration')
+        ax2.set_ylabel('Angle (radians)')
+        if has_angle_data:  # Only add legend if we have data
+            ax2.legend()
         
         # Plot 3: Gradient Component Analysis
-        plt.subplot(2, 2, 3)
+        ax3 = plt.subplot(2, 2, 3)
+        has_component_data = False
+        
         for func_name in self.results:
             for opt_name, results in self.results[func_name].items():
                 for result in results:
-                    if result.gradient_history:
-                        components = np.array(result.gradient_history)
-                        plt.boxplot(components, labels=[f"Dim{i+1}" for i in range(components.shape[1])])
-        plt.title('Gradient Components Distribution')
-        plt.xlabel('Dimension')
-        plt.ylabel('Gradient Value')
+                    if result.gradient_history and len(result.gradient_history) > 0:
+                        try:
+                            # Ensure all gradients have the same shape
+                            components = []
+                            for g in result.gradient_history:
+                                if isinstance(g, np.ndarray) and g.size > 0:
+                                    components.append(g)
+                            
+                            if components:
+                                components = np.array(components)
+                                ax3.boxplot(components, labels=[f"Dim{i+1}" for i in range(components.shape[1])])
+                                has_component_data = True
+                        except (ValueError, TypeError):
+                            continue
+                            
+        ax3.set_title('Gradient Components Distribution')
+        ax3.set_xlabel('Dimension')
+        ax3.set_ylabel('Gradient Value')
         
         # Plot 4: Gradient Stability
-        plt.subplot(2, 2, 4)
+        ax4 = plt.subplot(2, 2, 4)
+        has_stability_data = False
+        
         for func_name in self.results:
             for opt_name, results in self.results[func_name].items():
                 for result in results:
-                    if result.gradient_history:
-                        stability = np.std(result.gradient_history, axis=0)
-                        plt.bar(range(len(stability)), stability, 
-                               label=f"{opt_name}-{func_name}", alpha=0.5)
-        plt.title('Gradient Stability (Standard Deviation)')
-        plt.xlabel('Dimension')
-        plt.ylabel('Standard Deviation')
-        plt.legend()
+                    if result.gradient_history and len(result.gradient_history) > 0:
+                        try:
+                            # Ensure all gradients have the same shape
+                            components = []
+                            for g in result.gradient_history:
+                                if isinstance(g, np.ndarray) and g.size > 0:
+                                    components.append(g)
+                            
+                            if components:
+                                components = np.array(components)
+                                stability = np.std(components, axis=0)
+                                ax4.bar(range(len(stability)), stability, 
+                                       label=f"{opt_name}-{func_name}", alpha=0.5)
+                                has_stability_data = True
+                        except (ValueError, TypeError):
+                            continue
+                            
+        ax4.set_title('Gradient Stability (Standard Deviation)')
+        ax4.set_xlabel('Dimension')
+        ax4.set_ylabel('Standard Deviation')
+        if has_stability_data:  # Only add legend if we have data
+            ax4.legend()
         
-        plt.tight_layout()
+        try:
+            plt.tight_layout()
+        except Exception as e:
+            print(f"Warning: Could not apply tight_layout: {e}")
+        
         if save_path:
             plt.savefig(save_path)
+            
         plt.close()
     
     def plot_parameter_adaptation(self, optimizer_name=None, function_name=None, save_path: Optional[str] = None):
@@ -371,10 +462,26 @@ class OptimizerAnalyzer:
             return
             
         n_params = len(param_names)
-        fig = plt.figure(figsize=(15, 3*n_params))
+        fig = plt.figure(figsize=(15, max(5, 3*min(n_params, 10))))  # Limit figure height for many parameters
+        
+        # Close previously opened figures to avoid warnings
+        for fig_num in plt.get_fignums():
+            if fig_num != fig.number:
+                plt.close(fig_num)
+        
+        # If too many parameters, only show a subset
+        if n_params > 10:
+            print(f"Warning: Too many parameters ({n_params}). Showing only the first 10.")
+            param_names = sorted(param_names)[:10]
+            n_params = 10
+        
+        has_data = [False] * n_params  # Track if each subplot has data
         
         for i, param_name in enumerate(sorted(param_names), 1):
-            plt.subplot(n_params, 1, i)
+            ax = plt.subplot(n_params, 1, i)
+            
+            # Track if any lines were added to this subplot
+            has_lines = False
             
             for func_name, func_results in self.results.items():
                 if function_name and func_name != function_name:
@@ -387,17 +494,31 @@ class OptimizerAnalyzer:
                     for result in results:
                         if result.param_history and param_name in result.param_history:
                             history = result.param_history[param_name]
-                            plt.plot(history, label=f"{opt_name}-{func_name}", alpha=0.7)
+                            if len(history) > 0:  # Only plot if we have data
+                                ax.plot(history, label=f"{opt_name}-{func_name}", alpha=0.7)
+                                has_lines = True
+                                has_data[i-1] = True
             
-            plt.title(f'{param_name} Adaptation')
-            plt.xlabel('Iteration')
-            plt.ylabel('Parameter Value')
-            plt.legend()
-            plt.grid(True)
+            ax.set_title(f'{param_name} Adaptation')
+            ax.set_xlabel('Iteration')
+            ax.set_ylabel('Parameter Value')
+            if has_lines:  # Only add legend if we have data
+                ax.legend()
+            ax.grid(True)
         
-        plt.tight_layout()
+        # Only apply tight_layout if we have data to plot
+        if any(has_data):
+            try:
+                plt.tight_layout()
+            except Exception as e:
+                print(f"Warning: Could not apply tight_layout: {e}")
+        
         if save_path:
             plt.savefig(save_path)
+            
+        # Close the figure to avoid memory leaks if not returning it
+        if 'return_fig' not in locals() or not return_fig:
+            plt.close(fig)
             
         return fig
     
@@ -415,8 +536,14 @@ class OptimizerAnalyzer:
             
         fig = plt.figure(figsize=(15, 10))
         
+        # Close previously opened figures to avoid warnings
+        for fig_num in plt.get_fignums():
+            if fig_num != fig.number:
+                plt.close(fig_num)
+        
         # Plot 1: Diversity Over Time
-        plt.subplot(2, 2, 1)
+        ax1 = plt.subplot(2, 2, 1)
+        has_diversity_data = False
         
         for func_name, func_results in self.results.items():
             if function_name and func_name != function_name:
@@ -427,19 +554,22 @@ class OptimizerAnalyzer:
                     continue
                     
                 for i, result in enumerate(results):
-                    if result.diversity_history:
-                        plt.plot(result.diversity_history, 
+                    if result.diversity_history and len(result.diversity_history) > 0:
+                        ax1.plot(result.diversity_history, 
                                 label=f"{opt_name}-{func_name}" if i == 0 else "_nolegend_",
                                 alpha=0.7)
+                        has_diversity_data = True
         
-        plt.title('Population Diversity Over Time')
-        plt.xlabel('Iteration')
-        plt.ylabel('Diversity Measure')
-        plt.legend()
-        plt.grid(True)
+        ax1.set_title('Population Diversity Over Time')
+        ax1.set_xlabel('Iteration')
+        ax1.set_ylabel('Diversity Measure')
+        if has_diversity_data:  # Only add legend if we have data
+            ax1.legend()
+        ax1.grid(True)
         
         # Plot 2: Diversity vs Fitness Improvement
-        plt.subplot(2, 2, 2)
+        ax2 = plt.subplot(2, 2, 2)
+        has_improvement_data = False
         
         for func_name, func_results in self.results.items():
             if function_name and func_name != function_name:
@@ -450,7 +580,8 @@ class OptimizerAnalyzer:
                     continue
                     
                 for result in results:
-                    if result.diversity_history and len(result.convergence_curve) > 1:
+                    if (result.diversity_history and len(result.diversity_history) > 1 and 
+                        result.convergence_curve and len(result.convergence_curve) > 1):
                         # Calculate fitness improvements
                         curve = np.array(result.convergence_curve)
                         improvements = np.abs(np.diff(curve))
@@ -460,18 +591,19 @@ class OptimizerAnalyzer:
                         min_len = min(len(diversity)-1, len(improvements))
                         
                         if min_len > 0:
-                            plt.scatter(diversity[:min_len], improvements[:min_len], 
+                            ax2.scatter(diversity[:min_len], improvements[:min_len], 
                                       label=f"{opt_name}-{func_name}", alpha=0.5)
+                            has_improvement_data = True
         
-        plt.title('Diversity vs Fitness Improvement')
-        plt.xlabel('Diversity')
-        plt.ylabel('Fitness Improvement')
-        plt.legend()
-        plt.grid(True)
+        ax2.set_title('Diversity vs Fitness Improvement')
+        ax2.set_xlabel('Diversity')
+        ax2.set_ylabel('Fitness Improvement')
+        if has_improvement_data:  # Only add legend if we have data
+            ax2.legend()
+        ax2.grid(True)
         
         # Plot 3: Average Diversity by Optimizer
-        plt.subplot(2, 2, 3)
-        
+        ax3 = plt.subplot(2, 2, 3)
         diversity_by_opt = {}
         
         for func_name, func_results in self.results.items():
@@ -484,7 +616,7 @@ class OptimizerAnalyzer:
                     
                 all_diversity = []
                 for result in results:
-                    if result.diversity_history:
+                    if result.diversity_history and len(result.diversity_history) > 0:
                         all_diversity.extend(result.diversity_history)
                 
                 if all_diversity:
@@ -493,16 +625,18 @@ class OptimizerAnalyzer:
                     diversity_by_opt[opt_name].append(np.mean(all_diversity))
         
         if diversity_by_opt:
-            plt.bar(range(len(diversity_by_opt)), 
+            ax3.bar(range(len(diversity_by_opt)), 
                   [np.mean(v) for v in diversity_by_opt.values()],
                   tick_label=list(diversity_by_opt.keys()))
-            plt.title('Average Diversity by Optimizer')
-            plt.xticks(rotation=45)
-            plt.ylabel('Average Diversity')
-            plt.grid(True)
+            ax3.set_title('Average Diversity by Optimizer')
+            ax3.set_xticks(range(len(diversity_by_opt)))
+            ax3.set_xticklabels(list(diversity_by_opt.keys()), rotation=45)
+            ax3.set_ylabel('Average Diversity')
+            ax3.grid(True)
         
         # Plot 4: Diversity Trend Correlation
-        plt.subplot(2, 2, 4)
+        ax4 = plt.subplot(2, 2, 4)
+        has_trend_data = False
         
         for func_name, func_results in self.results.items():
             if function_name and func_name != function_name:
@@ -517,107 +651,201 @@ class OptimizerAnalyzer:
                         diversity = np.array(result.diversity_history)
                         iterations = np.arange(len(diversity))
                         
-                        # Simple linear regression to show trend
-                        z = np.polyfit(iterations, diversity, 1)
-                        p = np.poly1d(z)
-                        
-                        plt.plot(iterations, p(iterations), 
-                               label=f"{opt_name}-{func_name}", 
-                               linewidth=2, alpha=0.8)
+                        try:
+                            # Simple linear regression to show trend
+                            z = np.polyfit(iterations, diversity, 1)
+                            p = np.poly1d(z)
+                            
+                            ax4.plot(iterations, p(iterations), 
+                                   label=f"{opt_name}-{func_name}", 
+                                   linewidth=2, alpha=0.8)
+                            has_trend_data = True
+                        except np.linalg.LinAlgError:
+                            # Skip if polyfit fails
+                            continue
         
-        plt.title('Diversity Trend Over Iterations')
-        plt.xlabel('Iteration')
-        plt.ylabel('Diversity')
-        plt.legend()
-        plt.grid(True)
+        ax4.set_title('Diversity Trend Over Iterations')
+        ax4.set_xlabel('Iteration')
+        ax4.set_ylabel('Diversity')
+        if has_trend_data:  # Only add legend if we have data
+            ax4.legend()
+        ax4.grid(True)
         
-        plt.tight_layout()
+        try:
+            plt.tight_layout()
+        except Exception as e:
+            print(f"Warning: Could not apply tight_layout: {e}")
+            
         if save_path:
             plt.savefig(save_path)
+            
+        # Close the figure to avoid memory leaks if not returning it
+        if 'return_fig' not in locals() or not return_fig:
+            plt.close(fig)
             
         return fig
     
     def plot_convergence_comparison(self):
-        """Plot convergence comparison for all functions and optimizers"""
+        """Plot convergence comparison for all optimizers and functions"""
         if not self.results:
             raise ValueError("No results available. Run comparison first.")
             
-        for func_name in self.results:
-            plt.figure(figsize=(12, 8))
+        fig, axes = plt.subplots(len(self.results), 1, figsize=(10, 6 * len(self.results)))
+        
+        # Close previously opened figures to avoid warnings
+        for fig_num in plt.get_fignums():
+            if fig_num != fig.number:
+                plt.close(fig_num)
+        
+        if len(self.results) == 1:  # Make sure axes is always a list
+            axes = [axes]
             
-            # Find max length of convergence curves
-            max_len = 0
-            for opt_name, results in self.results[func_name].items():
-                for r in results:
-                    max_len = max(max_len, len(r.convergence_curve))
+        for i, (func_name, optimizer_results) in enumerate(self.results.items()):
+            ax = axes[i]
+            has_plot_data = False
             
-            for opt_name, results in self.results[func_name].items():
-                # Pad curves to same length
-                padded_curves = []
-                for r in results:
-                    curve = np.array(r.convergence_curve)
-                    if len(curve) == 0:
-                        # Handle empty curves by creating an array of zeros
-                        curve = np.full(max_len, np.inf)
-                    elif len(curve) < max_len:
-                        # Pad with the last value
-                        padding = np.full(max_len - len(curve), curve[-1])
-                        curve = np.concatenate([curve, padding])
-                    padded_curves.append(curve)
-                
-                # Average convergence curves across runs
-                curves = np.array(padded_curves)
-                mean_curve = np.mean(curves, axis=0)
-                std_curve = np.std(curves, axis=0)
-                x = np.arange(len(mean_curve))
-                
-                plt.plot(x, mean_curve, label=opt_name)
-                plt.fill_between(x, mean_curve - std_curve, mean_curve + std_curve, alpha=0.2)
+            for opt_name, results in optimizer_results.items():
+                if not results:
+                    continue
+                    
+                try:
+                    # Extract convergence data
+                    fitness_histories = [result.fitness_history for result in results 
+                                         if result.fitness_history and len(result.fitness_history) > 0]
+                    
+                    if not fitness_histories:
+                        continue
+                        
+                    # Compute mean and std
+                    min_length = min(len(history) for history in fitness_histories)
+                    aligned_histories = [history[:min_length] for history in fitness_histories]
+                    mean_fitness = np.mean(aligned_histories, axis=0)
+                    std_fitness = np.std(aligned_histories, axis=0)
+                    
+                    # Plot mean with std as shaded region
+                    iterations = range(min_length)
+                    ax.plot(iterations, mean_fitness, label=opt_name)
+                    ax.fill_between(iterations, mean_fitness - std_fitness, 
+                                   mean_fitness + std_fitness, alpha=0.3)
+                    has_plot_data = True
+                except (ValueError, TypeError, ZeroDivisionError) as e:
+                    print(f"Error plotting convergence for {opt_name} on {func_name}: {e}")
+                    continue
             
-            plt.title(f'Convergence Comparison - {func_name}')
-            plt.xlabel('Function Evaluations')
-            plt.ylabel('Objective Value')
-            plt.yscale('log')
-            plt.legend()
-            plt.grid(True)
+            ax.set_title(f'Convergence Comparison for {func_name}')
+            ax.set_xlabel('Iteration')
+            ax.set_ylabel('Fitness Value')
+            if has_plot_data:
+                ax.legend()
             
-            # Save plot
-            fig = plt.gcf()
-            filename = f'convergence_{self.clean_name(func_name)}.png'
-            save_plot(fig, filename, plot_type='benchmarks')
-            plt.close()
+        try:
+            plt.tight_layout()
+        except Exception as e:
+            print(f"Warning: Could not apply tight_layout: {e}")
+            
+        # We return the figure object for potential further use
+        return fig
     
-    def plot_performance_heatmap(self):
-        """Plot performance heatmap comparing optimizers across functions"""
+    def plot_performance_heatmap(self, metric='final_fitness', save_path=None):
+        """
+        Plot a heatmap comparing different optimizers across functions.
+        
+        Args:
+            metric (str): The metric to use for comparison ('final_fitness', 'time', etc.)
+            save_path (str, optional): Path to save the figure
+        """
         if not self.results:
             raise ValueError("No results available. Run comparison first.")
+        
+        functions = list(self.results.keys())
+        optimizers = set()
+        for func_results in self.results.values():
+            optimizers.update(func_results.keys())
+        optimizers = list(optimizers)
+        
+        # Create a matrix for the heatmap
+        matrix = np.zeros((len(optimizers), len(functions)))
+        
+        # Fill the matrix with the chosen metric
+        for i, optimizer in enumerate(optimizers):
+            for j, function in enumerate(functions):
+                if optimizer in self.results[function]:
+                    results = self.results[function][optimizer]
+                    if not results:
+                        matrix[i, j] = np.nan
+                        continue
+                        
+                    try:
+                        if metric == 'final_fitness':
+                            values = [result.best_fitness for result in results if hasattr(result, 'best_fitness')]
+                        elif metric == 'time':
+                            values = [result.total_time for result in results if hasattr(result, 'total_time')]
+                        elif metric == 'iterations':
+                            values = [result.iterations for result in results if hasattr(result, 'iterations')]
+                        elif metric == 'evaluations':
+                            values = [result.function_evaluations for result in results if hasattr(result, 'function_evaluations')]
+                        else:
+                            values = []
+                            
+                        if values:
+                            matrix[i, j] = np.mean(values)
+                        else:
+                            matrix[i, j] = np.nan
+                    except Exception as e:
+                        print(f"Error calculating {metric} for {optimizer} on {function}: {e}")
+                        matrix[i, j] = np.nan
+                else:
+                    matrix[i, j] = np.nan
+        
+        fig, ax = plt.subplots(figsize=(12, 8))
+        
+        # Close previously opened figures to avoid warnings
+        for fig_num in plt.get_fignums():
+            if fig_num != fig.number:
+                plt.close(fig_num)
+        
+        # Create the heatmap
+        has_valid_data = not np.isnan(matrix).all()
+        if has_valid_data:
+            im = ax.imshow(matrix, cmap='viridis')
             
-        # Prepare data for heatmap
-        data = []
-        for func_name in self.results:
-            for opt_name in self.results[func_name]:
-                results = self.results[func_name][opt_name]
-                mean_score = np.mean([r.best_score for r in results])
-                data.append({
-                    'Function': func_name,
-                    'Optimizer': opt_name,
-                    'Score': mean_score
-                })
+            # Add colorbar
+            cbar = ax.figure.colorbar(im, ax=ax)
+            cbar.ax.set_ylabel(metric.replace('_', ' ').title(), rotation=-90, va="bottom")
+            
+            # Show ticks and label them
+            ax.set_xticks(np.arange(len(functions)))
+            ax.set_yticks(np.arange(len(optimizers)))
+            ax.set_xticklabels(functions)
+            ax.set_yticklabels(optimizers)
+            
+            # Rotate the tick labels and set alignment
+            plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+            
+            # Loop over data dimensions and create text annotations
+            for i in range(len(optimizers)):
+                for j in range(len(functions)):
+                    if not np.isnan(matrix[i, j]):
+                        text = ax.text(j, i, f"{matrix[i, j]:.2f}",
+                                      ha="center", va="center", color="white" if matrix[i, j] > np.nanmax(matrix)/2 else "black")
+            
+            ax.set_title(f"Performance Comparison ({metric.replace('_', ' ').title()})")
+        else:
+            ax.text(0.5, 0.5, "No valid data available for heatmap", 
+                   ha="center", va="center", fontsize=14, transform=ax.transAxes)
         
-        df = pd.DataFrame(data)
-        pivot = df.pivot(index='Function', columns='Optimizer', values='Score')
+        try:
+            plt.tight_layout()
+        except Exception as e:
+            print(f"Warning: Could not apply tight_layout: {e}")
         
-        # Create heatmap
-        plt.figure(figsize=(12, 8))
-        sns.heatmap(pivot, annot=True, fmt='.2e', cmap='viridis')
-        plt.title('Performance Comparison')
-        plt.tight_layout()
-        
-        # Save plot
-        fig = plt.gcf()
-        filename = 'performance_heatmap.png'
-        save_plot(fig, filename, plot_type='benchmarks')
-        plt.close()
+        if save_path:
+            plt.savefig(save_path)
+            
+        if save_path is None:  # Only close if not saving to file
+            plt.close()
+            
+        return fig
     
     def clean_name(self, name: str) -> str:
         """Clean name for filenames"""
