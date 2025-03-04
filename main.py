@@ -1080,7 +1080,11 @@ def run_meta_learning(method='bayesian', surrogate=None, selection=None, explora
             optimizer_counts[optimizer] = optimizer_counts.get(optimizer, 0) + 1
         
         # Determine best algorithm
-        best_algorithm = max(optimizer_counts.items(), key=lambda x: x[1])[0]
+        if optimizer_counts:
+            best_algorithm = max(optimizer_counts.items(), key=lambda x: x[1])[0]
+        else:
+            logging.warning(f"No optimizer selections recorded for {func_name}. Using default.")
+            best_algorithm = "default"
         best_algorithms[func_name] = best_algorithm
         
         # Calculate performance metrics
@@ -1095,7 +1099,11 @@ def run_meta_learning(method='bayesian', surrogate=None, selection=None, explora
     for func_name, algorithm in best_algorithms.items():
         all_selections[algorithm] = all_selections.get(algorithm, 0) + 1
     
-    overall_best_algorithm = max(all_selections.items(), key=lambda x: x[1])[0]
+    if all_selections:
+        overall_best_algorithm = max(all_selections.items(), key=lambda x: x[1])[0]
+    else:
+        logging.warning("No algorithm selections recorded. Using default as best algorithm.")
+        overall_best_algorithm = "default"
     
     # Create summary plot
     fig, ax = plt.subplots(figsize=(10, 6))

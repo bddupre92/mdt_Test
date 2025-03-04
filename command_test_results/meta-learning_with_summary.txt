@@ -1,0 +1,46 @@
+Command: python main.py --meta --summary
+Exit code: 0
+Elapsed time: 1.89 seconds
+
+=== STDOUT ===
+
+Meta-Learning Summary:
+  Method: bayesian
+  Surrogate Model: Default
+  Selection Strategy: Default
+  Exploration Factor: 0.2
+  History Weight: 0.7
+  Best Algorithm: default
+  Performance: {'sphere': {'best_score': 134.4137855387051, 'optimizer_selections': {}, 'convergence_rate': 0.0}, 'rosenbrock': {'best_score': 141162.20432732743, 'optimizer_selections': {}, 'convergence_rate': 0.0}, 'rastrigin': {'best_score': 286.8659113522776, 'optimizer_selections': {}, 'convergence_rate': 0.0}, 'ackley': {'best_score': 9.91481272780549, 'optimizer_selections': {}, 'convergence_rate': 0.0}}
+
+=== STDERR ===
+2025-03-03 22:54:38,857 - root - INFO - Running meta-learning
+2025-03-03 22:54:38,857 - root - INFO - Running meta-learning with method=bayesian, surrogate=None, selection=None
+2025-03-03 22:54:38,858 - AntColonyOptimizer - INFO - Initializing AntColonyOptimizer with dim=30
+2025-03-03 22:54:38,858 - AntColonyOptimizer - DEBUG - Bounds: [(-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5)]
+2025-03-03 22:54:38,858 - AntColonyOptimizer - DEBUG - Population size: 50
+2025-03-03 22:54:38,858 - GreyWolfOptimizer - INFO - Initializing GreyWolfOptimizer with dim=30
+2025-03-03 22:54:38,858 - GreyWolfOptimizer - DEBUG - Bounds: [(-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5)]
+2025-03-03 22:54:38,858 - GreyWolfOptimizer - DEBUG - Population size: 50
+2025-03-03 22:54:38,858 - DifferentialEvolutionOptimizer - INFO - Initializing DifferentialEvolutionOptimizer with dim=30
+2025-03-03 22:54:38,858 - DifferentialEvolutionOptimizer - DEBUG - Bounds: [(-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5)]
+2025-03-03 22:54:38,858 - DifferentialEvolutionOptimizer - DEBUG - Population size: 50
+2025-03-03 22:54:38,858 - EvolutionStrategyOptimizer - INFO - Initializing EvolutionStrategyOptimizer with dim=30
+2025-03-03 22:54:38,858 - EvolutionStrategyOptimizer - DEBUG - Bounds: [(-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5)]
+2025-03-03 22:54:38,858 - EvolutionStrategyOptimizer - DEBUG - Population size: 50
+2025-03-03 22:54:38,858 - DifferentialEvolutionOptimizer - INFO - Initializing DifferentialEvolutionOptimizer with dim=30
+2025-03-03 22:54:38,858 - DifferentialEvolutionOptimizer - DEBUG - Bounds: [(-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5)]
+2025-03-03 22:54:38,858 - DifferentialEvolutionOptimizer - DEBUG - Population size: 50
+2025-03-03 22:54:38,858 - EvolutionStrategyOptimizer - INFO - Initializing EvolutionStrategyOptimizer with dim=30
+2025-03-03 22:54:38,858 - EvolutionStrategyOptimizer - DEBUG - Bounds: [(-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5), (-5, 5)]
+2025-03-03 22:54:38,858 - EvolutionStrategyOptimizer - DEBUG - Population size: 50
+2025-03-03 22:54:38,858 - root - INFO - Running meta-learning on sphere function
+2025-03-03 22:54:38,859 - root - WARNING - No optimizer selections recorded for sphere. Using default.
+2025-03-03 22:54:38,859 - root - INFO - Running meta-learning on rosenbrock function
+2025-03-03 22:54:38,860 - root - WARNING - No optimizer selections recorded for rosenbrock. Using default.
+2025-03-03 22:54:38,860 - root - INFO - Running meta-learning on rastrigin function
+2025-03-03 22:54:38,861 - root - WARNING - No optimizer selections recorded for rastrigin. Using default.
+2025-03-03 22:54:38,861 - root - INFO - Running meta-learning on ackley function
+2025-03-03 22:54:38,862 - root - WARNING - No optimizer selections recorded for ackley. Using default.
+2025-03-03 22:54:39,019 - root - INFO - Saved plot to results/meta_learner_selection_frequency
+2025-03-03 22:54:39,019 - root - INFO - Meta-learning complete. Best algorithm: default
