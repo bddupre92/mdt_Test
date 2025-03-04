@@ -14,16 +14,26 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 import psutil
 import torch
 import torch.nn as nn
+import os
+from pathlib import Path
 
-from data.generate_synthetic import generate_synthetic_data
-from data.preprocessing import preprocess_data
-from data.domain_knowledge import add_migraine_features
-from models.sklearn_model import SklearnModel
-from models.torch_model import TorchModel
+# Add parent directory to path
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import local modules
+from app.core.data.test_data_generator import TestDataGenerator
+from app.core.data.preprocessing import preprocess_data
+from app.core.data.domain_knowledge import add_migraine_features
+from app.core.models.sklearn_model import SklearnModel
+from app.core.models.torch_model import TorchModel
 from drift_detection.detector import DriftDetector
 from drift_detection.performance_monitor import DDM
 from optimizers.aco import AntColonyOptimizer
 from meta.meta_learner import MetaLearner
+from visualization.drift_analysis import DriftAnalyzer
+from visualization.optimizer_analysis import OptimizerAnalyzer
+from evaluation.framework_evaluator import FrameworkEvaluator
 
 class SimpleNN(nn.Module):
     def __init__(self, input_dim):
@@ -45,7 +55,7 @@ class TestFullPipeline(unittest.TestCase):
     def setUp(self):
         """Initialize test environment"""
         # Generate larger dataset
-        self.df = generate_synthetic_data(num_days=1000)
+        self.df = TestDataGenerator().generate_synthetic_data(num_days=1000)
         self.df = self.df.dropna(subset=['migraine_occurred'])
         
         # Preprocess
@@ -241,3 +251,118 @@ class TestFullPipeline(unittest.TestCase):
         self.assertIsInstance(best_score, float)
         self.assertLess(-best_score, 0.3, 
                        "Meta-learner failed to find good parameters")
+
+    def test_visualization_integration(self):
+        """Test visualization components integration"""
+        # Create output directories
+        results_dir = Path('test_results')
+        plots_dir = results_dir / 'plots'
+        for directory in [results_dir, plots_dir]:
+            directory.mkdir(exist_ok=True, parents=True)
+            
+        # Initialize components
+        evaluator = FrameworkEvaluator()
+        drift_detector = DriftDetector(
+            window_size=50,
+            drift_threshold=1.8,
+            significance_level=0.01
+        )
+        optimizer_analyzer = OptimizerAnalyzer()
+        
+        # Train model and get predictions
+        rf_model = SklearnModel(RandomForestClassifier(n_estimators=100))
+        rf_model.train(self.X_train, self.y_train)
+        y_pred = rf_model.predict(self.X_test)
+        
+        # Track performance and drift
+        for i in range(len(self.X_test)):
+            # Evaluate prediction
+            evaluator.evaluate_prediction_performance(
+                self.y_test[i:i+1], 
+                y_pred[i:i+1]
+            )
+            
+            # Track feature importance
+            evaluator.track_feature_importance(
+                self.features, 
+                rf_model.model.feature_importances_
+            )
+            
+            # Detect drift
+            drift_detected = drift_detector.detect_drift(
+                self.y_test[i:i+1],
+                y_pred[i:i+1]
+            )
+            if drift_detected:
+                evaluator.track_drift_event(drift_detector.get_statistics())
+        
+        # Generate and verify visualizations
+        plot_files = [
+            plots_dir / 'drift_detection_results.png',
+            plots_dir / 'drift_analysis.png',
+            plots_dir / 'framework_performance.png',
+            plots_dir / 'pipeline_performance.png',
+            plots_dir / 'performance_boxplot.png',
+            plots_dir / 'model_evaluation.png',
+            plots_dir / 'optimizer_landscape.png',
+            plots_dir / 'optimizer_gradient.png',
+            plots_dir / 'optimizer_parameters.png'
+        ]
+        
+        # Generate plots
+        drift_detector.plot_detection_results(save_path=str(plot_files[0]))
+        drift_detector.plot_drift_analysis(save_path=str(plot_files[1]))
+        evaluator.plot_framework_performance(save_path=str(plot_files[2]))
+        evaluator.plot_pipeline_performance(save_path=str(plot_files[3]))
+        evaluator.plot_performance_boxplot(save_path=str(plot_files[4]))
+        evaluator.plot_model_evaluation(
+            self.y_test, y_pred,
+            save_path=str(plot_files[5])
+        )
+        optimizer_analyzer.plot_landscape_analysis(save_path=str(plot_files[6]))
+        optimizer_analyzer.plot_gradient_analysis(save_path=str(plot_files[7]))
+        optimizer_analyzer.plot_parameter_adaptation(save_path=str(plot_files[8]))
+        
+        # Verify plots were generated
+        for plot_file in plot_files:
+            self.assertTrue(plot_file.exists(), 
+                          f"Plot file not generated: {plot_file}")
+            self.assertGreater(plot_file.stat().st_size, 0, 
+                             f"Plot file is empty: {plot_file}")
+        
+        # Generate and verify report
+        report_file = results_dir / 'optimization_report.txt'
+        with open(report_file, 'w') as f:
+            f.write("Optimization and Evaluation Report\n")
+            f.write("================================\n\n")
+            
+            # Model Performance
+            f.write("Model Performance\n")
+            f.write("-----------------\n")
+            metrics = evaluator.generate_performance_report()
+            for metric, value in metrics.items():
+                f.write(f"{metric}: {value:.4f}\n")
+            f.write("\n")
+            
+            # Drift Analysis
+            f.write("Drift Analysis\n")
+            f.write("--------------\n")
+            drift_stats = drift_detector.get_statistics()
+            for stat, value in drift_stats.items():
+                f.write(f"{stat}: {value:.4f}\n")
+            f.write("\n")
+            
+            # Optimization Summary
+            f.write("Optimization Summary\n")
+            f.write("-------------------\n")
+            opt_stats = optimizer_analyzer.get_statistics()
+            for stat, value in opt_stats.items():
+                f.write(f"{stat}: {value}\n")
+        
+        self.assertTrue(report_file.exists(),
+                       "Report file not generated")
+        self.assertGreater(report_file.stat().st_size, 0,
+                          "Report file is empty")
+
+if __name__ == '__main__':
+    unittest.main()

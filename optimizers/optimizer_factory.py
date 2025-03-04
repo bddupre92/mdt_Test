@@ -674,6 +674,73 @@ class AntColonyWrapper(AntColonyOptimizer):
             self.convergence_curve.append(self.best_score)
             
         return self.best_solution, self.best_score
+        
+    def suggest(self) -> Dict[str, Any]:
+        """Suggest a new configuration to evaluate.
+        
+        Returns:
+            Dictionary with configuration parameters
+        """
+        # Generate a random solution within bounds
+        solution = np.array([
+            np.random.uniform(low, high)
+            for low, high in self.bounds
+        ])
+        
+        # Convert to dictionary format expected by MetaLearner
+        config = {
+            'n_estimators': int(100 + solution[0] * 900),  # 100-1000
+            'max_depth': int(5 + solution[1] * 25),  # 5-30
+            'min_samples_split': int(2 + solution[2] * 18),  # 2-20
+            'min_samples_leaf': int(1 + solution[3] * 9),  # 1-10
+            'max_features': 'sqrt',
+            'bootstrap': True,
+            'class_weight': None
+        }
+        
+        return config
+        
+    def evaluate(self, config: Dict[str, Any]) -> float:
+        """Placeholder for evaluation function.
+        
+        In the MetaLearner context, evaluation is handled externally.
+        This is just a placeholder to satisfy the interface.
+        
+        Args:
+            config: Configuration to evaluate
+            
+        Returns:
+            Placeholder score
+        """
+        return 0.0
+        
+    def update(self, config: Dict[str, Any], score: float) -> None:
+        """Update optimizer state with evaluation results.
+        
+        Args:
+            config: Configuration that was evaluated
+            score: Score from evaluation
+        """
+        # Track best solution
+        if score > self.best_score:
+            self.best_score = score
+            
+            # Convert config back to solution format
+            solution = np.zeros(self.dim)
+            if 'n_estimators' in config:
+                solution[0] = (config['n_estimators'] - 100) / 900
+            if 'max_depth' in config:
+                solution[1] = (config['max_depth'] - 5) / 25
+            if 'min_samples_split' in config:
+                solution[2] = (config['min_samples_split'] - 2) / 18
+            if 'min_samples_leaf' in config:
+                solution[3] = (config['min_samples_leaf'] - 1) / 9
+                
+            self.best_solution = solution
+            
+        # Update convergence tracking
+        self.convergence_curve.append(score)
+        self.evaluations += 1
 
 
 class GreyWolfWrapper(GreyWolfOptimizer):
@@ -881,6 +948,113 @@ class GreyWolfWrapper(GreyWolfOptimizer):
             iteration += 1
             
         return self.best_solution, self.best_score
+        
+    def suggest(self) -> Dict[str, Any]:
+        """Suggest a new configuration to evaluate.
+        
+        Returns:
+            Dictionary with configuration parameters
+        """
+        # Generate a random solution within bounds
+        solution = np.array([
+            np.random.uniform(low, high)
+            for low, high in self.bounds
+        ])
+        
+        # Convert to dictionary format expected by MetaLearner
+        config = {
+            'n_estimators': int(100 + solution[0] * 900),  # 100-1000
+            'max_depth': int(5 + solution[1] * 25),  # 5-30
+            'min_samples_split': int(2 + solution[2] * 18) if self.dim > 2 else 2,  # 2-20
+            'min_samples_leaf': int(1 + solution[3] * 9) if self.dim > 3 else 1,  # 1-10
+            'max_features': 'sqrt',
+            'bootstrap': True,
+            'model_type': 'random_forest'
+        }
+        
+        return config
+        
+    def evaluate(self, config: Dict[str, Any]) -> float:
+        """Placeholder for evaluation function.
+        
+        In the MetaLearner context, evaluation is handled externally.
+        This is just a placeholder to satisfy the interface.
+        
+        Args:
+            config: Configuration to evaluate
+            
+        Returns:
+            Placeholder score
+        """
+        return 0.0
+        
+    def update(self, config: Dict[str, Any], score: float) -> None:
+        """Update optimizer state with evaluation results.
+        
+        Args:
+            config: Configuration that was evaluated
+            score: Score from evaluation
+        """
+        # Track best solution
+        if score > self.best_score:
+            self.best_score = score
+            
+            # Convert config back to solution format
+            solution = np.zeros(self.dim)
+            if 'n_estimators' in config:
+                solution[0] = (config['n_estimators'] - 100) / 900
+            if 'max_depth' in config:
+                solution[1] = (config['max_depth'] - 5) / 25
+            if self.dim > 2 and 'min_samples_split' in config:
+                solution[2] = (config['min_samples_split'] - 2) / 18
+            if self.dim > 3 and 'min_samples_leaf' in config:
+                solution[3] = (config['min_samples_leaf'] - 1) / 9
+                
+            self.best_solution = solution
+            
+        # Update convergence tracking
+        self.convergence_curve.append(score)
+        self.evaluations += 1
+
+
+class OptimizerFactory:
+    """Factory class for creating optimization algorithms"""
+    
+    def __init__(self):
+        """Initialize the optimizer factory"""
+        self.logger = logging.getLogger(__name__)
+        self.optimizers = {
+            'differential_evolution': DifferentialEvolutionOptimizer,
+            'evolution_strategy': EvolutionStrategyOptimizer,
+            'ant_colony': AntColonyOptimizer,
+            'grey_wolf': GreyWolfOptimizer,
+        }
+    
+    def create_optimizer(self, optimizer_type: str, **kwargs) -> BaseOptimizer:
+        """
+        Create an optimizer instance
+        
+        Args:
+            optimizer_type: Type of optimizer to create
+            **kwargs: Additional parameters for the optimizer
+            
+        Returns:
+            Optimizer instance
+        """
+        if optimizer_type not in self.optimizers:
+            raise ValueError(f"Unknown optimizer type: {optimizer_type}. Available types: {list(self.optimizers.keys())}")
+        
+        optimizer_class = self.optimizers[optimizer_type]
+        return optimizer_class(**kwargs)
+    
+    def get_available_optimizers(self) -> List[str]:
+        """
+        Get list of available optimizer types
+        
+        Returns:
+            List of optimizer type names
+        """
+        return list(self.optimizers.keys())
 
 
 def create_optimizers(dim: int = 5, bounds: Optional[List[Tuple[float, float]]] = None) -> Dict[str, Any]:

@@ -15,6 +15,13 @@ from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor
 import time
 from pathlib import Path
+from tqdm.auto import tqdm
+import copy
+
+# Import save_plot function
+import sys
+sys.path.append(str(Path(__file__).parent.parent))
+from utils.plot_utils import save_plot
 
 @dataclass
 class OptimizationResult:
@@ -29,6 +36,8 @@ class OptimizationResult:
     success_rate: Optional[float] = None
     diversity_history: Optional[List[float]] = None
     param_history: Optional[Dict[str, List[float]]] = None
+    landscape_metrics: Optional[Dict[str, float]] = None
+    gradient_history: Optional[List[np.ndarray]] = None
 
 class OptimizerAnalyzer:
     def __init__(self, optimizers: Dict[str, Any]):
@@ -41,6 +50,88 @@ class OptimizerAnalyzer:
         self.optimizers = optimizers
         self.results = {}
         
+    def run_optimizer(self, optimizer_name, optimizer, max_evals, num_runs):
+        """Run a single optimizer multiple times and collect results."""
+        run_results = []
+        total_runtime = 0
+        
+        # Create progress bar for runs
+        with tqdm(total=num_runs, desc=f"Run", unit="runs", 
+                 disable=not self.verbose, leave=False, 
+                 position=1) as run_pbar:
+            
+            for run in range(1, num_runs + 1):
+                # Reset the optimizer if it has a reset method
+                if hasattr(optimizer, 'reset') and callable(getattr(optimizer, 'reset')):
+                    optimizer.reset()
+                
+                # Deep copy the objective function to avoid shared state issues
+                # This is particularly important for stateful objective functions
+                run_objective = copy.deepcopy(self.objective_func)
+                
+                try:
+                    # Run the optimizer
+                    start_time = time.time()
+                    
+                    # Handle different optimizer interfaces
+                    if hasattr(optimizer, 'run') and callable(getattr(optimizer, 'run')):
+                        # Meta-optimizer or similar with run method
+                        results = optimizer.run(run_objective, max_evals)
+                        best_solution = results.get('solution')
+                        best_value = results.get('score')
+                        evaluations = results.get('evaluations', max_evals)
+                        # Get convergence curve if available
+                        curve = results.get('convergence_curve', [])
+                        # Ensure curve is not empty
+                        if not curve:
+                            curve = [(0, best_value), (evaluations, best_value)]
+                    else:
+                        # Standard optimizer with optimize method
+                        best_solution, best_value = optimizer.optimize(run_objective, max_evals=max_evals)
+                        evaluations = getattr(optimizer, 'evaluations', max_evals)
+                        # Get convergence curve if available
+                        curve = getattr(optimizer, 'convergence_curve', [])
+                        # Ensure curve is not empty
+                        if not curve:
+                            curve = [(0, best_value), (evaluations, best_value)]
+                    
+                    runtime = time.time() - start_time
+                    total_runtime += runtime
+                    
+                    # Ensure we have valid data
+                    if best_solution is None:
+                        best_solution = np.zeros(self.dimension)
+                        best_value = float('inf')
+                    
+                    # Collect results
+                    run_results.append({
+                        'run': run,
+                        'best_solution': best_solution,
+                        'best_value': best_value,
+                        'evaluations': evaluations,
+                        'runtime': runtime,
+                        'convergence_curve': curve
+                    })
+                    
+                    # Update progress
+                    run_pbar.set_postfix({'best_score': f"{best_value:.10f}", 'evals': f"{evaluations}"})
+                    run_pbar.update(1)
+                    
+                except Exception as e:
+                    print(f"Error running {optimizer_name} (Run {run}): {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+                    # Add a placeholder result to maintain run count
+                    run_results.append({
+                        'run': run,
+                        'best_solution': np.zeros(self.dimension),
+                        'best_value': float('inf'),
+                        'evaluations': 0,
+                        'runtime': 0,
+                        'convergence_curve': [(0, float('inf')), (1, float('inf'))]
+                    })
+                    run_pbar.update(1)
+                    
     def run_comparison(
             self,
             test_functions: Dict[str, Any],
@@ -66,11 +157,17 @@ class OptimizerAnalyzer:
             print(f"\nOptimizing {func_name}")
             self.results[func_name] = {}
             
-            for opt_name, optimizer in self.optimizers.items():
+            # Add tqdm for the optimizer loop
+            optimizer_pbar = tqdm(self.optimizers.items(), desc="Optimizers", leave=False)
+            for opt_name, optimizer in optimizer_pbar:
+                optimizer_pbar.set_description(f"Optimizer: {opt_name}")
                 print(f"  Using {opt_name}")
                 results = []
                 
-                for run in range(n_runs):
+                # Add tqdm for the run loop
+                run_pbar = tqdm(range(n_runs), desc=f"Runs for {opt_name}", leave=False)
+                for run in run_pbar:
+                    run_pbar.set_description(f"Run {run+1}/{n_runs}")
                     start_time = time.time()
                     optimizer.reset()  # Reset optimizer state
                     
@@ -85,6 +182,15 @@ class OptimizerAnalyzer:
                     if hasattr(optimizer, 'evaluations'):
                         params['evaluations'] = optimizer.evaluations
                     
+                    # Get landscape metrics and gradient history if available
+                    landscape_metrics = None
+                    if hasattr(optimizer, 'get_landscape_metrics'):
+                        landscape_metrics = optimizer.get_landscape_metrics()
+                    
+                    gradient_history = None
+                    if hasattr(optimizer, 'gradient_history'):
+                        gradient_history = optimizer.gradient_history
+                    
                     # Store results
                     results.append(OptimizationResult(
                         optimizer_name=opt_name,
@@ -96,12 +202,184 @@ class OptimizerAnalyzer:
                         hyperparameters=params,
                         success_rate=optimizer.success_rate if hasattr(optimizer, 'success_rate') else None,
                         diversity_history=optimizer.diversity_history if hasattr(optimizer, 'diversity_history') else None,
-                        param_history=optimizer.param_history if hasattr(optimizer, 'param_history') else None
+                        param_history=optimizer.param_history if hasattr(optimizer, 'param_history') else None,
+                        landscape_metrics=landscape_metrics,
+                        gradient_history=gradient_history
                     ))
                 
                 self.results[func_name][opt_name] = results
                 
         return self.results
+    
+    def plot_landscape_analysis(self, save_path: Optional[str] = None):
+        """Plot landscape analysis metrics"""
+        if not self.results:
+            raise ValueError("No results available. Run comparison first.")
+            
+        fig = plt.figure(figsize=(15, 10))
+        
+        # Plot 1: Ruggedness Analysis
+        plt.subplot(2, 2, 1)
+        for func_name in self.results:
+            for opt_name, results in self.results[func_name].items():
+                metrics = [r.landscape_metrics for r in results if r.landscape_metrics]
+                if metrics:
+                    ruggedness = [m.get('ruggedness', 0) for m in metrics]
+                    plt.boxplot(ruggedness, positions=[len(plt.gca().get_xticks())],
+                              labels=[f"{opt_name}\n{func_name}"])
+        plt.title('Landscape Ruggedness')
+        plt.xticks(rotation=45)
+        
+        # Plot 2: Local Optima Analysis
+        plt.subplot(2, 2, 2)
+        for func_name in self.results:
+            for opt_name, results in self.results[func_name].items():
+                metrics = [r.landscape_metrics for r in results if r.landscape_metrics]
+                if metrics:
+                    optima = [m.get('local_optima_count', 0) for m in metrics]
+                    plt.boxplot(optima, positions=[len(plt.gca().get_xticks())],
+                              labels=[f"{opt_name}\n{func_name}"])
+        plt.title('Local Optima Count')
+        plt.xticks(rotation=45)
+        
+        # Plot 3: Fitness-Distance Correlation
+        plt.subplot(2, 2, 3)
+        for func_name in self.results:
+            for opt_name, results in self.results[func_name].items():
+                metrics = [r.landscape_metrics for r in results if r.landscape_metrics]
+                if metrics:
+                    fdc = [m.get('fitness_distance_correlation', 0) for m in metrics]
+                    plt.boxplot(fdc, positions=[len(plt.gca().get_xticks())],
+                              labels=[f"{opt_name}\n{func_name}"])
+        plt.title('Fitness-Distance Correlation')
+        plt.xticks(rotation=45)
+        
+        # Plot 4: Landscape Smoothness
+        plt.subplot(2, 2, 4)
+        for func_name in self.results:
+            for opt_name, results in self.results[func_name].items():
+                metrics = [r.landscape_metrics for r in results if r.landscape_metrics]
+                if metrics:
+                    smoothness = [m.get('smoothness', 0) for m in metrics]
+                    plt.boxplot(smoothness, positions=[len(plt.gca().get_xticks())],
+                              labels=[f"{opt_name}\n{func_name}"])
+        plt.title('Landscape Smoothness')
+        plt.xticks(rotation=45)
+        
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path)
+        plt.close()
+    
+    def plot_gradient_analysis(self, save_path: Optional[str] = None):
+        """Plot gradient-based analysis"""
+        if not self.results:
+            raise ValueError("No results available. Run comparison first.")
+            
+        fig = plt.figure(figsize=(15, 10))
+        
+        # Plot 1: Gradient Magnitude Evolution
+        plt.subplot(2, 2, 1)
+        for func_name in self.results:
+            for opt_name, results in self.results[func_name].items():
+                for result in results:
+                    if result.gradient_history:
+                        magnitudes = [np.linalg.norm(g) for g in result.gradient_history]
+                        plt.plot(magnitudes, label=f"{opt_name}-{func_name}")
+        plt.title('Gradient Magnitude Evolution')
+        plt.xlabel('Iteration')
+        plt.ylabel('Gradient Magnitude')
+        plt.legend()
+        
+        # Plot 2: Gradient Direction Change
+        plt.subplot(2, 2, 2)
+        for func_name in self.results:
+            for opt_name, results in self.results[func_name].items():
+                for result in results:
+                    if result.gradient_history and len(result.gradient_history) > 1:
+                        angles = []
+                        for i in range(1, len(result.gradient_history)):
+                            g1 = result.gradient_history[i-1]
+                            g2 = result.gradient_history[i]
+                            cos_angle = np.dot(g1, g2) / (np.linalg.norm(g1) * np.linalg.norm(g2))
+                            angle = np.arccos(np.clip(cos_angle, -1.0, 1.0))
+                            angles.append(angle)
+                        plt.plot(angles, label=f"{opt_name}-{func_name}")
+        plt.title('Gradient Direction Change')
+        plt.xlabel('Iteration')
+        plt.ylabel('Angle (radians)')
+        plt.legend()
+        
+        # Plot 3: Gradient Component Analysis
+        plt.subplot(2, 2, 3)
+        for func_name in self.results:
+            for opt_name, results in self.results[func_name].items():
+                for result in results:
+                    if result.gradient_history:
+                        components = np.array(result.gradient_history)
+                        plt.boxplot(components, labels=[f"Dim{i+1}" for i in range(components.shape[1])])
+        plt.title('Gradient Components Distribution')
+        plt.xlabel('Dimension')
+        plt.ylabel('Gradient Value')
+        
+        # Plot 4: Gradient Stability
+        plt.subplot(2, 2, 4)
+        for func_name in self.results:
+            for opt_name, results in self.results[func_name].items():
+                for result in results:
+                    if result.gradient_history:
+                        stability = np.std(result.gradient_history, axis=0)
+                        plt.bar(range(len(stability)), stability, 
+                               label=f"{opt_name}-{func_name}", alpha=0.5)
+        plt.title('Gradient Stability (Standard Deviation)')
+        plt.xlabel('Dimension')
+        plt.ylabel('Standard Deviation')
+        plt.legend()
+        
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path)
+        plt.close()
+    
+    def plot_parameter_adaptation(self, save_path: Optional[str] = None):
+        """Plot parameter adaptation history"""
+        if not self.results:
+            raise ValueError("No results available. Run comparison first.")
+            
+        # Collect all unique parameter names
+        param_names = set()
+        for func_results in self.results.values():
+            for opt_results in func_results.values():
+                for result in opt_results:
+                    if result.param_history:
+                        param_names.update(result.param_history.keys())
+        
+        if not param_names:
+            return
+            
+        n_params = len(param_names)
+        fig = plt.figure(figsize=(15, 3*n_params))
+        
+        for i, param_name in enumerate(sorted(param_names), 1):
+            plt.subplot(n_params, 1, i)
+            
+            for func_name in self.results:
+                for opt_name, results in self.results[func_name].items():
+                    for result in results:
+                        if result.param_history and param_name in result.param_history:
+                            history = result.param_history[param_name]
+                            plt.plot(history, label=f"{opt_name}-{func_name}", alpha=0.7)
+            
+            plt.title(f'{param_name} Adaptation')
+            plt.xlabel('Iteration')
+            plt.ylabel('Parameter Value')
+            plt.legend()
+            plt.grid(True)
+        
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path)
+        plt.close()
     
     def clean_name(self, name: str) -> str:
         """Clean name for filenames"""
@@ -126,7 +404,10 @@ class OptimizerAnalyzer:
                 padded_curves = []
                 for r in results:
                     curve = np.array(r.convergence_curve)
-                    if len(curve) < max_len:
+                    if len(curve) == 0:
+                        # Handle empty curves by creating an array of zeros
+                        curve = np.full(max_len, np.inf)
+                    elif len(curve) < max_len:
                         # Pad with the last value
                         padding = np.full(max_len - len(curve), curve[-1])
                         curve = np.concatenate([curve, padding])
@@ -149,7 +430,9 @@ class OptimizerAnalyzer:
             plt.grid(True)
             
             # Save plot
-            plt.savefig(f'results/plots/convergence_{self.clean_name(func_name)}.png')
+            fig = plt.gcf()
+            filename = f'convergence_{self.clean_name(func_name)}.png'
+            save_plot(fig, filename, plot_type='benchmarks')
             plt.close()
     
     def plot_performance_heatmap(self):
@@ -179,98 +462,9 @@ class OptimizerAnalyzer:
         plt.tight_layout()
         
         # Save plot
-        plt.savefig('results/plots/performance_heatmap.png')
-        plt.close()
-    
-    def plot_parameter_adaptation(self, optimizer_name: str, function_name: str):
-        """Plot parameter adaptation history for a specific optimizer and function"""
-        if not self.results or function_name not in self.results:
-            raise ValueError("No results available for the specified function.")
-            
-        if optimizer_name not in self.results[function_name]:
-            raise ValueError("No results available for the specified optimizer.")
-            
-        results = self.results[function_name][optimizer_name]
-        param_histories = [r.param_history for r in results if r.param_history]
-        
-        if not param_histories:
-            return  # Skip if no parameter histories available
-            
-        plt.figure(figsize=(12, 8))
-        n_params = len(param_histories[0])
-        n_rows = (n_params + 1) // 2
-        
-        for i, param_name in enumerate(param_histories[0].keys(), 1):
-            plt.subplot(n_rows, 2, i)
-            
-            # Plot parameter trajectories
-            for history in param_histories:
-                if param_name in history:
-                    plt.plot(history[param_name], alpha=0.3)
-            
-            # Plot mean trajectory
-            mean_trajectory = np.mean([h[param_name] for h in param_histories], axis=0)
-            plt.plot(mean_trajectory, 'k-', linewidth=2, label='Mean')
-            
-            plt.title(f'{param_name} Adaptation')
-            plt.xlabel('Iterations')
-            plt.ylabel('Value')
-            plt.grid(True)
-        
-        plt.suptitle(f'Parameter Adaptation - {optimizer_name} on {function_name}')
-        plt.tight_layout()
-        
-        # Save plot
-        clean_opt_name = self.clean_name(optimizer_name)
-        clean_func_name = self.clean_name(function_name)
-        plt.savefig(f'results/plots/param_adaptation_{clean_opt_name}_{clean_func_name}.png')
-        plt.close()
-    
-    def plot_diversity_analysis(self, optimizer_name: str, function_name: str):
-        """Plot diversity analysis for a specific optimizer and function"""
-        if not self.results or function_name not in self.results:
-            raise ValueError("No results available for the specified function.")
-            
-        if optimizer_name not in self.results[function_name]:
-            raise ValueError("No results available for the specified optimizer.")
-            
-        results = self.results[function_name][optimizer_name]
-        diversity_histories = [r.diversity_history for r in results if r.diversity_history]
-        
-        if not diversity_histories:
-            return  # Skip if no diversity histories available
-            
-        plt.figure(figsize=(12, 6))
-        
-        # Find max length of diversity histories
-        max_len = max(len(h) for h in diversity_histories)
-        
-        # Pad shorter histories with their last value
-        padded_histories = []
-        for history in diversity_histories:
-            if len(history) < max_len:
-                padding = [history[-1]] * (max_len - len(history))
-                history = list(history) + padding
-            padded_histories.append(history)
-        
-        # Plot individual trajectories
-        for history in padded_histories:
-            plt.plot(history, alpha=0.3)
-        
-        # Plot mean trajectory
-        mean_diversity = np.mean(padded_histories, axis=0)
-        plt.plot(mean_diversity, 'k-', linewidth=2, label='Mean')
-        
-        plt.title(f'Population Diversity - {optimizer_name} on {function_name}')
-        plt.xlabel('Iterations')
-        plt.ylabel('Diversity')
-        plt.grid(True)
-        plt.legend()
-        
-        # Save plot
-        clean_opt_name = self.clean_name(optimizer_name)
-        clean_func_name = self.clean_name(function_name)
-        plt.savefig(f'results/plots/diversity_{clean_opt_name}_{clean_func_name}.png')
+        fig = plt.gcf()
+        filename = 'performance_heatmap.png'
+        save_plot(fig, filename, plot_type='benchmarks')
         plt.close()
     
     def create_html_report(

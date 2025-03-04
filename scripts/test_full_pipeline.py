@@ -19,23 +19,60 @@ from optimizers.optimizer_factory import create_optimizers
 
 def generate_synthetic_data(n_samples: int = 1000) -> Tuple[pd.DataFrame, np.ndarray]:
     """Generate synthetic data with concept drift"""
-    # Generate base features
+    # Generate base features with more pronounced initial differences
     np.random.seed(42)
     data = {
-        'temperature': np.random.normal(22, 5, n_samples),
-        'pressure': np.random.normal(1015, 5, n_samples),
-        'stress_level': np.random.uniform(0, 12, n_samples),
-        'sleep_hours': np.random.normal(7, 1, n_samples),
-        'screen_time': np.random.normal(6, 2, n_samples)
+        'temperature': np.random.normal(37, 0.2, n_samples),  # Further reduced variance
+        'pressure': np.random.normal(120, 3, n_samples),      # Further reduced variance
+        'stress_level': np.random.normal(5, 0.3, n_samples),  # Further reduced variance
+        'sleep_hours': np.random.normal(7, 0.3, n_samples),   # Further reduced variance
+        'screen_time': np.random.normal(4, 0.3, n_samples)    # Further reduced variance
     }
     
     # Add concept drift in second half
     mid_point = n_samples // 2
-    data['temperature'][mid_point:] += 2  # Temperature increases
-    data['stress_level'][mid_point:] *= 1.2  # Stress has more impact
-    data['sleep_hours'][mid_point:] -= 1  # Sleep decreases
     
-    # Generate target with changing relationship
+    # First drift point (more pronounced changes)
+    drift_point1 = n_samples // 4
+    # Second drift point (change feature relationships)
+    drift_point2 = mid_point
+    # Third drift point (extreme changes)
+    drift_point3 = 3 * n_samples // 4
+    
+    # Create extremely abrupt changes at drift points
+    # First drift: massive stress increase and temperature change
+    data['stress_level'][drift_point1:] += 10.0   # Extreme stress increase at first drift
+    data['temperature'][drift_point1:] += 3.0     # Significant temperature increase
+    
+    # Second drift: extreme sleep decrease and pressure change
+    data['sleep_hours'][drift_point2:] -= 5.0     # Extreme sleep decrease at second drift
+    data['pressure'][drift_point2:] += 30.0       # Major pressure increase
+    
+    # Third drift: extreme screen time increase and all other changes
+    data['screen_time'][drift_point3:] += 15.0    # Extreme screen time increase at third drift
+    
+    # Add stronger feature correlations that change dramatically at drift points
+    # Before first drift: baseline correlations
+    for i in range(drift_point1):
+        noise = np.random.normal(0, 0.1)  # Very low noise
+        data['pressure'][i] = 120 + 10 * data['temperature'][i] + noise
+    
+    # Between first and second drift: completely different correlations
+    for i in range(drift_point1, drift_point2):
+        noise = np.random.normal(0, 0.1)  # Very low noise
+        data['sleep_hours'][i] = 15 - 2.0 * data['stress_level'][i] + noise
+    
+    # Between second and third drift: another set of correlations
+    for i in range(drift_point2, drift_point3):
+        noise = np.random.normal(0, 0.1)  # Very low noise
+        data['stress_level'][i] = 2 + 3.0 * data['screen_time'][i] + noise
+    
+    # After third drift: extreme randomness and new correlations
+    for i in range(drift_point3, n_samples):
+        noise = np.random.normal(0, 0.1)  # Very low noise
+        data['temperature'][i] = 40 + 0.5 * data['screen_time'][i] + noise
+    
+    # Generate target with dramatically changing relationship
     X = np.column_stack([
         data['temperature'],
         data['pressure'],
@@ -44,21 +81,20 @@ def generate_synthetic_data(n_samples: int = 1000) -> Tuple[pd.DataFrame, np.nda
         data['screen_time']
     ])
     
-    # First half: more weight on temperature and pressure
-    y1 = (0.3 * data['temperature'][:mid_point] +
-          0.3 * data['pressure'][:mid_point] +
-          0.2 * data['stress_level'][:mid_point] +
-          0.1 * data['sleep_hours'][:mid_point] +
-          0.1 * data['screen_time'][:mid_point])
+    # First quarter: baseline weights with strong temperature influence
+    y1 = (0.8 * data['temperature'][:drift_point1] +
+          0.2 * data['pressure'][:drift_point1])  # Only temperature and pressure matter
     
-    # Second half: more weight on stress and sleep
-    y2 = (0.1 * data['temperature'][mid_point:] +
-          0.1 * data['pressure'][mid_point:] +
-          0.4 * data['stress_level'][mid_point:] +
-          0.3 * data['sleep_hours'][mid_point:] +
-          0.1 * data['screen_time'][mid_point:])
+    # Second quarter: complete shift to stress dominance
+    y2 = (1.0 * data['stress_level'][drift_point1:drift_point2])  # Only stress matters
     
-    y = np.concatenate([y1, y2])
+    # Third quarter: complete shift to sleep dominance
+    y3 = (1.0 * data['sleep_hours'][drift_point2:drift_point3])   # Only sleep matters
+    
+    # Fourth quarter: complete shift to screen time dominance
+    y4 = (1.0 * data['screen_time'][drift_point3:])               # Only screen time matters
+    
+    y = np.concatenate([y1, y2, y3, y4])
     y = (y > np.median(y)).astype(int)  # Convert to binary classification
     
     return pd.DataFrame(data), y

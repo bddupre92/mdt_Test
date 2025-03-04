@@ -16,6 +16,11 @@ import queue
 import time
 from typing import Dict, List, Any, Optional
 import logging
+import os
+from pathlib import Path
+import sys
+sys.path.append(str(Path(__file__).parent.parent))
+from utils.plot_utils import save_plot
 
 class LiveOptimizationMonitor:
     """Real-time visualization for optimization progress."""
@@ -334,9 +339,8 @@ class LiveOptimizationMonitor:
             # Make sure the plot is up to date
             self._update_final_plot()
             
-            # Save the figure
-            plt.tight_layout()
-            self.fig.savefig(filename)
+            # Save the figure using save_plot
+            save_plot(self.fig, filename, plot_type='benchmarks')
             self.logger.info(f"Saved visualization to {filename}")
             
     def save_data(self, filename: str):

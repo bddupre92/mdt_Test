@@ -15,6 +15,7 @@ import torch.nn as nn
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel
 
+# Configure logging
 logger = logging.getLogger(__name__)
 
 class MetaLearner:
@@ -29,9 +30,11 @@ class MetaLearner:
         self.best_config = None
         self.best_score = float('-inf')
         self.feature_names = None
-        self.X_train = None
-        self.y_train = None
+        self.X = None
+        self.y = None
         self.phase_scores = {}  # Track scores per phase
+        self.drift_detector = None  # Will be set externally if needed
+        self.logger = logger  # Add logger attribute
         
         # Initialize method-specific components
         if method == 'bayesian':
@@ -241,8 +244,14 @@ class MetaLearner:
             self.algorithm_scores[algorithm_name] = []
         self.algorithm_scores[algorithm_name].append(float(reward))
     
-    def update(self, algorithm_name: str, performance: float, context: Optional[Dict[str, Any]] = None) -> None:
-        """Update algorithm performance history."""
+    def update_algorithm_performance(self, algorithm_name: str, performance: float, context: Optional[Dict[str, Any]] = None) -> None:
+        """Update the performance history of an algorithm.
+        
+        Args:
+            algorithm_name: Name of the algorithm
+            performance: Performance metric (lower is better)
+            context: Optional context information
+        """
         if algorithm_name not in self.algorithm_scores:
             self.algorithm_scores[algorithm_name] = []
         self.algorithm_scores[algorithm_name].append(performance)
@@ -281,6 +290,72 @@ class MetaLearner:
             self.best_score = performance
             logger.info(f"New best score: {self.best_score:.3f} from {algorithm_name}")
     
+    def update(self, X: np.ndarray, y: np.ndarray) -> bool:
+        """Update the meta-learner with new data.
+        
+        Args:
+            X: Features
+            y: Target values
+            
+        Returns:
+            True if drift was detected, False otherwise
+        """
+        try:
+            # Make predictions on new data
+            y_pred = self.predict(X)
+            
+            # Check for drift
+            drift_detected = self.drift_detector.detect_drift(y, y_pred)
+            
+            # Update data
+            self.X = np.vstack((self.X, X)) if self.X is not None else X
+            self.y = np.append(self.y, y) if self.y is not None else y
+            
+            # Retrain model if drift detected
+            if drift_detected:
+                self.logger.info(f"Drift detected, retraining model")
+                self.fit(self.X, self.y)
+                
+            return drift_detected
+            
+        except Exception as e:
+            self.logger.error(f"Prediction error: {str(e)}")
+            # Fallback to a simple model for drift detection
+            if not hasattr(self, 'fallback_model') or self.fallback_model is None:
+                from sklearn.ensemble import RandomForestRegressor
+                self.logger.info("Using fallback model for drift detection")
+                
+                # Use a simple default configuration
+                self.fallback_model = RandomForestRegressor(
+                    n_estimators=100,
+                    max_depth=10,
+                    min_samples_split=2,
+                    min_samples_leaf=1,
+                    max_features='sqrt'
+                )
+                
+                if self.X is not None and self.y is not None:
+                    self.fallback_model.fit(self.X, self.y)
+                else:
+                    self.fallback_model.fit(X, y)
+            
+            # Use fallback model for predictions
+            y_pred = self.fallback_model.predict(X)
+            
+            # Check for drift
+            drift_detected = self.drift_detector.detect_drift(y, y_pred)
+            
+            # Update data
+            self.X = np.vstack((self.X, X)) if self.X is not None else X
+            self.y = np.append(self.y, y) if self.y is not None else y
+            
+            # Retrain model if drift detected
+            if drift_detected:
+                self.logger.info(f"Drift detected, retraining model")
+                self.fit(self.X, self.y)
+                
+            return drift_detected
+    
     def optimize(self, X: np.ndarray, y: np.ndarray, 
                 context: Optional[Dict] = None,
                 n_iter: int = 50,
@@ -308,8 +383,8 @@ class MetaLearner:
         
         # Store feature names
         self.feature_names = feature_names
-        self.X_train = X
-        self.y_train = y
+        self.X = X
+        self.y = y
         
         for i in range(n_iter):
             # Select algorithm
@@ -324,7 +399,7 @@ class MetaLearner:
                 algo.update(config, score)
                 
                 # Update meta-learner
-                self.update(algo.name, score, context)
+                self.update_algorithm_performance(algo.name, score, context)
                 
                 # Check for improvement
                 if score > best_score:
@@ -465,7 +540,7 @@ class MetaLearner:
         logger.info("Making predictions")
         
         model = ModelFactory().create_model(self.best_config)
-        model.fit(self.X_train, self.y_train)
+        model.fit(self.X, self.y)
         return model.predict(X)
     
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
@@ -476,7 +551,7 @@ class MetaLearner:
         logger.info("Getting prediction probabilities")
         
         model = ModelFactory().create_model(self.best_config)
-        model.fit(self.X_train, self.y_train)
+        model.fit(self.X, self.y)
         return model.predict_proba(X)
     
     def get_feature_importance(self) -> np.ndarray:
@@ -487,5 +562,102 @@ class MetaLearner:
         logger.info("Getting feature importance")
         
         model = ModelFactory().create_model(self.best_config)
-        model.fit(self.X_train, self.y_train)
+        model.fit(self.X, self.y)
         return model.feature_importances_
+    
+    def fit(self, X: np.ndarray, y: np.ndarray, feature_names: Optional[List[str]] = None) -> None:
+        """Fit the meta-learner to the training data.
+        
+        Args:
+            X: Training features
+            y: Training labels
+            feature_names: Optional list of feature names
+        """
+        logger.info(f"Fitting meta-learner on {X.shape[0]} samples with {X.shape[1]} features")
+        self.X = X
+        self.y = y
+        self.feature_names = feature_names
+        
+        # Run optimization to find best configuration
+        best_config, best_score = self.optimize(X, y, feature_names=feature_names)
+        self.best_config = best_config
+        self.best_score = best_score
+        
+        logger.info(f"Meta-learner fit complete. Best score: {best_score:.4f}")
+
+    def run_meta_learner_with_drift(self, n_samples=1000, n_features=10, drift_points=None, 
+                                  window_size=10, drift_threshold=0.01, significance_level=0.9,
+                                  visualize=False):
+        """Run meta-learner with drift detection"""
+        # Generate synthetic data
+        X_full, y_full = generate_synthetic_data(n_samples)
+        
+        # Initialize drift detector
+        detector = DriftDetector(
+            window_size=window_size,
+            drift_threshold=drift_threshold,
+            significance_level=significance_level
+        )
+        
+        # Initialize model
+        model = ModelFactory().create_model({'task_type': 'classification'})
+        
+        # Initial training
+        train_size = 200
+        X_train = X_full[:train_size]
+        y_train = y_full[:train_size]
+        model.fit(X_train, y_train)
+        
+        # Initialize reference window with first batch predictions
+        initial_pred = model.predict_proba(X_train)[:, 1]  # Use positive class probability
+        detector.set_reference_window(initial_pred)
+        
+        # Process remaining data in batches
+        batch_size = window_size
+        detected_drifts = []
+        
+        for i in range(train_size, n_samples, batch_size):
+            # Get current batch
+            X_batch = X_full[i:i+batch_size]
+            
+            # Get predictions
+            pred_proba = model.predict_proba(X_batch)[:, 1]  # Use positive class probability
+            
+            # Check for drift using prediction probabilities
+            drift_detected, severity, info = detector.add_sample(
+                point=pred_proba.mean(),  # Use mean probability as point
+                prediction_proba=pred_proba  # Pass full probabilities
+            )
+            
+            # Log drift check
+            logger.info(
+                f"Sample {i}: Mean shift={info['mean_shift']:.4f}, "
+                f"KS stat={info['ks_statistic']:.4f}, "
+                f"p-value={info['p_value']:.4f}, "
+                f"Severity={severity:.4f}"
+            )
+            
+            # Handle drift if detected
+            if drift_detected:
+                detected_drifts.append(i)
+                # Update model with recent data
+                X_update = X_full[max(0, i-100):i]  # Use last 100 samples
+                y_update = y_full[max(0, i-100):i]
+                model.fit(X_update, y_update)
+        
+        # Manual check at known drift points
+        if drift_points:
+            for point in drift_points:
+                logger.info(f"Manually checking for drift at point {point}...")
+                X_check = X_full[point:point+window_size]
+                pred_proba = model.predict_proba(X_check)[:, 1]
+                drift_detected, _, info = detector.detect_drift(
+                    curr_data=pred_proba,
+                    ref_data=detector.reference_window
+                )
+                logger.info(f"Drift check at {point}: {'Detected' if drift_detected else 'Not detected'}")
+                logger.info(f"Stats: Mean shift={info['mean_shift']:.4f}, "
+                          f"KS stat={info['ks_statistic']:.4f}, "
+                          f"p-value={info['p_value']:.4f}")
+        
+        return detected_drifts

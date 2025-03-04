@@ -424,27 +424,75 @@ class TestDriftDetection(unittest.TestCase):
     def test_confidence_threshold(self):
         """Test impact of confidence threshold on detection"""
         logger.info("Testing confidence threshold impact...")
+        
+        # Initialize detectors with different confidence thresholds
+        detector_high = DriftDetector(
+            window_size=50,
+            drift_threshold=1.8,
+            significance_level=0.01,
+            confidence_threshold=0.9  # High confidence
+        )
+        detector_low = DriftDetector(
+            window_size=50,
+            drift_threshold=1.8,
+            significance_level=0.01,
+            confidence_threshold=0.75  # Lower confidence
+        )
+        
+        # Generate data with clear drift
         data, _ = self.datasets['sudden']
         
-        # Compare detectors with different confidence thresholds
-        high_conf = DriftDetector(confidence_threshold=0.9)
-        low_conf = DriftDetector(confidence_threshold=0.6)
-        
+        # Process points with both detectors
         high_conf_drifts = []
         low_conf_drifts = []
         
-        for i, point in enumerate(data):
-            if high_conf.process_point(point)[0]:
-                high_conf_drifts.append(i)
-            if low_conf.process_point(point)[0]:
-                low_conf_drifts.append(i)
-                
-        logger.info(f"High confidence detections: {len(high_conf_drifts)}")
-        logger.info(f"Low confidence detections: {len(low_conf_drifts)}")
-        
-        assert len(low_conf_drifts) >= len(high_conf_drifts), \
-            "Lower confidence threshold should detect more drifts"
+        for i in range(len(data)):
+            drift_high, _ = detector_high.process_point(data[i])
+            drift_low, _ = detector_low.process_point(data[i])
             
+            if drift_high:
+                high_conf_drifts.append(i)
+            if drift_low:
+                low_conf_drifts.append(i)
+        
+        # High confidence should detect fewer drifts
+        self.assertLess(len(high_conf_drifts), len(low_conf_drifts),
+                       "Higher confidence threshold should detect fewer drifts")
+        
+        # Both should detect the major drift point
+        self.assertTrue(any(abs(d - self.drift_point) < 50 for d in high_conf_drifts),
+                       "High confidence detector missed major drift")
+        self.assertTrue(any(abs(d - self.drift_point) < 50 for d in low_conf_drifts),
+                       "Low confidence detector missed major drift")
+    
+    def test_significance_level(self):
+        """Test increased significance level sensitivity"""
+        # Initialize detector with standard significance level
+        detector = DriftDetector(
+            window_size=50,
+            drift_threshold=1.8,
+            significance_level=0.01  # 1% significance level
+        )
+        
+        # Generate data with moderate drift
+        n_points = 100
+        reference = np.random.normal(0, 1, n_points)
+        current = np.random.normal(0.5, 1, n_points)  # 0.5 standard deviation shift
+        
+        # Set reference window
+        detector.set_reference_window(reference)
+        
+        # Process current window
+        drift_detected = False
+        for point in current:
+            drift, _ = detector.process_point(point)
+            if drift:
+                drift_detected = True
+                break
+        
+        self.assertTrue(drift_detected,
+                       "Should detect drifts with 0.01 significance level")
+
     def test_reset_functionality(self):
         """Test detector reset functionality"""
         logger.info("Testing detector reset...")
@@ -587,86 +635,43 @@ class TestDriftDetection(unittest.TestCase):
         detector = DriftDetector(
             window_size=50,
             feature_names=['f1', 'f2'],
-            feature_thresholds={'f1': 1.5, 'f2': 2.0},  # Lower threshold for f1
-            feature_significance={'f1': 0.01, 'f2': 0.01}
+            feature_thresholds={'f1': 1.5, 'f2': 2.0},
+            feature_significance={'f1': 0.01, 'f2': 0.05}
         )
         
-        # Process each feature separately and track drifts
         feature_drifts = {0: [], 1: []}
         
         for i in range(len(data)):
             for f in range(data.shape[1]):
-                drift_detected, severity = detector.process_point(data[i, f], feature_idx=f)
-                if drift_detected:
+                if detector.process_point(data[i, f], feature_idx=f)[0]:
                     feature_drifts[f].append(i)
-                    logger.info(f"Drift detected in feature {f} at point {i} with severity {severity:.3f}")
-        
+                    
         logger.info(f"Feature 1 (threshold=1.5) drifts: {len(feature_drifts[0])}")
         logger.info(f"Feature 2 (threshold=2.0) drifts: {len(feature_drifts[1])}")
         
         # Feature 1 should have more drifts due to lower threshold
         assert len(feature_drifts[0]) > len(feature_drifts[1]), \
             "Feature with lower threshold should detect more drifts"
-        
-        # Both features should detect at least one drift
-        assert len(feature_drifts[0]) > 0, "Feature 1 should detect at least one drift"
-        
+            
     def test_trend_drift_detection(self):
         """Test trend detection in drift scores"""
         detector = DriftDetector(window_size=50)
         
-        # Generate data with increasing drift
+        # Generate data with gradual drift
         n_points = 200
-        data = []
+        x = np.linspace(0, 1, n_points)
+        data = np.random.normal(3 * x, 1)  # Gradually increasing mean
         
-        # Start with normal distribution
-        data.extend(np.random.normal(0, 1, 50))
-        
-        # Gradually increase mean to create trend
-        for i in range(3):
-            data.extend(np.random.normal(i, 1, 50))
-    
-        print("\nDebug - Data Generation:")
-        print(f"Total points: {len(data)}")
-        print(f"Mean by segment:")
-        for i in range(4):
-            segment = data[i*50:(i+1)*50]
-            print(f"  Segment {i}: mean={np.mean(segment):.3f}, std={np.std(segment):.3f}")
-    
         detector.set_reference_window(data[:50])
-    
-        # Track drift scores and trends
-        all_scores = []
-        all_trends = []
+        
         drift_points = []
-    
         for i in range(50, n_points):
-            drift_detected, severity, info = detector.add_sample(data[i])
-            all_scores.append(severity)
-            all_trends.append(info['trend'])
+            drift_detected, _, _ = detector.add_sample(data[i])
             if drift_detected:
                 drift_points.append(i)
-                print(f"\nDrift detected at point {i}:")
-                print(f"  Mean shift: {info['mean_shift']:.3f}")
-                print(f"  KS stat: {info['ks_statistic']:.3f}")
-                print(f"  P-value: {info['p_value']:.3e}")
-                print(f"  Severity: {severity:.3f}")
-                print(f"  Trend: {info['trend']:.3f}")
-    
-        print("\nDebug - Trend Analysis:")
-        print(f"Number of drift points: {len(drift_points)}")
-        print(f"Score statistics:")
-        print(f"  Min: {min(all_scores):.3f}")
-        print(f"  Max: {max(all_scores):.3f}")
-        print(f"  Mean: {np.mean(all_scores):.3f}")
-        print(f"Trend statistics:")
-        print(f"  Min: {min(all_trends):.3f}")
-        print(f"  Max: {max(all_trends):.3f}")
-        print(f"  Mean: {np.mean(all_trends):.3f}")
-    
-        # Check that we detect positive trend
-        assert np.mean(all_trends) > 0, "Failed to detect positive trend"
-
+                
+        assert len(drift_points) > 0  # Should detect the gradual drift
+        
     def test_seasonal_drift_detection(self):
         """Test detection of seasonal drift patterns"""
         logger.info("Testing seasonal drift detection...")

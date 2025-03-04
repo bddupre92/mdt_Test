@@ -8,6 +8,7 @@ import numpy as np
 from typing import Dict, Any, Optional, List, Tuple, Callable
 from .base_optimizer import BaseOptimizer
 import time
+from tqdm.auto import tqdm
 
 class AntColonyOptimizer(BaseOptimizer):
     def __init__(self,
@@ -26,6 +27,7 @@ class AntColonyOptimizer(BaseOptimizer):
                  tau_max: float = 20.0,
                  rho: float = 0.05,
                  q0: float = 0.7,
+                 verbose: bool = False,
                  **kwargs):
         """
         Initialize ACO optimizer.
@@ -46,6 +48,7 @@ class AntColonyOptimizer(BaseOptimizer):
             tau_max: Maximum pheromone value
             rho: Pheromone evaporation rate
             q0: Exploration-exploitation trade-off
+            verbose: Whether to show progress bars
         """
         # Only pass parameters that BaseOptimizer accepts
         super().__init__(dim=dim, bounds=bounds, population_size=population_size, adaptive=adaptive)
@@ -88,6 +91,9 @@ class AntColonyOptimizer(BaseOptimizer):
             self.param_history = {
                 'diversity': []
             }
+        
+        # Verbose mode
+        self.verbose = verbose
     
     def reset(self):
         """Reset optimizer state"""
@@ -133,7 +139,7 @@ class AntColonyOptimizer(BaseOptimizer):
         self.pheromone *= (1 - self.rho)
         
         # Intensification
-        for i in range(self.population_size):
+        for i in range(len(solutions)):
             regions = self._discretize(solutions[i])
             delta = self.intensification / (scores[i] + 1e-10)
             for j, region in enumerate(regions):
@@ -157,6 +163,109 @@ class AntColonyOptimizer(BaseOptimizer):
             region = self._select_region(i)
             solution[i] = self._value_from_index(i, region)
         return solution
+    
+    def _iterate(self, objective_func: Callable) -> Tuple[np.ndarray, float]:
+        """
+        Perform one iteration of the optimization algorithm.
+        
+        Args:
+            objective_func: Objective function to minimize
+            
+        Returns:
+            Tuple of (best solution, best score)
+        """
+        # Start iteration timer
+        iter_start_time = time.time()
+        
+        # Initialize success counter for this iteration
+        success_count = 0
+        
+        # Generate solutions for each ant
+        solutions = []
+        scores = []
+        
+        for ant in range(self.population_size):
+            # Construct solution
+            solution = self._construct_solution()
+            
+            # Apply local search with probability q0
+            if np.random.random() < self.q0:
+                for d in range(self.dim):
+                    # Generate small perturbation
+                    delta = np.random.normal(0, 0.1)
+                    new_val = solution[d] + delta
+                    new_val = np.clip(new_val, self.bounds[d][0], self.bounds[d][1])
+                    
+                    # Keep better solution
+                    temp_sol = solution.copy()
+                    temp_sol[d] = new_val
+                    
+                    # Evaluate the perturbed solution
+                    if objective_func(temp_sol) < objective_func(solution):
+                        solution[d] = new_val
+                        self.evaluations += 1
+            
+            # Evaluate solution
+            score = objective_func(solution)
+            self.evaluations += 1
+            
+            solutions.append(solution)
+            scores.append(score)
+            
+            # Update best solution if needed
+            if score < self.best_score:
+                self.best_score = score
+                self.best_solution = solution.copy()
+                self.last_improvement_iter = self._current_iteration
+                success_count += 1
+        
+        # Update population with new solutions
+        combined_solutions = np.vstack((self.population, solutions))
+        combined_scores = np.concatenate((self.population_scores, scores))
+        
+        # Select best solutions
+        best_indices = np.argsort(combined_scores)[:self.population_size]
+        self.population = combined_solutions[best_indices]
+        self.population_scores = combined_scores[best_indices]
+        
+        # Update pheromone trails
+        self._update_pheromones(solutions, scores)
+        
+        # Apply evaporation
+        self.pheromone *= (1 - self.evaporation_rate)
+        
+        # Enforce pheromone bounds
+        self.pheromone = np.clip(self.pheromone, self.tau_min, self.tau_max)
+        
+        # Update success history
+        success_rate = success_count / self.population_size
+        self.success_history.append(success_rate > 0)
+        
+        # Update selection pressure
+        self.selection_pressure.append(success_rate)
+        
+        # Update parameters based on performance
+        self._update_parameters()
+        
+        # Update diversity metrics
+        self._update_diversity()
+        
+        # Estimate problem characteristics
+        self._estimate_problem_characteristics()
+        
+        # Record time for this iteration
+        iter_time = time.time() - iter_start_time
+        self.time_per_iteration.append(iter_time)
+        
+        # Update convergence curve
+        self.convergence_curve.append(self.best_score)
+        
+        # Update stagnation count
+        if self._current_iteration - self.last_improvement_iter > 10:
+            self.stagnation_count += 1
+        
+        # Return current best solution and score
+        return self.best_solution, self.best_score
     
     def _update_parameters(self):
         """Update optimizer parameters based on performance"""
@@ -194,9 +303,10 @@ class AntColonyOptimizer(BaseOptimizer):
         # Initialize pheromone matrix
         self.pheromone = np.ones((self.dim, self.num_points)) * self.initial_pheromone
         
-        # Initialize best solution
-        self.best_solution = None
-        self.best_score = float('inf')
+        pbar = None
+        if self.verbose:
+            pbar = tqdm(total=self.max_evals, desc="ACO Optimization")
+            pbar.update(0)
         
         while not self._check_convergence():
             # Generate solutions for each ant
@@ -256,9 +366,17 @@ class AntColonyOptimizer(BaseOptimizer):
             
             # Track diversity
             self._update_diversity()
+            
+            # Update progress bar
+            if pbar:
+                pbar.update(self.population_size)
+                pbar.set_postfix({"best_score": f"{self.best_score:.6f}"})
         
         # Clean up
         del self.objective_func
+        
+        if pbar:
+            pbar.close()
         
         return self.best_solution, self.best_score
     
@@ -284,6 +402,12 @@ class AntColonyOptimizer(BaseOptimizer):
             
         self.start_time = time.time()
         
+        # Initialize progress bar if verbose is enabled
+        pbar = None
+        if self.verbose:
+            pbar = tqdm(total=self.max_evals, desc="ACO Optimization")
+            pbar.update(0)
+            
         # Initialize pheromone matrix
         self.pheromone = np.ones((self.dim, self.num_points)) * self.initial_pheromone
         
@@ -324,6 +448,89 @@ class AntColonyOptimizer(BaseOptimizer):
             
             # Track diversity
             self._update_diversity()
+            
+            # Update progress bar
+            if pbar:
+                pbar.update(self.population_size)
+                pbar.set_postfix({"best_score": f"{self.best_score:.6f}"})
         
         self.end_time = time.time()
+        
+        if pbar:
+            pbar.close()
+        
         return self.best_solution, self.best_score
+    
+    def _update_diversity(self):
+        """Track diversity"""
+        diversity = self._calculate_diversity()
+        self.param_history['diversity'].append(diversity)
+        
+    def _calculate_diversity(self) -> float:
+        """
+        Calculate population diversity as mean distance from centroid.
+        
+        Returns:
+            Diversity measure (mean distance from centroid)
+        """
+        if len(self.population) == 0:
+            return 0.0
+            
+        # Calculate centroid
+        centroid = np.mean(self.population, axis=0)
+        
+        # Calculate distances from centroid
+        distances = np.sqrt(np.sum((self.population - centroid) ** 2, axis=1))
+        
+        # Return mean distance
+        return np.mean(distances)
+        
+    def _evaluate(self, solution: np.ndarray, objective_func: Callable) -> float:
+        """
+        Evaluate a solution using the objective function and track evaluations.
+        
+        Args:
+            solution: Solution to evaluate
+            objective_func: Objective function to evaluate
+            
+        Returns:
+            Objective function value
+        """
+        # Increment evaluation counter
+        self.evaluations += 1
+        
+        # Evaluate solution
+        score = objective_func(solution)
+        
+        # Update best solution if better
+        if score < self.best_score:
+            self.best_score = score
+            self.best_solution = solution.copy()
+            
+        return score
+        
+    def get_parameters(self) -> Dict[str, Any]:
+        """
+        Get optimizer parameters.
+        
+        Returns:
+            Dictionary of optimizer parameters
+        """
+        params = {
+            'name': 'ACO',
+            'dim': self.dim,
+            'population_size': self.population_size,
+            'adaptive': self.adaptive,
+            'evaporation_rate': self.evaporation_rate,
+            'intensification': self.intensification,
+            'alpha': self.alpha,
+            'beta': self.beta,
+            'num_points': self.num_points,
+            'initial_pheromone': self.initial_pheromone,
+            'tau_min': self.tau_min,
+            'tau_max': self.tau_max,
+            'rho': self.rho,
+            'q0': self.q0,
+            'verbose': self.verbose
+        }
+        return params
