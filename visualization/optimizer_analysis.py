@@ -341,15 +341,28 @@ class OptimizerAnalyzer:
             plt.savefig(save_path)
         plt.close()
     
-    def plot_parameter_adaptation(self, save_path: Optional[str] = None):
-        """Plot parameter adaptation history"""
+    def plot_parameter_adaptation(self, optimizer_name=None, function_name=None, save_path: Optional[str] = None):
+        """
+        Plot parameter adaptation history.
+        
+        Args:
+            optimizer_name: Optional name of the optimizer to plot
+            function_name: Optional name of the function to plot
+            save_path: Optional path to save the figure
+        """
         if not self.results:
             raise ValueError("No results available. Run comparison first.")
             
         # Collect all unique parameter names
         param_names = set()
-        for func_results in self.results.values():
-            for opt_results in func_results.values():
+        for func_name, func_results in self.results.items():
+            if function_name and func_name != function_name:
+                continue
+                
+            for opt_name, opt_results in func_results.items():
+                if optimizer_name and opt_name != optimizer_name:
+                    continue
+                    
                 for result in opt_results:
                     if result.param_history:
                         param_names.update(result.param_history.keys())
@@ -363,8 +376,14 @@ class OptimizerAnalyzer:
         for i, param_name in enumerate(sorted(param_names), 1):
             plt.subplot(n_params, 1, i)
             
-            for func_name in self.results:
-                for opt_name, results in self.results[func_name].items():
+            for func_name, func_results in self.results.items():
+                if function_name and func_name != function_name:
+                    continue
+                    
+                for opt_name, results in func_results.items():
+                    if optimizer_name and opt_name != optimizer_name:
+                        continue
+                        
                     for result in results:
                         if result.param_history and param_name in result.param_history:
                             history = result.param_history[param_name]
@@ -379,11 +398,144 @@ class OptimizerAnalyzer:
         plt.tight_layout()
         if save_path:
             plt.savefig(save_path)
-        plt.close()
+            
+        return fig
     
-    def clean_name(self, name: str) -> str:
-        """Clean name for filenames"""
-        return name.lower().replace(' ', '_').replace('(', '').replace(')', '')
+    def plot_diversity_analysis(self, optimizer_name=None, function_name=None, save_path: Optional[str] = None):
+        """
+        Plot diversity analysis for population-based optimizers.
+        
+        Args:
+            optimizer_name: Optional name of the optimizer to plot
+            function_name: Optional name of the function to plot
+            save_path: Optional path to save the figure
+        """
+        if not self.results:
+            raise ValueError("No results available. Run comparison first.")
+            
+        fig = plt.figure(figsize=(15, 10))
+        
+        # Plot 1: Diversity Over Time
+        plt.subplot(2, 2, 1)
+        
+        for func_name, func_results in self.results.items():
+            if function_name and func_name != function_name:
+                continue
+                
+            for opt_name, results in func_results.items():
+                if optimizer_name and opt_name != optimizer_name:
+                    continue
+                    
+                for i, result in enumerate(results):
+                    if result.diversity_history:
+                        plt.plot(result.diversity_history, 
+                                label=f"{opt_name}-{func_name}" if i == 0 else "_nolegend_",
+                                alpha=0.7)
+        
+        plt.title('Population Diversity Over Time')
+        plt.xlabel('Iteration')
+        plt.ylabel('Diversity Measure')
+        plt.legend()
+        plt.grid(True)
+        
+        # Plot 2: Diversity vs Fitness Improvement
+        plt.subplot(2, 2, 2)
+        
+        for func_name, func_results in self.results.items():
+            if function_name and func_name != function_name:
+                continue
+                
+            for opt_name, results in func_results.items():
+                if optimizer_name and opt_name != optimizer_name:
+                    continue
+                    
+                for result in results:
+                    if result.diversity_history and len(result.convergence_curve) > 1:
+                        # Calculate fitness improvements
+                        curve = np.array(result.convergence_curve)
+                        improvements = np.abs(np.diff(curve))
+                        
+                        # Match lengths (take min length)
+                        diversity = np.array(result.diversity_history)
+                        min_len = min(len(diversity)-1, len(improvements))
+                        
+                        if min_len > 0:
+                            plt.scatter(diversity[:min_len], improvements[:min_len], 
+                                      label=f"{opt_name}-{func_name}", alpha=0.5)
+        
+        plt.title('Diversity vs Fitness Improvement')
+        plt.xlabel('Diversity')
+        plt.ylabel('Fitness Improvement')
+        plt.legend()
+        plt.grid(True)
+        
+        # Plot 3: Average Diversity by Optimizer
+        plt.subplot(2, 2, 3)
+        
+        diversity_by_opt = {}
+        
+        for func_name, func_results in self.results.items():
+            if function_name and func_name != function_name:
+                continue
+                
+            for opt_name, results in func_results.items():
+                if optimizer_name and opt_name != optimizer_name:
+                    continue
+                    
+                all_diversity = []
+                for result in results:
+                    if result.diversity_history:
+                        all_diversity.extend(result.diversity_history)
+                
+                if all_diversity:
+                    if opt_name not in diversity_by_opt:
+                        diversity_by_opt[opt_name] = []
+                    diversity_by_opt[opt_name].append(np.mean(all_diversity))
+        
+        if diversity_by_opt:
+            plt.bar(range(len(diversity_by_opt)), 
+                  [np.mean(v) for v in diversity_by_opt.values()],
+                  tick_label=list(diversity_by_opt.keys()))
+            plt.title('Average Diversity by Optimizer')
+            plt.xticks(rotation=45)
+            plt.ylabel('Average Diversity')
+            plt.grid(True)
+        
+        # Plot 4: Diversity Trend Correlation
+        plt.subplot(2, 2, 4)
+        
+        for func_name, func_results in self.results.items():
+            if function_name and func_name != function_name:
+                continue
+                
+            for opt_name, results in func_results.items():
+                if optimizer_name and opt_name != optimizer_name:
+                    continue
+                    
+                for result in results:
+                    if result.diversity_history and len(result.diversity_history) > 2:
+                        diversity = np.array(result.diversity_history)
+                        iterations = np.arange(len(diversity))
+                        
+                        # Simple linear regression to show trend
+                        z = np.polyfit(iterations, diversity, 1)
+                        p = np.poly1d(z)
+                        
+                        plt.plot(iterations, p(iterations), 
+                               label=f"{opt_name}-{func_name}", 
+                               linewidth=2, alpha=0.8)
+        
+        plt.title('Diversity Trend Over Iterations')
+        plt.xlabel('Iteration')
+        plt.ylabel('Diversity')
+        plt.legend()
+        plt.grid(True)
+        
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path)
+            
+        return fig
     
     def plot_convergence_comparison(self):
         """Plot convergence comparison for all functions and optimizers"""
@@ -466,6 +618,10 @@ class OptimizerAnalyzer:
         filename = 'performance_heatmap.png'
         save_plot(fig, filename, plot_type='benchmarks')
         plt.close()
+    
+    def clean_name(self, name: str) -> str:
+        """Clean name for filenames"""
+        return name.lower().replace(' ', '_').replace('(', '').replace(')', '')
     
     def create_html_report(
             self,
