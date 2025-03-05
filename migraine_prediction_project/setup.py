@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="migraine_prediction",
-    version="0.1.0",
+    version="0.1.3",
     description="Migraine prediction model using optimization framework",
     author="MDT Team",
     packages=find_packages(where="src"),

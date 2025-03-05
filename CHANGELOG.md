@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2025-03-05
+
+### Fixed
+- Fixed model loading issue in MigrainePredictorV2 where tuple return type was incorrectly handled as a dictionary
+- Corrected the implementation of the load_model method to properly unpack the model and metadata
+- Added missing required features (heart_rate, weight_kg, hydration_ml) to example prediction data
+- Ensured proper scaler initialization with dummy sample during model loading
+- Fixed the run_migraine_prediction function to load the default model when no model ID is provided
+
+### Improved
+- Enhanced example data generation with comprehensive feature coverage
+- Added better error handling for derived feature calculations
+- Updated test suite to cover all migraine prediction functionality
+
+## [0.1.2] - 2025-03-05
+
+### Added
+- New migraine data handling capabilities for handling evolving data schemas
+- Advanced `DataHandler` class to manage data imports and derived features
+- Enhanced `MigrainePredictorV2` class with support for new columns and missing features
+- Command-line interface in main.py for migraine data operations
+- Comprehensive unit tests for migraine data handling features
+- Example scripts for demonstrating new migraine data functionality
+- Detailed documentation in README_MIGRAINE_DATA.md
+
+### Improved
+- Schema evolution support for migraine prediction models
+- Missing value handling during prediction with default value substitution
+- Model metadata to store feature information and default values
+- Enhanced command-line interface with migraine data arguments
+
 ## [0.1.1] - 2025-03-05
 
 ### Fixed

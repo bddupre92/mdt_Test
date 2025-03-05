@@ -40,6 +40,15 @@ from visualization.live_visualization import LiveOptimizationMonitor
 from benchmarking.test_functions import TEST_FUNCTIONS, create_test_suite
 from utils.plot_utils import save_plot
 
+# Import migraine data handling modules
+try:
+    from migraine_prediction_project.src.migraine_model.new_data_migraine_predictor import MigrainePredictorV2
+    from migraine_prediction_project.src.migraine_model.data_handler import DataHandler
+    MIGRAINE_MODULES_AVAILABLE = True
+except ImportError:
+    MIGRAINE_MODULES_AVAILABLE = False
+    logging.warning("Migraine prediction modules not available. To use migraine data features, please install the migraine prediction package.")
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -1949,6 +1958,184 @@ def explain_drift(args):
     
     return results
 
+def run_migraine_data_import(args):
+    """
+    Import new migraine data with potentially different schema.
+    
+    Args:
+        args: Command-line arguments containing data path, output path, and options
+    
+    Returns:
+        Dictionary with results of the import operation
+    """
+    if not MIGRAINE_MODULES_AVAILABLE:
+        logging.error("Migraine prediction modules are not available. Please install the package first.")
+        return {"success": False, "error": "Migraine modules not available"}
+    
+    try:
+        logging.info(f"Importing migraine data from {args.data_path}")
+        
+        # Initialize the predictor
+        predictor = MigrainePredictorV2(
+            model_dir=args.model_dir,
+            data_dir=args.data_dir
+        )
+        
+        # Import the data
+        imported_data = predictor.import_data(
+            data_path=args.data_path,
+            add_new_columns=args.add_new_columns
+        )
+        
+        # If requested, add derived features
+        if args.derived_features:
+            for feature_def in args.derived_features:
+                name, formula = feature_def.split(":", 1)
+                predictor.add_derived_feature(name=name, formula=formula)
+                logging.info(f"Added derived feature: {name} with formula: {formula}")
+        
+        # If requested, train a model with the imported data
+        if args.train_model:
+            model_id = predictor.train(
+                data=imported_data,
+                model_name=args.model_name or "migraine_model",
+                description=args.model_description or f"Model trained with data from {args.data_path}",
+                make_default=args.make_default
+            )
+            logging.info(f"Trained model with ID: {model_id}")
+            model_info = {"model_id": model_id}
+        else:
+            model_info = {}
+        
+        # Save the imported data if requested
+        if args.save_processed_data:
+            output_path = os.path.join(args.data_dir, "processed_data.csv")
+            imported_data.to_csv(output_path, index=False)
+            logging.info(f"Saved processed data to {output_path}")
+        
+        # Get schema information
+        schema_info = predictor.get_schema_info()
+        
+        # If summary is requested, print it
+        if args.summary:
+            print("\nMigraine Data Import Summary:")
+            print(f"Imported data shape: {imported_data.shape}")
+            print(f"New columns added: {len(schema_info['optional_features'])}")
+            print(f"Derived features created: {len(schema_info['derived_features'])}")
+            if args.train_model:
+                print(f"Model trained with ID: {model_id}")
+            print(f"Feature columns: {predictor.feature_columns}")
+        
+        return {
+            "success": True,
+            "data_shape": imported_data.shape,
+            "schema_info": schema_info,
+            "model_info": model_info
+        }
+        
+    except Exception as e:
+        logging.error(f"Error importing migraine data: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+def run_migraine_prediction(args):
+    """
+    Run prediction using a migraine model on new data, handling missing features.
+    
+    Args:
+        args: Command-line arguments containing prediction parameters
+        
+    Returns:
+        Dictionary with prediction results
+    """
+    if not MIGRAINE_MODULES_AVAILABLE:
+        logging.error("Migraine prediction modules are not available. Please install the package first.")
+        return {"success": False, "error": "Migraine modules not available"}
+    
+    try:
+        logging.info(f"Running migraine prediction using data from {args.prediction_data}")
+        
+        # Initialize the predictor
+        predictor = MigrainePredictorV2(
+            model_dir=args.model_dir,
+            data_dir=args.data_dir
+        )
+        
+        # Load the model if specified
+        if args.model_id:
+            predictor.load_model(args.model_id)
+            logging.info(f"Loaded model with ID: {args.model_id}")
+        else:
+            # Load the default model if no model ID is specified
+            predictor.load_model()  # This will load the default model
+            logging.info(f"Loaded default model with ID: {predictor.model_id}")
+        
+        # Import prediction data
+        pred_data = predictor.import_data(
+            data_path=args.prediction_data,
+            add_new_columns=False  # Don't add new columns for prediction
+        )
+        
+        # Make predictions with missing features
+        predictions = predictor.predict_with_missing_features(pred_data)
+        
+        # Format results
+        results = []
+        for i, pred in enumerate(predictions):
+            sample_result = {
+                "index": i,
+                "prediction": pred["prediction"],
+                "probability": pred["probability"],
+                "top_features": sorted(
+                    pred["feature_importances"].items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:5] if "feature_importances" in pred else []
+            }
+            results.append(sample_result)
+        
+        # Save results if requested
+        if args.save_predictions:
+            # Create DataFrame with predictions
+            pred_df = pd.DataFrame({
+                "prediction": [p["prediction"] for p in predictions],
+                "probability": [p["probability"] for p in predictions]
+            })
+            # Add original data
+            pred_df = pd.concat([pred_data.reset_index(drop=True), pred_df], axis=1)
+            output_path = os.path.join(args.data_dir, "predictions.csv")
+            pred_df.to_csv(output_path, index=False)
+            logging.info(f"Saved predictions to {output_path}")
+        
+        # If summary is requested, print it
+        if args.summary:
+            print("\nMigraine Prediction Summary:")
+            print(f"Number of samples predicted: {len(predictions)}")
+            migraine_count = sum(1 for p in predictions if p["prediction"] == 1)
+            print(f"Predicted migraines: {migraine_count} ({migraine_count/len(predictions)*100:.2f}%)")
+            print(f"Average probability: {sum(p['probability'] for p in predictions)/len(predictions):.4f}")
+            print("\nSample predictions:")
+            for i, result in enumerate(results[:5]):  # Show first 5 predictions
+                print(f"Sample {i}: {'Migraine' if result['prediction'] == 1 else 'No Migraine'} " +
+                      f"(Probability: {result['probability']:.4f})")
+        
+        return {
+            "success": True,
+            "predictions": results,
+            "summary": {
+                "total_samples": len(predictions),
+                "predicted_migraines": sum(1 for p in predictions if p["prediction"] == 1),
+                "average_probability": sum(p["probability"] for p in predictions)/len(predictions)
+            }
+        }
+        
+    except Exception as e:
+        logging.error(f"Error running migraine prediction: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
 def parse_args():
     """
     Parse command-line arguments.
@@ -1969,7 +2156,7 @@ def parse_args():
     parser.add_argument('--explain-plots', action='store_true', help='Generate and save explainability plots')
     parser.add_argument('--explain-plot-types', type=str, nargs='+', 
                         help='Specific plot types to generate (e.g., summary waterfall force dependence)')
-    parser.add_argument('--explain-samples', type=int, default=50, help='Number of samples to use for explainability')
+    parser.add_argument('--explain-samples', type=int, default=50, help='Number of samples to use for explanation')
     
     # Meta-learner and optimization parameters
     parser.add_argument('--method', type=str, default='bayesian', help='Method for meta-learner')
@@ -1982,6 +2169,28 @@ def parse_args():
     parser.add_argument('--drift-window', type=int, default=50, help='Window size for drift detection')
     parser.add_argument('--drift-threshold', type=float, default=0.5, help='Threshold for drift detection')
     parser.add_argument('--drift-significance', type=float, default=0.05, help='Significance level for drift detection')
+    
+    # Migraine data import parameters
+    parser.add_argument('--import-migraine-data', action='store_true', help='Import new migraine data')
+    parser.add_argument('--data-path', type=str, help='Path to migraine data file')
+    parser.add_argument('--data-dir', type=str, default='data', help='Directory to store data files')
+    parser.add_argument('--model-dir', type=str, default='models', help='Directory to store model files')
+    parser.add_argument('--file-format', type=str, default='csv', choices=['csv', 'excel', 'json', 'parquet'], 
+                        help='Format of the input data file')
+    parser.add_argument('--add-new-columns', action='store_true', help='Add new columns found in the data to the schema')
+    parser.add_argument('--derived-features', type=str, nargs='+', 
+                        help='Derived features to create (format: "name:formula")')
+    parser.add_argument('--train-model', action='store_true', help='Train a model with the imported data')
+    parser.add_argument('--model-name', type=str, help='Name for the trained model')
+    parser.add_argument('--model-description', type=str, help='Description for the trained model')
+    parser.add_argument('--make-default', action='store_true', help='Make the trained model the default')
+    parser.add_argument('--save-processed-data', action='store_true', help='Save the processed data')
+    
+    # Migraine prediction parameters
+    parser.add_argument('--predict-migraine', action='store_true', help='Run migraine prediction')
+    parser.add_argument('--prediction-data', type=str, help='Path to data for prediction')
+    parser.add_argument('--model-id', type=str, help='ID of the model to use for prediction')
+    parser.add_argument('--save-predictions', action='store_true', help='Save prediction results')
     
     # Visualization and summary options
     parser.add_argument('--visualize', action='store_true', help='Visualize results')
@@ -2015,6 +2224,16 @@ def main():
     
     if args.explain_drift:
         explain_drift(args)
+        
+    if args.import_migraine_data:
+        import_results = run_migraine_data_import(args)
+        if not import_results["success"]:
+            logging.error(f"Migraine data import failed: {import_results.get('error', 'Unknown error')}")
+        
+    if args.predict_migraine:
+        prediction_results = run_migraine_prediction(args)
+        if not prediction_results["success"]:
+            logging.error(f"Migraine prediction failed: {prediction_results.get('error', 'Unknown error')}")
 
     print("All operations completed successfully.")
 
