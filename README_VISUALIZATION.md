@@ -1,6 +1,6 @@
-# Real-Time Optimization Visualization
+# [DEPRECATED] Real-Time Optimization Visualization
 
-This document explains how to use the real-time visualization features in the optimization framework.
+**Note: This README has been consolidated into the main README.md file. Please refer to the main README.md for up-to-date information on the real-time visualization features.**
 
 ## Overview
 

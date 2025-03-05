@@ -25,6 +25,12 @@ The optimization framework provides a comprehensive suite of tools for:
 
 ### Installation
 
+#### Option 1: Install from PyPI (Recommended)
+```bash
+pip install meta_optimizer_mdt_test
+```
+
+#### Option 2: Install from Source
 1. Clone the repository
 2. Install dependencies:
    ```bash
@@ -38,6 +44,16 @@ Run a simple optimization:
 python main.py --optimize
 ```
 
+Run drift detection:
+```bash
+python main.py --drift --drift-window 10 --drift-threshold 0.01 --visualize
+```
+
+Run meta-learning with drift detection:
+```bash
+python main.py --run-meta-learner-with-drift --drift-window 10 --drift-threshold 0.01 --visualize
+```
+
 Run explainability analysis:
 ```bash
 python main.py --explain --explainer shap --explain-plots
@@ -46,6 +62,7 @@ python main.py --explain --explainer shap --explain-plots
 ## Documentation Files
 
 - [Command Line Interface](command_line_interface.md): Detailed documentation of all command-line arguments
+- [Drift Detection Guide](drift_detection_guide.md): Comprehensive guide to drift detection features and usage
 - [Optimizer Explainability](optimizer_explainability.md): Guide to the optimizer explainability features
 - [Model Explainability](model_explainability.md): Guide to the model explainability features
 - [Framework Architecture](framework_architecture.md): Overview of the framework architecture and component relationships

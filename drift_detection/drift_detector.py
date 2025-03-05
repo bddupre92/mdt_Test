@@ -238,7 +238,7 @@ class DriftDetector:
     def detect_drift(self, curr_data: Union[List[float], np.ndarray], 
                     ref_data: Union[List[float], np.ndarray],
                     features: Optional[np.ndarray] = None,
-                    prediction_proba: Optional[np.ndarray] = None) -> Tuple[bool, float, Dict[str, float]]:
+                    prediction_proba: Optional[np.ndarray] = None) -> Tuple[bool, float, Dict[str, Any]]:
         """Detect drift between current and reference data.
         
         Args:
@@ -289,14 +289,22 @@ class DriftDetector:
         self.mean_shift_history.append(mean_shift_normalized)
         self.ks_stat_history.append(ks_stat)
         self.p_value_history.append(p_value)
-        self.severity_history.append(severity)
         
-        # Limit history size
-        if len(self.mean_shift_history) > self.max_history_size:
-            self.mean_shift_history.pop(0)
-            self.ks_stat_history.pop(0)
-            self.p_value_history.pop(0)
-            self.severity_history.pop(0)
+        # Check if we have enough data to update our tracking history 
+        if np.size(severity) > 0:
+            # Ensure we're storing a scalar value
+            if isinstance(severity, np.ndarray):
+                if severity.size == 1:
+                    severity_scalar = float(severity.item())
+                else:
+                    severity_scalar = float(severity[0]) if severity.size > 0 else 0.0
+            else:
+                severity_scalar = float(severity)
+                
+            # Limit history size
+            if len(self.severity_history) >= self.max_history_size:
+                self.severity_history.pop(0)
+            self.severity_history.append(severity_scalar)
             
         # Calculate trend if we have enough data
         trend = 0.0
@@ -304,8 +312,56 @@ class DriftDetector:
             # Use linear regression to calculate trend
             x = np.arange(len(self.severity_history[-5:]))
             y = np.array(self.severity_history[-5:])
-            trend = np.polyfit(x, y, 1)[0] * 1000  # Scale for better visibility
-            
+            try:
+                trend_coeffs = np.polyfit(x, y, 1)
+                trend = trend_coeffs[0] * 1000.0
+                
+                # Ensure trend is a scalar
+                if isinstance(trend, np.ndarray):
+                    if trend.size == 1:
+                        trend = float(trend.item())
+                    else:
+                        trend = float(trend[0]) if trend.size > 0 else 0.0
+                
+                # Weight trend by r-squared to account for fit quality
+                r_squared = trend_coeffs[1] ** 2
+                if isinstance(r_squared, np.ndarray):
+                    r_squared = float(r_squared.item()) if r_squared.size == 1 else 0.0
+                weighted_trend = trend * r_squared
+                
+                # Apply EMA smoothing if we have history
+                if hasattr(self, 'trend_history') and len(self.trend_history) > 0:
+                    self.trend = self.ema_alpha * weighted_trend + (1 - self.ema_alpha) * self.trend_history[-1]
+                else:
+                    self.trend = weighted_trend
+                
+                # Store trend history
+                if not hasattr(self, 'trend_history'):
+                    self.trend_history = []
+                if len(self.trend_history) > self.max_history_size:
+                    self.trend_history.pop(0)
+                self.trend_history.append(self.trend)
+                
+                smoothed_trend = self.trend
+                
+                # Log trend calculation
+                self.logger.debug(
+                    f"Trend calculation - Points: {len(self.severity_history[-5:])}, "
+                    f"Raw slope: {trend:.5f}, "
+                    f"Scaled: {smoothed_trend:.3f}, "
+                    f"R-squared: {r_squared:.3f}, "
+                    f"Weighted: {weighted_trend:.3f}, "
+                    f"Smoothed: {smoothed_trend:.3f}, "
+                    f"Recent scores: {[f'{s:.3f}' for s in self.severity_history[-5:]]}"
+                )
+                
+                # Store the smoothed trend instead of returning it
+                smoothed_trend = self.trend
+                
+            except Exception as e:
+                self.logger.warning(f"Error calculating trend: {e}")
+                trend = 0.0
+        
         # Check drift conditions
         drift_detected = False
         
@@ -314,6 +370,41 @@ class DriftDetector:
         
         # Check if minimum interval has passed
         interval_ok = self.samples_since_drift >= self.min_drift_interval
+        
+        # Handle case when p_value is an array
+        if isinstance(p_value, np.ndarray):
+            if p_value.size > 0:
+                p_value = float(p_value[0])  # Take the first value
+            else:
+                p_value = 1.0  # Default to no statistical significance
+        
+        # Handle case when ks_stat is an array
+        if isinstance(ks_stat, np.ndarray):
+            if ks_stat.size > 0:
+                ks_stat = float(ks_stat[0])  # Take the first value
+            else:
+                ks_stat = 0.0  # Default to no statistical significance
+        
+        # Handle case when severity is an array
+        if isinstance(severity, np.ndarray):
+            if severity.size > 0:
+                severity = float(severity[0])  # Take the first value
+            else:
+                severity = 0.0  # Default to no severity
+        
+        # Handle case when mean_shift_normalized is an array
+        if isinstance(mean_shift_normalized, np.ndarray):
+            if mean_shift_normalized.size > 0:
+                mean_shift_normalized = float(mean_shift_normalized[0])  # Take the first value
+            else:
+                mean_shift_normalized = 0.0  # Default to no mean shift
+        
+        # Handle case when trend is an array
+        if isinstance(trend, np.ndarray):
+            if trend.size > 0:
+                trend = float(trend[0])  # Take the first value
+            else:
+                trend = 0.0
         
         # Multiple drift detection conditions for robustness
         # Condition 1: Significant mean shift AND low p-value
@@ -324,10 +415,23 @@ class DriftDetector:
         condition2 = (p_value < 1e-5 and ks_stat > 0.3)
         
         # Condition 3: Persistent high severity
-        condition3 = (severity > self.drift_threshold * 0.8 and 
-                     len(self.severity_history) >= 3 and 
-                     np.mean(self.severity_history[-3:]) > self.drift_threshold * 0.7)
-                     
+        condition3 = False
+        if len(self.severity_history) >= 3:
+            # Make sure all elements in severity_history are scalar values
+            recent_severities = []
+            for sev in self.severity_history[-3:]:
+                if isinstance(sev, (np.ndarray, list)):
+                    if len(sev) > 0:
+                        recent_severities.append(float(sev[0]))  # Take the first element
+                    else:
+                        recent_severities.append(0.0)  # Default value if empty
+                else:
+                    recent_severities.append(float(sev))  # Convert to float
+            
+            avg_severity = sum(recent_severities) / len(recent_severities)
+            condition3 = (severity > self.drift_threshold * 0.8 and 
+                         avg_severity > self.drift_threshold * 0.7)
+        
         # Condition 4: Strong trend upward in severity
         condition4 = (trend > 10.0 and severity > self.drift_threshold * 0.5)
         
@@ -367,64 +471,6 @@ class DriftDetector:
         }
         
         return drift_detected, severity, info
-
-    def calculate_trend(self) -> float:
-        """Calculate trend in recent drift scores.
-        
-        Returns:
-            Trend value (positive indicates increasing drift)
-        """
-        # Initialize drift_scores if not present
-        if not hasattr(self, 'drift_scores'):
-            self.drift_scores = []
-            
-        # Check if we have enough scores for trend calculation
-        if len(self.drift_scores) < 5:
-            self.logger.debug("Not enough drift scores for trend calculation (need at least 5)")
-            return 0.0
-            
-        # Use last 10 points or fewer if not available
-        n_points = min(10, len(self.drift_scores))
-        recent_scores = self.drift_scores[-n_points:]
-        
-        # Create x indices (0, 1, 2, ...)
-        x = np.arange(len(recent_scores))
-        
-        # Calculate linear regression slope (1000x scale for better visibility)
-        if len(recent_scores) >= 2:
-            try:
-                slope, _, r_value, p_value, _ = stats.linregress(x, recent_scores)
-                scaled_trend = slope * 1000.0
-                
-                # Weight trend by r-squared to account for fit quality
-                r_squared = r_value ** 2
-                weighted_trend = scaled_trend * r_squared
-                
-                # Apply EMA smoothing if we have history
-                if hasattr(self, 'trend_history') and len(self.trend_history) > 0:
-                    alpha = getattr(self, 'ema_alpha', 0.3)
-                    smoothed_trend = alpha * weighted_trend + (1 - alpha) * self.trend_history[-1]
-                else:
-                    smoothed_trend = weighted_trend
-                
-                # Log trend calculation
-                self.logger.debug(
-                    f"Trend calculation - Points: {n_points}, "
-                    f"Raw slope: {slope:.5f}, "
-                    f"Scaled: {scaled_trend:.3f}, "
-                    f"R-squared: {r_squared:.3f}, "
-                    f"Weighted: {weighted_trend:.3f}, "
-                    f"Smoothed: {smoothed_trend:.3f}, "
-                    f"Recent scores: {[f'{s:.3f}' for s in recent_scores]}"
-                )
-                
-                return smoothed_trend
-                
-            except Exception as e:
-                self.logger.warning(f"Error calculating trend: {e}")
-                return 0.0
-        
-        return 0.0
 
     def get_state(self) -> Dict[str, Any]:
         """Get current state of drift detection"""

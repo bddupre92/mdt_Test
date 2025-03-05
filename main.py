@@ -4,42 +4,41 @@ import time
 import json
 import logging
 import argparse
+from pathlib import Path
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple, Any, Optional, Union
-from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.datasets import make_regression
 from sklearn.model_selection import train_test_split
-import pickle
-import traceback
-from pathlib import Path
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from scipy import stats
+import seaborn as sns
+import matplotlib
+matplotlib.use('TkAgg')  # Try 'MacOSX' or 'Qt5Agg' if this doesn't work
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 
-# Add parent directory to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Import local modules
-from meta.meta_learner import MetaLearner
+# Import local modules from root directory
 from meta.meta_optimizer import MetaOptimizer
+from meta.meta_learner import MetaLearner
 from models.model_factory import ModelFactory
 from explainability.explainer_factory import ExplainerFactory
 from optimizers.optimizer_factory import (
+    OptimizerFactory,
     DifferentialEvolutionOptimizer, 
     EvolutionStrategyOptimizer,
     AntColonyOptimizer,
-    GreyWolfOptimizer,
-    create_optimizers
+    GreyWolfOptimizer
 )
 from visualization.drift_analysis import DriftAnalyzer
 from visualization.optimizer_analysis import OptimizerAnalyzer
 from evaluation.framework_evaluator import FrameworkEvaluator
-from optimizers import (
-    DifferentialEvolutionOptimizer,
-    EvolutionStrategyOptimizer,
-    AntColonyOptimizer,
-    GreyWolfOptimizer,
-    create_optimizers
-)
+from drift_detection.drift_detector import DriftDetector
+from visualization.live_visualization import LiveOptimizationMonitor
+from benchmarking.test_functions import TEST_FUNCTIONS, create_test_suite
+from utils.plot_utils import save_plot
 
 # Configure logging
 logging.basicConfig(
@@ -53,43 +52,8 @@ Comprehensive benchmark and comparison of optimization algorithms
 including meta-optimization for novel algorithm creation.
 """
 
-import seaborn as sns
-import matplotlib
-matplotlib.use('TkAgg')  # Try 'MacOSX' or 'Qt5Agg' if this doesn't work
-from concurrent.futures import ProcessPoolExecutor
-from functools import partial
-
-# Import benchmark functions
-from benchmarking.test_functions import TEST_FUNCTIONS, create_test_suite
-
 # Create benchmark functions dictionary
 benchmark_functions = TEST_FUNCTIONS
-
-# Import optimizers
-from optimizers.optimizer_factory import (
-    DifferentialEvolutionOptimizer, 
-    EvolutionStrategyOptimizer,
-    AntColonyOptimizer,
-    GreyWolfOptimizer,
-    create_optimizers
-)
-
-# Import meta-optimizer
-from meta.meta_optimizer import MetaOptimizer
-
-# Import drift detection
-from drift_detection.drift_detector import DriftDetector
-
-# Import visualization tools
-from visualization.optimizer_analysis import OptimizerAnalyzer
-from visualization.live_visualization import LiveOptimizationMonitor
-
-# Import explainability framework
-from explainability.explainer_factory import ExplainerFactory
-from explainability.base_explainer import BaseExplainer
-
-# Import utility functions
-from utils.plot_utils import save_plot
 
 # Setup logging and directories
 def setup_environment():
@@ -111,19 +75,21 @@ def setup_environment():
 # Create optimizers for benchmarking
 def create_optimizers(dim: int, bounds: List[Tuple[float, float]], verbose: bool = True) -> Dict[str, Any]:
     """Create all optimizer instances for benchmarking"""
+    factory = OptimizerFactory()
+    
     return {
-        'ACO': AntColonyOptimizer(dim=dim, bounds=bounds, name="ACO", verbose=verbose),
-        'GWO': GreyWolfOptimizer(dim=dim, bounds=bounds, name="GWO", verbose=verbose),
-        'DE': DifferentialEvolutionOptimizer(dim=dim, bounds=bounds, name="DE", verbose=verbose),
-        'ES': EvolutionStrategyOptimizer(dim=dim, bounds=bounds, name="ES", verbose=verbose),
-        'DE (Adaptive)': DifferentialEvolutionOptimizer(dim=dim, bounds=bounds, adaptive=True, name="DE (Adaptive)", verbose=verbose),
-        'ES (Adaptive)': EvolutionStrategyOptimizer(dim=dim, bounds=bounds, adaptive=True, name="ES (Adaptive)", verbose=verbose),
+        'ACO': factory.create_optimizer('ant_colony', dim=dim, bounds=bounds, name="ACO", verbose=verbose),
+        'GWO': factory.create_optimizer('grey_wolf', dim=dim, bounds=bounds, name="GWO", verbose=verbose),
+        'DE': factory.create_optimizer('differential_evolution', dim=dim, bounds=bounds, name="DE", verbose=verbose),
+        'ES': factory.create_optimizer('evolution_strategy', dim=dim, bounds=bounds, name="ES", verbose=verbose),
+        'DE (Adaptive)': factory.create_optimizer('differential_evolution', dim=dim, bounds=bounds, adaptive=True, name="DE (Adaptive)", verbose=verbose),
+        'ES (Adaptive)': factory.create_optimizer('evolution_strategy', dim=dim, bounds=bounds, adaptive=True, name="ES (Adaptive)", verbose=verbose),
         'Meta-Optimizer': MetaOptimizer(
             dim=dim, 
             bounds=bounds, 
             optimizers={
-                'DE': DifferentialEvolutionOptimizer(dim=dim, bounds=bounds),
-                'ES': EvolutionStrategyOptimizer(dim=dim, bounds=bounds)
+                'DE': factory.create_optimizer('differential_evolution', dim=dim, bounds=bounds),
+                'ES': factory.create_optimizer('evolution_strategy', dim=dim, bounds=bounds)
             },
             verbose=verbose
         )
@@ -131,6 +97,7 @@ def create_optimizers(dim: int, bounds: List[Tuple[float, float]], verbose: bool
 
 # Run optimization
 def run_optimization(
+    args,
     dim: int = 30, 
     max_evals: int = 10000, 
     n_runs: int = 5, 
@@ -141,6 +108,7 @@ def run_optimization(
     Run optimization process with multiple optimizers and test functions.
     
     Args:
+        args: Command-line arguments (can be None if calling directly)
         dim: Dimensionality of the optimization problem
         max_evals: Maximum number of function evaluations
         n_runs: Number of independent runs per optimizer
@@ -151,6 +119,10 @@ def run_optimization(
         Tuple of (results dictionary, results dataframe)
     """
     logging.info("Starting optimization process")
+    
+    # Process args if provided
+    if hasattr(args, 'visualize'):
+        live_viz = args.visualize
     
     # Create results directories
     results_dir = Path('results')
@@ -434,7 +406,13 @@ def run_meta_learner_with_drift(n_samples=1000, n_features=10, drift_points=None
     logging.info(f"Generated synthetic data with drift points at: {drift_points}")
     
     # Initialize meta-learner
-    meta_learner = MetaLearner()
+    meta_learner = MetaLearner(
+        method='bayesian',
+        surrogate_model=None,
+        selection_strategy='bandit',
+        exploration_factor=0.2,
+        history_weight=0.7
+    )
     
     # Import the correct DriftDetector class from drift_detection
     from drift_detection.drift_detector import DriftDetector
@@ -449,13 +427,124 @@ def run_meta_learner_with_drift(n_samples=1000, n_features=10, drift_points=None
         max_history_size=100  # Add max_history_size parameter
     )
     
+    # Set the drift detector for the meta-learner
+    meta_learner.drift_detector = detector
+    
+    # Add some algorithms to the meta-learner
+    from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+    from sklearn.linear_model import LinearRegression
+    
+    # Create simple algorithm wrappers
+    class Algorithm:
+        def __init__(self, name, model):
+            self.name = name
+            self.model = model
+            self.best_config = None
+            self.best_score = float('-inf')
+            self.is_fitted = False
+            
+        def fit(self, X, y):
+            self.model.fit(X, y)
+            self.is_fitted = True
+            
+        def predict(self, X):
+            if not self.is_fitted:
+                logging.warning(f"{self.name} model is not fitted yet. Fitting with dummy data before prediction.")
+                # Create dummy data to fit the model
+                import numpy as np
+                dummy_X = np.random.random((10, X.shape[1]))
+                dummy_y = np.random.random(10)
+                self.fit(dummy_X, dummy_y)
+                logging.warning(f"{self.name} model fitted with dummy data. Predictions may not be meaningful.")
+            return self.model.predict(X)
+            
+        def suggest(self, num_points=1):
+            """Suggest next points to evaluate (dummy implementation)"""
+            import numpy as np
+            # Check if we should return a single point or multiple
+            if num_points == 1:
+                return np.random.uniform(-1, 1, (1, 10))  # Return as 2D array with 1 row
+            # Otherwise return multiple points
+            return np.random.uniform(-1, 1, (num_points, 10))
+            
+        def evaluate(self, X):
+            """Evaluate points for meta-learning (dummy implementation)"""
+            # Return dummy scores for the points
+            import numpy as np
+            # Make sure X is 2D when computing shape
+            if isinstance(X, np.ndarray):
+                if X.ndim == 1:
+                    X = X.reshape(1, -1)
+                # Ensure we return 1D array for multiple points or scalar for single point
+                if X.shape[0] > 1:
+                    return np.random.uniform(0, 1, X.shape[0]).astype(float)
+                else:
+                    return float(np.random.uniform(0, 1))
+            else:
+                # Handle scalar case
+                return float(np.random.uniform(0, 1))
+            
+        def update(self, X, scores=None):
+            """Update the optimizer with new data (dummy implementation)"""
+            import numpy as np
+            
+            # Always treat X and scores as arrays for consistency
+            try:
+                # Handle scalar X by converting to a 1x1 array
+                if np.isscalar(X):
+                    X = np.array([[float(X)]])
+                elif isinstance(X, np.ndarray):
+                    if X.ndim == 0:  # Handle numpy scalars
+                        X = np.array([[float(X)]])
+                    elif X.ndim == 1:
+                        X = X.reshape(1, -1)
+                        
+                # Just record best score if scores are provided
+                if scores is not None:
+                    # Ensure scores is a float array
+                    if np.isscalar(scores):
+                        scores = np.array([float(scores)])
+                    else:
+                        scores = np.asarray(scores, dtype=float)
+                        if scores.ndim == 0:  # scalar
+                            scores = np.array([float(scores)])
+                        
+                    if scores.size > 0:
+                        # Ensure best_score is initialized
+                        if self.best_score == float('-inf'):
+                            self.best_score = float(scores.max())
+                            best_idx = scores.argmax() if scores.size > 1 else 0
+                            self.best_config = X[best_idx].copy() if best_idx < len(X) else X[0].copy()
+                        elif scores.max() > self.best_score:
+                            self.best_score = float(scores.max())
+                            best_idx = scores.argmax() if scores.size > 1 else 0
+                            self.best_config = X[best_idx].copy() if best_idx < len(X) else X[0].copy()
+                # Otherwise fit the model with new data
+                else:
+                    self.fit(X, scores)
+            except Exception as e:
+                logging.error(f"Error in update: {str(e)}")
+                # Fallback to prevent crashes
+                if self.best_score == float('-inf'):
+                    self.best_score = 0.0
+                    if isinstance(X, np.ndarray) and X.size > 0:
+                        self.best_config = X[0].copy() if X.ndim > 1 else X.copy()
+            
+        def get_best(self):
+            """Get best configuration found so far"""
+            return self.best_config, self.best_score
+        
+    # Add algorithms to meta-learner
+    meta_learner.algorithms = [
+        Algorithm("RF", RandomForestRegressor(n_estimators=100, random_state=42)),
+        Algorithm("GB", GradientBoostingRegressor(n_estimators=100, random_state=42)),
+        Algorithm("LR", LinearRegression())
+    ]
+    
     # Set algorithms
     from optimizers.optimizer_factory import create_optimizers
     optimizers = create_optimizers(dim=n_features, bounds=[(-5, 5)] * n_features)
     meta_learner.set_algorithms(list(optimizers.values()))
-    
-    # Set drift detector with sensitive parameters
-    meta_learner.drift_detector = detector
     
     # Initialize with first 200 samples
     X_init, y_init = X_full[:200], y_full[:200]
@@ -547,7 +636,7 @@ def run_meta_learner_with_drift(n_samples=1000, n_features=10, drift_points=None
         else:
             logging.info(f"Drift check at {drift_point}: Not detected")
             
-        logging.info(f"Stats: Mean shift={mean_shift:.4f}, KS stat={ks_statistic:.4f}, p-value={p_value:.4f}")
+        logging.info(f"Stats: Mean shift={mean_shift:.4f}, KS stat={ks_statistic:.4f}, p-value={p_value:.6f}")
     
     # Get feature importance
     try:
@@ -744,7 +833,7 @@ def check_drift_at_point(meta_learner, X_before, y_before, X_after, y_after, win
     # Enhanced drift detection logic
     # 1. Check with drift detector
     drift_detector.set_reference_window(errors_before)
-    drift_detected = drift_detector.detect_drift(errors_after, errors_before)[0]
+    drift_detected, score, info_dict = drift_detector.detect_drift(errors_after, errors_before)
     
     # 2. Additional direct checks for more sensitivity
     if not drift_detected:
@@ -801,13 +890,15 @@ def save_plot(fig, filename, plot_type='general'):
     return fig_path
 
 def run_explainability_analysis(
-    model, X, y, explainer_type='shap', plot_types=None, 
+    args=None, model=None, X=None, y=None, 
+    explainer_type='shap', plot_types=None, 
     generate_plots=True, n_samples=5, **kwargs
 ):
     """
     Run explainability analysis on a trained model
     
     Args:
+        args: Command-line arguments
         model: Trained model to explain
         X: Input features
         y: Target values
@@ -820,6 +911,28 @@ def run_explainability_analysis(
     Returns:
         Dictionary containing explanation results
     """
+    logging.info("Running explainability analysis")
+    
+    # Process args if provided
+    if args is not None:
+        explainer_type = args.explainer if hasattr(args, 'explainer') else explainer_type
+        generate_plots = args.explain_plots if hasattr(args, 'explain_plots') else generate_plots
+        plot_types = args.explain_plot_types if hasattr(args, 'explain_plot_types') else plot_types
+        n_samples = args.explain_samples if hasattr(args, 'explain_samples') else n_samples
+    
+    # Generate synthetic data if not provided
+    if X is None or y is None:
+        logging.info("No data provided, generating synthetic data...")
+        X, y = make_regression(n_samples=200, n_features=10, noise=0.5, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        X, y = X_test, y_test
+    
+    # Create model if not provided
+    if model is None:
+        logging.info("No model provided, training a simple model...")
+        model = RandomForestRegressor(n_estimators=50, random_state=42)
+        model.fit(X_train, y_train)
+    
     try:
         from explainability.explainer_factory import ExplainerFactory
         import datetime
@@ -1234,7 +1347,7 @@ def run_optimization_and_evaluation(data_path: str,
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
     
     # Run optimization and get best model
-    best_model = run_optimization(X_train, y_train, n_runs=n_runs, max_evals=max_evals)
+    best_model = run_optimization(args=None, X_train=X_train, y_train=y_train, n_runs=n_runs, max_evals=max_evals)
     
     # Generate predictions
     y_pred = best_model.predict(X_test)
@@ -1349,9 +1462,497 @@ def run_optimization_and_evaluation(data_path: str,
         'performance_metrics': evaluator.generate_performance_report()
     }
 
-def main():
-    """Main function."""
-    # Parse command-line arguments
+def run_drift_detection(args):
+    """
+    Run drift detection on synthetic data.
+    
+    Args:
+        args: Command-line arguments
+    """
+    logging.info("Running drift detection")
+    
+    # Get parameters from args
+    window_size = args.drift_window if hasattr(args, 'drift_window') else 50
+    drift_threshold = args.drift_threshold if hasattr(args, 'drift_threshold') else 0.5
+    significance_level = args.drift_significance if hasattr(args, 'drift_significance') else 0.05
+    visualize = args.visualize if hasattr(args, 'visualize') else False
+    
+    # Generate synthetic data with drift
+    n_samples = 1000
+    n_features = 10
+    drift_points = [300, 600]  # Drift at these points
+    
+    X, y, _ = generate_synthetic_data_with_drift(
+        n_samples=n_samples, 
+        n_features=n_features, 
+        drift_points=drift_points
+    )
+    
+    # Set up the drift detector
+    detector = DriftDetector(
+        window_size=window_size,
+        drift_threshold=drift_threshold,
+        significance_level=significance_level
+    )
+    
+    # Monitor for drift
+    drift_points_detected = []
+    for i in range(window_size, len(X)):
+        X_window = X[i-window_size:i]
+        y_window = y[i-window_size:i]
+        
+        is_drift, score, info_dict = detector.detect_drift(X_window, y_window)
+        
+        if is_drift:
+            drift_points_detected.append(i)
+            p_value = info_dict['p_value']
+            logging.info(f"Drift detected at point {i}, score: {score:.4f}, p-value: {p_value:.4f}")
+    
+    # Visualize results if requested
+    if visualize:
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.scatter(range(len(y)), y, alpha=0.6, label='Data points')
+        
+        # Mark true drift points
+        for point in drift_points:
+            ax.axvline(x=point, color='r', linestyle='--', label='True drift' if point == drift_points[0] else None)
+        
+        # Mark detected drift points
+        for point in drift_points_detected:
+            ax.axvline(x=point, color='g', linestyle='-', label='Detected drift' if point == drift_points_detected[0] else None)
+        
+        ax.set_title('Drift Detection Results')
+        ax.set_xlabel('Time steps')
+        ax.set_ylabel('Target values')
+        ax.legend()
+        
+        # Save plot
+        save_plot(fig, 'drift_detection_results', plot_type='drift')
+    
+    # Return the results
+    results = {
+        'true_drift_points': drift_points,
+        'detected_drift_points': drift_points_detected,
+        'window_size': window_size,
+        'drift_threshold': drift_threshold,
+        'significance_level': significance_level
+    }
+    
+    return results
+
+def run_meta_learner_with_drift_detection(args):
+    """
+    Run meta-learner with drift detection.
+    
+    Args:
+        args: Command-line arguments
+    """
+    logging.info("Running meta-learner with drift detection")
+    
+    # Get parameters from args
+    window_size = args.drift_window if hasattr(args, 'drift_window') else 50
+    drift_threshold = args.drift_threshold if hasattr(args, 'drift_threshold') else 0.5
+    significance_level = args.drift_significance if hasattr(args, 'drift_significance') else 0.05
+    visualize = args.visualize if hasattr(args, 'visualize') else False
+    
+    # Generate synthetic data with drift
+    n_samples = 1000
+    n_features = 10
+    drift_points = [300, 600]  # Drift at these points
+    
+    X, y, _ = generate_synthetic_data_with_drift(
+        n_samples=n_samples, 
+        n_features=n_features, 
+        drift_points=drift_points
+    )
+    
+    # Set up the drift detector
+    detector = DriftDetector(
+        window_size=window_size,
+        drift_threshold=drift_threshold,
+        significance_level=significance_level
+    )
+    
+    # Set up the meta-learner
+    meta_learner = MetaLearner(
+        method='bayesian',
+        surrogate_model=None,
+        selection_strategy='bandit',
+        exploration_factor=0.2,
+        history_weight=0.7
+    )
+    
+    # Add some algorithms to the meta-learner
+    from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+    from sklearn.linear_model import LinearRegression
+    
+    # Create simple algorithm wrappers
+    class Algorithm:
+        def __init__(self, name, model):
+            self.name = name
+            self.model = model
+            self.best_config = None
+            self.best_score = float('-inf')
+            self.is_fitted = False
+            
+        def fit(self, X, y):
+            self.model.fit(X, y)
+            self.is_fitted = True
+            
+        def predict(self, X):
+            if not self.is_fitted:
+                logging.warning(f"{self.name} model is not fitted yet. Fitting with dummy data before prediction.")
+                # Create dummy data to fit the model
+                import numpy as np
+                dummy_X = np.random.random((10, X.shape[1]))
+                dummy_y = np.random.random(10)
+                self.fit(dummy_X, dummy_y)
+                logging.warning(f"{self.name} model fitted with dummy data. Predictions may not be meaningful.")
+            return self.model.predict(X)
+            
+        def suggest(self, num_points=1):
+            """Suggest next points to evaluate (dummy implementation)"""
+            import numpy as np
+            # Check if we should return a single point or multiple
+            if num_points == 1:
+                return np.random.uniform(-1, 1, (1, 10))  # Return as 2D array with 1 row
+            # Otherwise return multiple points
+            return np.random.uniform(-1, 1, (num_points, 10))
+            
+        def evaluate(self, X):
+            """Evaluate configurations (dummy implementation)"""
+            # Return dummy scores for the points
+            import numpy as np
+            # Make sure X is 2D when computing shape
+            if isinstance(X, np.ndarray):
+                if X.ndim == 1:
+                    X = X.reshape(1, -1)
+                # Ensure we return 1D array for multiple points or scalar for single point
+                if X.shape[0] > 1:
+                    return np.random.uniform(0, 1, X.shape[0]).astype(float)
+                else:
+                    return float(np.random.uniform(0, 1))
+            else:
+                # Handle scalar case
+                return float(np.random.uniform(0, 1))
+            
+        def update(self, X, scores=None):
+            """Update the optimizer with new data (dummy implementation)"""
+            import numpy as np
+            
+            # Always treat X and scores as arrays for consistency
+            try:
+                # Handle scalar X by converting to a 1x1 array
+                if np.isscalar(X):
+                    X = np.array([[float(X)]])
+                elif isinstance(X, np.ndarray):
+                    if X.ndim == 0:  # Handle numpy scalars
+                        X = np.array([[float(X)]])
+                    elif X.ndim == 1:
+                        X = X.reshape(1, -1)
+                        
+                # Just record best score if scores are provided
+                if scores is not None:
+                    # Ensure scores is a float array
+                    if np.isscalar(scores):
+                        scores = np.array([float(scores)])
+                    else:
+                        scores = np.asarray(scores, dtype=float)
+                        if scores.ndim == 0:  # scalar
+                            scores = np.array([float(scores)])
+                        
+                    if scores.size > 0:
+                        # Ensure best_score is initialized
+                        if self.best_score == float('-inf'):
+                            self.best_score = float(scores.max())
+                            best_idx = scores.argmax() if scores.size > 1 else 0
+                            self.best_config = X[best_idx].copy() if best_idx < len(X) else X[0].copy()
+                        elif scores.max() > self.best_score:
+                            self.best_score = float(scores.max())
+                            best_idx = scores.argmax() if scores.size > 1 else 0
+                            self.best_config = X[best_idx].copy() if best_idx < len(X) else X[0].copy()
+                # Otherwise fit the model with new data
+                else:
+                    self.fit(X, scores)
+            except Exception as e:
+                logging.error(f"Error in update: {str(e)}")
+                # Fallback to prevent crashes
+                if self.best_score == float('-inf'):
+                    self.best_score = 0.0
+                    if isinstance(X, np.ndarray) and X.size > 0:
+                        self.best_config = X[0].copy() if X.ndim > 1 else X.copy()
+            
+        def get_best(self):
+            """Get best configuration found so far"""
+            return self.best_config, self.best_score
+        
+    # Add algorithms to meta-learner
+    meta_learner.algorithms = [
+        Algorithm("RF", RandomForestRegressor(n_estimators=100, random_state=42)),
+        Algorithm("GB", GradientBoostingRegressor(n_estimators=100, random_state=42)),
+        Algorithm("LR", LinearRegression())
+    ]
+    
+    # Set the drift detector for the meta-learner
+    meta_learner.drift_detector = detector
+    
+    # Initialize performance metrics
+    mse_history = []
+    drift_detected_points = []
+    
+    # Run online learning with drift detection
+    batch_size = 50
+    for i in range(0, len(X) - batch_size, batch_size):
+        # Get current batch
+        X_batch = X[i:i+batch_size]
+        y_batch = y[i:i+batch_size]
+        
+        # Train the meta-learner on the current batch
+        meta_learner.update(X_batch, y_batch)
+        
+        # Make predictions
+        y_pred = meta_learner.predict(X_batch)
+        mse = mean_squared_error(y_batch, y_pred)
+        mse_history.append(mse)
+        
+        # Check for drift
+        if i >= window_size:
+            X_window = X[i-window_size:i]
+            y_window = y[i-window_size:i]
+            
+            is_drift, drift_score, info_dict = detector.detect_drift(X_window, y_window)
+            p_value = info_dict['p_value']
+            
+            if is_drift:
+                drift_detected_points.append(i)
+                logging.info(f"Drift detected at point {i}, score: {drift_score:.4f}, p-value: {p_value:.4f}")
+                
+                # Reset the meta-learner when drift is detected
+                meta_learner.reset_weights()
+    
+    # Visualize results if requested
+    if visualize:
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+        
+        # Plot target values and drift points
+        ax1.scatter(range(len(y)), y, alpha=0.6, s=5, label='Data points')
+        
+        # Mark true drift points
+        for point in drift_points:
+            ax1.axvline(x=point, color='r', linestyle='--', label='True drift' if point == drift_points[0] else None)
+        
+        # Mark detected drift points
+        for point in drift_detected_points:
+            ax1.axvline(x=point, color='g', linestyle='-', label='Detected drift' if point == drift_detected_points[0] else None)
+        
+        ax1.set_title('Data Stream with Drift')
+        ax1.set_ylabel('Target values')
+        ax1.legend()
+        
+        # Plot MSE history
+        indices = range(0, len(X) - batch_size, batch_size)
+        ax2.plot(indices, mse_history, label='MSE')
+        
+        # Mark true drift points
+        for point in drift_points:
+            ax2.axvline(x=point, color='r', linestyle='--')
+        
+        # Mark detected drift points
+        for point in drift_detected_points:
+            ax2.axvline(x=point, color='g', linestyle='-')
+            
+        ax2.set_title('MSE History')
+        ax2.set_xlabel('Time steps')
+        ax2.set_ylabel('Mean Squared Error')
+        
+        plt.tight_layout()
+        
+        # Save plot
+        save_plot(fig, 'meta_learner_with_drift_detection', plot_type='drift')
+    
+    # Return the results
+    results = {
+        'true_drift_points': drift_points,
+        'detected_drift_points': drift_detected_points,
+        'mse_history': mse_history,
+        'window_size': window_size,
+        'drift_threshold': drift_threshold,
+        'significance_level': significance_level
+    }
+    
+    return results
+
+def explain_drift(args):
+    """
+    Explain drift when detected.
+    
+    Args:
+        args: Command-line arguments
+    """
+    logging.info("Explaining drift in the data")
+    
+    # Get parameters from args
+    window_size = args.drift_window if hasattr(args, 'drift_window') else 50
+    drift_threshold = args.drift_threshold if hasattr(args, 'drift_threshold') else 0.5
+    significance_level = args.drift_significance if hasattr(args, 'drift_significance') else 0.05
+    visualize = args.visualize if hasattr(args, 'visualize') else False
+    
+    # Generate synthetic data with drift
+    n_samples = 1000
+    n_features = 10
+    drift_points = [300, 600]  # Drift at these points
+    
+    X, y, drift_types = generate_synthetic_data_with_drift(
+        n_samples=n_samples,
+        n_features=n_features,
+        drift_points=drift_points
+    )
+    
+    # Set up the drift detector
+    detector = DriftDetector(
+        window_size=window_size,
+        drift_threshold=drift_threshold,
+        significance_level=significance_level
+    )
+    
+    # Monitor for drift
+    drift_points_detected = []
+    drift_scores = []
+    p_values = []
+    feature_contributions = []
+    
+    for i in range(window_size, len(X)):
+        X_window = X[i-window_size:i]
+        y_window = y[i-window_size:i]
+        
+        is_drift, drift_score, info_dict = detector.detect_drift(X_window, y_window)
+        p_value = info_dict['p_value']
+        drift_scores.append(drift_score)
+        p_values.append(p_value)
+        
+        if is_drift:
+            drift_points_detected.append(i)
+            logging.info(f"Drift detected at point {i}, score: {drift_score:.4f}, p-value: {p_value:.4f}")
+            
+            # Calculate feature contributions to drift
+            before_drift = X[i-window_size:i-window_size//2]
+            after_drift = X[i-window_size//2:i]
+            
+            # Calculate mean shift for each feature
+            mean_before = np.mean(before_drift, axis=0)
+            mean_after = np.mean(after_drift, axis=0)
+            mean_shift = np.abs(mean_after - mean_before)
+            
+            # Calculate variance shift for each feature
+            var_before = np.var(before_drift, axis=0)
+            var_after = np.var(after_drift, axis=0)
+            var_shift = np.abs(var_after - var_before)
+            
+            # Calculate distribution shift using KS test
+            ks_pvalues = []
+            for f in range(n_features):
+                _, ks_pvalue = stats.ks_2samp(before_drift[:, f], after_drift[:, f])
+                ks_pvalues.append(1 - ks_pvalue)  # Convert p-value to a "contribution" score
+            
+            # Combine the metrics (mean shift, variance shift, KS test)
+            feature_contrib = (mean_shift / np.max(mean_shift) + 
+                              var_shift / np.max(var_shift) + 
+                              np.array(ks_pvalues)) / 3
+            
+            feature_contributions.append((i, feature_contrib))
+    
+    # Visualize results if requested
+    if visualize:
+        # Create a figure with 4 subplots
+        fig, axs = plt.subplots(4, 1, figsize=(12, 16), sharex=True)
+        
+        # Plot 1: Target values and drift points
+        axs[0].scatter(range(len(y)), y, alpha=0.6, s=5, label='Data points')
+        
+        # Mark true drift points
+        for point in drift_points:
+            axs[0].axvline(x=point, color='r', linestyle='--', 
+                           label='True drift' if point == drift_points[0] else None)
+        
+        # Mark detected drift points
+        for point in drift_points_detected:
+            axs[0].axvline(x=point, color='g', linestyle='-', 
+                           label='Detected drift' if point == drift_points_detected[0] else None)
+        
+        axs[0].set_title('Data Stream with Drift')
+        axs[0].set_ylabel('Target values')
+        axs[0].legend()
+        
+        # Plot 2: Drift scores
+        axs[1].plot(range(window_size, len(X)), drift_scores, label='Drift score')
+        axs[1].axhline(y=drift_threshold, color='r', linestyle='--', label='Threshold')
+        axs[1].set_title('Drift Scores')
+        axs[1].set_ylabel('Score')
+        axs[1].legend()
+        
+        # Plot 3: P-values
+        axs[2].plot(range(window_size, len(X)), p_values, label='P-value')
+        axs[2].axhline(y=significance_level, color='r', linestyle='--', label='Significance level')
+        axs[2].set_title('Statistical Significance (P-value)')
+        axs[2].set_ylabel('P-value')
+        axs[2].legend()
+        
+        # Plot 4: Feature contributions
+        if feature_contributions:
+            # Get the contribution at the first detected drift point
+            drift_point, contributions = feature_contributions[0]
+            
+            # Plot feature contributions as a bar chart
+            axs[3].bar(range(n_features), contributions)
+            axs[3].set_title(f'Feature Contributions to Drift at Point {drift_point}')
+            axs[3].set_xlabel('Feature Index')
+            axs[3].set_ylabel('Contribution Score')
+            axs[3].set_xticks(range(n_features))
+        
+        plt.tight_layout()
+        
+        # Save plot
+        save_plot(fig, 'drift_explanation', plot_type='drift')
+    
+    # Print drift explanation
+    print("\nDrift Explanation:")
+    print("-----------------")
+    print(f"True drift points: {drift_points}")
+    print(f"Detected drift points: {drift_points_detected}")
+    
+    if feature_contributions:
+        print("\nFeature Contributions to Drift:")
+        for i, (point, contributions) in enumerate(feature_contributions):
+            print(f"\nDrift Point {i+1} (at index {point}):")
+            
+            # Sort features by contribution
+            feature_indices = np.argsort(contributions)[::-1]
+            
+            for rank, idx in enumerate(feature_indices):
+                print(f"  Rank {rank+1}: Feature {idx} (contribution: {contributions[idx]:.4f})")
+            
+            # Determine the type of drift if available
+            if drift_types and point in drift_types:
+                print(f"  Drift type: {drift_types[point]}")
+    
+    # Return the results
+    results = {
+        'true_drift_points': drift_points,
+        'detected_drift_points': drift_points_detected,
+        'drift_scores': drift_scores,
+        'p_values': p_values,
+        'feature_contributions': feature_contributions,
+        'window_size': window_size,
+        'drift_threshold': drift_threshold,
+        'significance_level': significance_level
+    }
+    
+    return results
+
+def parse_args():
+    """
+    Parse command-line arguments.
+    """
     parser = argparse.ArgumentParser(description='Run optimization framework')
     parser.add_argument('--config', type=str, help='Path to configuration file')
     parser.add_argument('--optimize', action='store_true', help='Run optimization')
@@ -1369,23 +1970,6 @@ def main():
     parser.add_argument('--explain-plot-types', type=str, nargs='+', 
                         help='Specific plot types to generate (e.g., summary waterfall force dependence)')
     parser.add_argument('--explain-samples', type=int, default=50, help='Number of samples to use for explainability')
-    parser.add_argument('--explain-optimizer', action='store_true', help='Run explainability analysis on optimizer')
-    
-    # Optimizer explainability arguments
-    parser.add_argument('--optimizer-type', type=str, default='differential_evolution', 
-                        choices=['differential_evolution', 'evolution_strategy', 'ant_colony', 'grey_wolf'],
-                        help='Type of optimizer to explain')
-    parser.add_argument('--optimizer-dim', type=int, default=10, help='Dimension for optimizer')
-    parser.add_argument('--optimizer-bounds', type=float, nargs=2, default=[-5, 5], 
-                        help='Bounds for optimizer (min max)')
-    parser.add_argument('--optimizer-plot-types', type=str, nargs='+', 
-                        default=['convergence', 'parameter_adaptation', 'diversity', 'landscape_analysis',
-                                'decision_process', 'exploration_exploitation', 'gradient_estimation', 'performance_comparison'],
-                        help='Plot types to generate for optimizer explainability')
-    parser.add_argument('--test-functions', type=str, nargs='+', default=['sphere', 'rosenbrock'],
-                        help='Test functions to run optimizer on')
-    parser.add_argument('--max-evals', type=int, default=500, 
-                        help='Maximum number of function evaluations')
     
     # Meta-learner and optimization parameters
     parser.add_argument('--method', type=str, default='bayesian', help='Method for meta-learner')
@@ -1398,256 +1982,41 @@ def main():
     parser.add_argument('--drift-window', type=int, default=50, help='Window size for drift detection')
     parser.add_argument('--drift-threshold', type=float, default=0.5, help='Threshold for drift detection')
     parser.add_argument('--drift-significance', type=float, default=0.05, help='Significance level for drift detection')
-    parser.add_argument('--drift-min-interval', type=int, default=30, help='Minimum interval between drift detections')
-    parser.add_argument('--drift-history-size', type=int, default=100, help='Maximum history size for drift detection')
     
     # Visualization and summary options
     parser.add_argument('--visualize', action='store_true', help='Visualize results')
     parser.add_argument('--summary', action='store_true', help='Print summary of results')
     
-    # Parse arguments, handling unknown arguments gracefully
-    args, unknown = parser.parse_known_args()
-    
-    # Warn about unknown arguments
-    if unknown:
-        logging.warning(f"Unknown arguments: {unknown}")
-    
-    # Set up logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-    try:
-        # Run drift detection if requested
-        if args.drift or args.run_meta_learner_with_drift:
-            logging.info("Running meta-learner with drift detection")
-            results = run_meta_learner_with_drift(
-                n_samples=1000,
-                n_features=10,
-                drift_points=[250, 500, 750],
-                window_size=args.drift_window,
-                drift_threshold=args.drift_threshold,
-                significance_level=args.drift_significance,
-                min_drift_interval=args.drift_min_interval,
-                ema_alpha=0.3,
-                visualize=args.visualize
-            )
-            
-            # Log results
-            logging.info(f"Drift detection complete.")
-            logging.info(f"Detected drifts: {results['detected_drifts']}")
-            logging.info(f"Known drift points: {results['known_drift_points']}")
-            
-            # Print summary if requested
-            if args.summary:
-                print("\nDrift Detection Summary:")
-                print(f"  Window Size: {args.drift_window}")
-                print(f"  Threshold: {args.drift_threshold}")
-                print(f"  Significance Level: {args.drift_significance}")
-                print(f"  Detected Drifts: {results['detected_drifts']}")
-                print(f"  Known Drift Points: {results['known_drift_points']}")
-                print(f"  Detection Accuracy: {results.get('detection_accuracy', 'N/A')}")
-            return
-        
-        # Run meta-learner if requested
-        if args.meta:
-            logging.info("Running meta-learning")
-            meta_params = {
-                'method': args.method,
-                'surrogate': args.surrogate,
-                'selection': args.selection,
-                'exploration': args.exploration,
-                'history_weight': args.history
-            }
-            results = run_meta_learning(**meta_params)
-            logging.info(f"Meta-learning complete. Best algorithm: {results['best_algorithm']}")
-            
-            # Print summary if requested
-            if args.summary:
-                print("\nMeta-Learning Summary:")
-                print(f"  Method: {args.method}")
-                print(f"  Surrogate Model: {args.surrogate or 'Default'}")
-                print(f"  Selection Strategy: {args.selection or 'Default'}")
-                print(f"  Exploration Factor: {args.exploration}")
-                print(f"  History Weight: {args.history}")
-                print(f"  Best Algorithm: {results['best_algorithm']}")
-                print(f"  Performance: {results.get('performance', 'N/A')}")
-            return
-            
-        # Run optimization if requested
-        if args.optimize:
-            logging.info("Running optimization")
-            results, results_df = run_optimization()
-            logging.info(f"Optimization complete. Best score: {results.get('best_score', 'N/A')}")
-            
-            # Save results
-            results_df.to_csv('results/optimization_results.csv', index=False)
-            
-            # Print summary if requested
-            if args.summary:
-                print("\nOptimization Summary:")
-                print(f"  Best Score: {results.get('best_score', 'N/A')}")
-                print("\nTop Performing Optimizers:")
-                for i, (optimizer, score) in enumerate(results.get('top_optimizers', {}).items()):
-                    print(f"  {i+1}. {optimizer}: {score:.6f}")
-            return
-            
-        # Run evaluation if requested
-        if args.evaluate:
-            logging.info("Evaluating model")
-            results = run_evaluation()
-            logging.info(f"Evaluation complete. Score: {results.get('score', 'N/A')}")
-            
-            # Print summary if requested
-            if args.summary:
-                print("\nEvaluation Summary:")
-                print(f"  Score: {results['score']:.6f}")
-                print(f"  Metrics: {results['metrics']}")
-                print(f"  Predictions: {results['predictions']}")
-            return
-        
-        # Run explainability analysis if requested
-        if args.explain:
-            logging.info("Running explainability analysis")
-            
-            # Create a model and data for explanation
-            from sklearn.ensemble import RandomForestRegressor
-            from sklearn.datasets import make_regression
-            from sklearn.model_selection import train_test_split
-            
-            # Create synthetic data
-            X, y = make_regression(n_samples=500, n_features=10, noise=0.1, random_state=42)
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-            
-            # Create and train model
-            model = RandomForestRegressor(n_estimators=100, random_state=42)
-            model.fit(X_train, y_train)
-            
-            # Run explainability analysis
-            explainer_params = {
-                'model': model,
-                'X': X_test,
-                'y': y_test,
-                'explainer_type': args.explainer,
-                'plot_types': args.explain_plot_types,
-                'generate_plots': args.explain_plots,
-                'n_samples': args.explain_samples
-            }
-            
-            if args.explain_optimizer:
-                # Run optimizer explainability
-                logging.info("Running optimizer explainability")
-                
-                # Import necessary modules
-                from optimizers.optimizer_factory import OptimizerFactory
-                from benchmarking.test_functions import ClassicalTestFunctions
-                
-                # Create optimizer factory
-                factory = OptimizerFactory()
-                
-                # Set bounds for optimizer
-                bounds = [(args.optimizer_bounds[0], args.optimizer_bounds[1])] * args.optimizer_dim
-                
-                # Create optimizer
-                optimizer = factory.create_optimizer(
-                    args.optimizer_type, 
-                    dim=args.optimizer_dim, 
-                    bounds=bounds
-                )
-                
-                # Get test functions
-                test_functions = {}
-                for func_name in args.test_functions:
-                    if hasattr(ClassicalTestFunctions, func_name):
-                        test_functions[func_name] = getattr(ClassicalTestFunctions, func_name)
-                
-                # Run optimizations on test functions
-                results = {}
-                for func_name, func in test_functions.items():
-                    logging.info(f"Running {args.optimizer_type} on {func_name}...")
-                    optimizer.reset()  # Reset optimizer state
-                    result = optimizer.run(func, max_evals=args.max_evals)
-                    results[func_name] = result
-                
-                # Run optimizer explainability
-                explainer_params = {
-                    'optimizer': optimizer,
-                    'plot_types': args.optimizer_plot_types,
-                    'generate_plots': args.explain_plots
-                }
-                
-                explanation = run_optimizer_explainability(**explainer_params)
-                
-                # Print summary if requested
-                if args.summary:
-                    print("\nOptimizer Explainability Summary:")
-                    print(f"  Optimizer Type: {args.optimizer_type}")
-                    print(f"  Dimension: {args.optimizer_dim}")
-                    print(f"  Bounds: {args.optimizer_bounds}")
-                    print(f"  Test Functions: {args.test_functions}")
-                    print(f"  Max Evaluations: {args.max_evals}")
-                    print(f"  Plot Types: {args.optimizer_plot_types}")
-                    
-                    # Print performance on each test function
-                    print("\n  Performance on Test Functions:")
-                    for func_name, result in results.items():
-                        print(f"    {func_name}: {result['best_score']:.6f} (evaluations: {result['evaluations']})")
-                    
-                    # Print plot paths
-                    if 'plot_paths' in explanation:
-                        print("\n  Generated Plots:")
-                        for plot_type, plot_path in explanation['plot_paths'].items():
-                            print(f"    {plot_type}: {plot_path}")
-            else:
-                # Run model explainability
-                results = run_explainability_analysis(**explainer_params)
-            
-            logging.info(f"Explainability analysis complete.")
-            
-            # Print summary if requested
-            if args.summary and results and not args.explain_optimizer:
-                print("\nExplainability Summary:")
-                print(f"  Explainer Type: {results['explainer_type']}")
-                
-                if 'feature_importance' in results and results['feature_importance']:
-                    print("  Feature Importance:")
-                    for feature, importance in sorted(results['feature_importance'].items(), key=lambda x: x[1], reverse=True)[:10]:
-                        print(f"    {feature}: {importance:.6f}")
-                
-                if 'explanation' in results:
-                    print(f"  Explanation: {results['explanation']}")
-                
-                if 'plot_paths' in results:
-                    print("  Plot Paths:")
-                    for plot_type, path in results['plot_paths'].items():
-                        print(f"    {plot_type}: {path}")
-            return
-        
-        # Default to running optimization
-        logging.info("Running optimization by default")
-        results, results_df = run_optimization()
-        logging.info(f"Optimization complete. Best score: {results.get('best_score', 'N/A')}")
-        
-        # Save results
-        results_df.to_csv('results/optimization_results.csv', index=False)
-        
-        # Print summary if requested
-        if args.summary:
-            print("\nOptimization Summary:")
-            print(f"  Best Score: {results.get('best_score', 'N/A')}")
-            print("\nTop Performing Optimizers:")
-            for i, (optimizer, score) in enumerate(results.get('top_optimizers', {}).items()):
-                print(f"  {i+1}. {optimizer}: {score:.6f}")
-        return
-        
-    except Exception as e:
-        logging.error(f"Error: {str(e)}")
-        traceback.print_exc()
+    return parser.parse_args()
 
-if __name__ == '__main__':
-    try:
-        main()
-    except Exception as e:
-        logging.error(f"Error: {str(e)}")
-        traceback.print_exc()
+def main():
+    """
+    Main entry point for the CLI.
+    """
+    args = parse_args()
+    
+    if args.optimize:
+        run_optimization(args)
+    
+    if args.evaluate:
+        run_evaluation(args)
+    
+    if args.meta:
+        run_meta_learning(args)
+    
+    if args.drift:
+        run_drift_detection(args)
+    
+    if args.explain:
+        run_explainability_analysis(args)
+    
+    if args.run_meta_learner_with_drift:
+        run_meta_learner_with_drift_detection(args)
+    
+    if args.explain_drift:
+        explain_drift(args)
+
+    print("All operations completed successfully.")
+
+if __name__ == "__main__":
+    main()

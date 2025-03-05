@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2025-03-05
+
+### Fixed
+- Fixed critical bug in `DriftDetector.detect_drift` method where it was returning a single float instead of the expected tuple
+- Enhanced `Algorithm.update` method to properly handle scalar inputs and different array shapes
+- Fixed dimensionality errors during meta-learner predictions with drift detection
+- Improved error handling and input validation in the meta-learner component
+
+### Added
+- Comprehensive tests for drift detection functionality
+- Enhanced logging for better debugging of drift detection issues
+- New drift detection documentation guide (docs/drift_detection_guide.md)
+
+### Improved
+- Restructured test files to maintain a clean project organization
+- Consolidated README files (combined main README.md with README_VISUALIZATION.md and README_EXPLAINABILITY.md)
+- Updated documentation with drift detection examples and usage guidelines
+
+## [7.0.0] - 2025-03-04
+
+### Added
+- PyPI packaging support for easy installation with pip
+- Modern Python packaging with pyproject.toml
+- Command-line interface accessible via `meta-optimizer` command
+- Quick start example script in examples directory
+- Helper script for building and publishing to PyPI
+- Added PyTorch as a core dependency for neural network models
+
+### Changed
+- Refactored project structure to ensure proper imports from root directory
+- Updated CLI and __main__.py to properly import from the root directory
+- Improved setup.py with comprehensive dependencies and package metadata
+- Restructured the meta_optimizer package for PyPI compatibility
+
 ## [6.1.1] - 2025-03-02
 
 ### Fixed

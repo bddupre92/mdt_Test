@@ -1,4 +1,6 @@
-# Explainability Framework for Optimization
+# [DEPRECATED] Explainability Framework for Optimization
+
+**Note: This README has been consolidated into the main README.md file. Please refer to the main README.md for up-to-date information on the explainability framework.**
 
 This document describes the explainability framework for the optimization system, which provides insights into model behavior and feature importance.
 

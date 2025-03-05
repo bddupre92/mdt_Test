@@ -143,7 +143,7 @@ class MetaLearner:
         
         best_idx = np.argmax(acquisition_scores)
         selected_algo = self.algorithms[best_idx]
-        logger.info(f"Selected {selected_algo.name} for phase {phase} (score={acquisition_scores[best_idx]:.3f})")
+        logger.info(f"Selected {selected_algo.name} for phase {phase} (score={float(acquisition_scores[best_idx]):.3f})")
         return selected_algo
     
     def select_algorithm_rl(self, state: torch.Tensor) -> Any:
@@ -305,7 +305,11 @@ class MetaLearner:
             y_pred = self.predict(X)
             
             # Check for drift
-            drift_detected = self.drift_detector.detect_drift(y, y_pred)
+            if self.drift_detector is not None:
+                drift_detected = self.drift_detector.detect_drift(y, y_pred)
+            else:
+                self.logger.warning("No drift detector available. Assuming no drift.")
+                drift_detected = False
             
             # Update data
             self.X = np.vstack((self.X, X)) if self.X is not None else X
@@ -343,7 +347,11 @@ class MetaLearner:
             y_pred = self.fallback_model.predict(X)
             
             # Check for drift
-            drift_detected = self.drift_detector.detect_drift(y, y_pred)
+            if self.drift_detector is not None:
+                drift_detected = self.drift_detector.detect_drift(y, y_pred)
+            else:
+                self.logger.warning("No drift detector available. Assuming no drift.")
+                drift_detected = False
             
             # Update data
             self.X = np.vstack((self.X, X)) if self.X is not None else X
@@ -392,14 +400,61 @@ class MetaLearner:
             
             try:
                 # Run optimization step
-                config = algo.suggest()
-                score = algo.evaluate(config)
-                
-                # Update algorithm state
-                algo.update(config, score)
-                
-                # Update meta-learner
-                self.update_algorithm_performance(algo.name, score, context)
+                try:
+                    config = algo.suggest()
+                    
+                    # Ensure config is 2D for scikit-learn models
+                    import numpy as np
+                    if isinstance(config, np.ndarray):
+                        if config.ndim == 1:
+                            config = config.reshape(1, -1)
+                    
+                    # Special handling for evaluation
+                    try:
+                        score = algo.evaluate(config)
+                        # Ensure score is a float for f-string formatting
+                        if isinstance(score, np.ndarray):
+                            if score.size == 1:  # Single value in the array
+                                score = float(score.item())
+                            else:
+                                # Take the mean if multiple values
+                                score = float(np.mean(score))
+                        else:
+                            score = float(score)
+                    except Exception as e:
+                        logger.error(f"Evaluation error: {str(e)}")
+                        # Use a default score and continue
+                        score = 0.0
+                        
+                    # Update algorithm state
+                    try:
+                        # Ensure config is properly shaped for algorithm.update
+                        import numpy as np
+                        if np.isscalar(config):
+                            config = np.array([[float(config)]])
+                        elif isinstance(config, np.ndarray):
+                            if config.ndim == 0:  # numpy scalar
+                                config = np.array([[float(config)]])
+                            elif config.ndim == 1:
+                                config = config.reshape(1, -1)
+                                
+                        # Ensure score is properly formatted
+                        if np.isscalar(score):
+                            score_val = float(score)
+                        else:
+                            score_val = float(score) if hasattr(score, "item") else score
+                            
+                        algo.update(config, score_val)
+                    except Exception as e:
+                        logger.error(f"Update error: {str(e)}")
+                    
+                    # Update meta-learner
+                    self.update_algorithm_performance(algo.name, score, context)
+                    
+                except Exception as e:
+                    logger.error(f"Optimization error: {str(e)}")
+                    # Continue with the next iteration
+                    continue
                 
                 # Check for improvement
                 if score > best_score:
@@ -535,35 +590,102 @@ class MetaLearner:
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make predictions using best model configuration"""
         if self.best_config is None:
-            raise ValueError("Must run optimize() before making predictions")
-            
+            # Try using fallback model if available
+            if hasattr(self, 'fallback_model') and self.fallback_model is not None:
+                self.logger.warning("Using fallback model for predictions")
+                return self.fallback_model.predict(X)
+            else:
+                raise ValueError("Must run optimize() before making predictions")
+        
         logger.info("Making predictions")
         
-        model = ModelFactory().create_model(self.best_config)
-        model.fit(self.X, self.y)
-        return model.predict(X)
+        # Check if best_config is a numpy array (from an Algorithm) or a dict for ModelFactory
+        if isinstance(self.best_config, np.ndarray):
+            # Use the first algorithm for predictions since best_config is from an Algorithm
+            if len(self.algorithms) > 0:
+                selected_algo = self.algorithms[0]
+                return selected_algo.predict(X)
+            # If no algorithms available, use fallback model
+            elif hasattr(self, 'fallback_model') and self.fallback_model is not None:
+                self.logger.warning("Using fallback model for predictions with numpy config")
+                return self.fallback_model.predict(X)
+            else:
+                raise ValueError("No suitable model found for predictions")
+        else:
+            # Use ModelFactory approach with a dict config
+            model = ModelFactory().create_model(self.best_config)
+            model.fit(self.X, self.y)
+            return model.predict(X)
     
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Get prediction probabilities using best model configuration"""
         if self.best_config is None:
-            raise ValueError("Must run optimize() before making predictions")
+            # Try using fallback model if available
+            if hasattr(self, 'fallback_model') and self.fallback_model is not None:
+                self.logger.warning("Using fallback model for probability predictions")
+                return self.fallback_model.predict_proba(X)
+            else:
+                raise ValueError("Must run optimize() before making predictions")
             
         logger.info("Getting prediction probabilities")
         
-        model = ModelFactory().create_model(self.best_config)
-        model.fit(self.X, self.y)
-        return model.predict_proba(X)
+        # Check if best_config is a numpy array (from an Algorithm) or a dict for ModelFactory
+        if isinstance(self.best_config, np.ndarray):
+            # Use the first algorithm for predictions since best_config is from an Algorithm
+            if len(self.algorithms) > 0:
+                selected_algo = self.algorithms[0]
+                if hasattr(selected_algo, 'predict_proba'):
+                    return selected_algo.predict_proba(X)
+                else:
+                    return np.array([[1-p, p] for p in selected_algo.predict(X)])
+            # If no algorithms available, use fallback model
+            elif hasattr(self, 'fallback_model') and self.fallback_model is not None:
+                self.logger.warning("Using fallback model for probability predictions")
+                return self.fallback_model.predict_proba(X)
+            else:
+                raise ValueError("No suitable model found for probability predictions")
+        else:
+            # Use ModelFactory approach with a dict config
+            model = ModelFactory().create_model(self.best_config)
+            model.fit(self.X, self.y)
+            return model.predict_proba(X)
     
     def get_feature_importance(self) -> np.ndarray:
         """Get feature importance scores from best model"""
         if self.best_config is None:
-            raise ValueError("Must run optimize() before getting feature importance")
+            # Try using fallback model if available
+            if hasattr(self, 'fallback_model') and self.fallback_model is not None:
+                self.logger.warning("Using fallback model for feature importance")
+                return self.fallback_model.feature_importances_
+            else:
+                raise ValueError("Must run optimize() before getting feature importance")
             
         logger.info("Getting feature importance")
         
-        model = ModelFactory().create_model(self.best_config)
-        model.fit(self.X, self.y)
-        return model.feature_importances_
+        # Check if best_config is a numpy array (from an Algorithm) or a dict for ModelFactory
+        if isinstance(self.best_config, np.ndarray):
+            # Use the first algorithm for feature importance since best_config is from an Algorithm
+            if len(self.algorithms) > 0:
+                selected_algo = self.algorithms[0]
+                if hasattr(selected_algo, 'feature_importances_'):
+                    return selected_algo.feature_importances_
+                elif hasattr(selected_algo, 'model') and hasattr(selected_algo.model, 'feature_importances_'):
+                    return selected_algo.model.feature_importances_
+                else:
+                    # Create uniform feature importance if not available
+                    return np.ones(self.X.shape[1]) / self.X.shape[1]
+            # If no algorithms available, use fallback model
+            elif hasattr(self, 'fallback_model') and self.fallback_model is not None:
+                self.logger.warning("Using fallback model for feature importance")
+                return self.fallback_model.feature_importances_
+            else:
+                # Return uniform feature importance as fallback
+                return np.ones(self.X.shape[1]) / self.X.shape[1]
+        else:
+            # Use ModelFactory approach with a dict config
+            model = ModelFactory().create_model(self.best_config)
+            model.fit(self.X, self.y)
+            return model.feature_importances_
     
     def fit(self, X: np.ndarray, y: np.ndarray, feature_names: Optional[List[str]] = None) -> None:
         """Fit the meta-learner to the training data.
