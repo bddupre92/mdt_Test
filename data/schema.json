@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "core_features": [
+    "sleep_hours",
+    "stress_level",
+    "weather_pressure",
+    "heart_rate",
+    "hormonal_level"
+  ],
+  "target": "migraine_occurred",
+  "optional_features": [],
+  "derived_features": {},
+  "transformations": {},
+  "history": []
+}

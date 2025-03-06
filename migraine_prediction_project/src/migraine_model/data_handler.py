@@ -110,19 +110,24 @@ class DataHandler:
         # Create a copy of the data
         processed_data = data.copy()
         
-        # Apply any derived features first
-        for derived_name, formula in self.schema.get("derived_features", {}).items():
+        # Calculate derived features
+        for feature, formula in self.schema.get("derived_features", {}).items():
             try:
-                # This is a simplified approach. In a real system, you might use a more
-                # sophisticated formula parser/evaluator
-                processed_data[derived_name] = eval(formula, {"df": processed_data, "np": np})
+                # Replace df with processed_data in the formula
+                updated_formula = formula.replace("df[", "processed_data[")
+                processed_data[feature] = eval(updated_formula)
+                logger.debug(f"Calculated derived feature: {feature}")
             except Exception as e:
-                logger.error(f"Error calculating derived feature '{derived_name}': {e}")
+                logger.warning(f"Failed to calculate derived feature '{feature}': {str(e)}")
         
         # Check for required columns - now check after derived features are calculated
         missing_core = set(self.schema["core_features"]) - set(processed_data.columns)
-        if missing_core:
+        if missing_core and not hasattr(self, 'flexible_features') and not getattr(self, 'flexible_features', False):
+            # Strict mode - require all core features
             raise ValueError(f"Missing required core features: {missing_core}")
+        elif missing_core:
+            # Flexible mode - warn about missing features but continue
+            logger.warning(f"Missing some core features: {missing_core}. Continuing with available features.")
         
         if self.schema["target"] not in processed_data.columns:
             logger.warning(f"Target column '{self.schema['target']}' not found. This data may be for prediction only.")

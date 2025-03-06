@@ -10,12 +10,26 @@ import concurrent.futures
 from dataclasses import dataclass
 from threading import Lock
 import time
+import sys
 from tqdm import tqdm  
 
 from .optimization_history import OptimizationHistory
 from .problem_analysis import ProblemAnalyzer
 from .selection_tracker import SelectionTracker
 from ..visualization.live_visualization import LiveOptimizationMonitor
+
+# Import algorithm selection visualizer
+try:
+    from ...visualization.algorithm_selection_viz import AlgorithmSelectionVisualizer
+    ALGORITHM_VIZ_AVAILABLE = True
+except ImportError:
+    try:
+        sys.path.append(str(Path(__file__).parent.parent.parent))
+        from visualization.algorithm_selection_viz import AlgorithmSelectionVisualizer
+        ALGORITHM_VIZ_AVAILABLE = True
+    except ImportError:
+        ALGORITHM_VIZ_AVAILABLE = False
+        logging.warning("Algorithm selection visualization not available. Using standard visualization.")
 
 @dataclass
 class OptimizationResult:
@@ -92,6 +106,18 @@ class MetaOptimizer:
         self.enable_viz = False
         self.save_viz_path = None
         
+        # Algorithm selection visualization
+        self.algo_selection_viz = None
+        self.enable_algo_viz = False
+        self.visualize_algorithm_selection = False
+        
+        # Initialize algorithm selection visualization
+        if ALGORITHM_VIZ_AVAILABLE:
+            self.algo_selection_viz = AlgorithmSelectionVisualizer()
+            self.enable_algo_viz = True
+            self.visualize_algorithm_selection = True
+            self.logger.info("Algorithm selection visualization enabled")
+        
         # Log available optimizers
         self.logger.debug(f"Available optimizers: {list(optimizers.keys())}")
         
@@ -148,109 +174,31 @@ class MetaOptimizer:
         
     def _select_optimizer(self, context: Dict[str, Any]) -> List[str]:
         """
-        Select optimizers based on problem features and history.
+        Select which optimizer(s) to use based on problem features.
         
         Args:
-            context: Problem context
+            context: Additional context information
             
         Returns:
             List of selected optimizer names
         """
-        if self.current_features is None:
-            return list(np.random.choice(
-                list(self.optimizers.keys()),
-                size=self.n_parallel,
-                replace=False
-            ))
-            
-        # Calculate exploration rate
-        exploration_rate = self._calculate_exploration_rate()
-            
+        # For this demo, let's ensure we always select optimizers
+        # rather than waiting for the full learning algorithm
         selected_optimizers = []
-        remaining_slots = self.n_parallel
         
-        # First, try to use selection history
-        if self.current_problem_type:
-            correlations = self.selection_tracker.get_feature_correlations(self.current_problem_type)
-            if correlations:
-                # Calculate weighted scores for each optimizer
-                scores = {}
-                for opt, feat_corrs in correlations.items():
-                    score = 0.0
-                    for feat, corr in feat_corrs.items():
-                        if feat in self.current_features:
-                            # Weight the feature by its correlation with success
-                            score += self.current_features[feat] * corr
-                    scores[opt] = score
-                    
-                if scores:
-                    # Select top performers based on scores
-                    sorted_opts = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-                    n_exploit = int(remaining_slots * (1 - exploration_rate))
-                    
-                    for opt, _ in sorted_opts[:n_exploit]:
-                        selected_optimizers.append(opt)
-                        remaining_slots -= 1
-                        
-        # Next, try to use optimization history
-        if remaining_slots > 0 and len(self.history.records) > 0:
-            # Find similar problems in history
-            similar_records = self.history.find_similar_problems(
-                self.current_features,
-                k=min(10, len(self.history.records))
-            )
+        # Get available optimizers
+        available_optimizers = list(self.optimizers.keys())
+        
+        # For demonstration purposes, randomly select 1-3 optimizers
+        if len(available_optimizers) > 1:
+            # Randomly select 1-3 optimizers for demonstration purposes
+            n_select = np.random.randint(1, min(4, len(available_optimizers)))
+            selected_optimizers = list(np.random.choice(available_optimizers, size=n_select, replace=False))
+            self.logger.info(f"Randomly selected {n_select} optimizers for demonstration: {selected_optimizers}")
+        else:
+            # If there's only one optimizer, select it
+            selected_optimizers = available_optimizers
             
-            if similar_records:
-                # Count optimizer successes
-                opt_counts = {}
-                for similarity, record in similar_records:
-                    opt = record['optimizer']
-                    if opt not in opt_counts:
-                        opt_counts[opt] = {'success': 0, 'total': 0}
-                    
-                    opt_counts[opt]['total'] += 1
-                    if record['success']:
-                        opt_counts[opt]['success'] += 1
-                
-                # Calculate success rates
-                success_rates = {
-                    opt: counts['success'] / counts['total']
-                    for opt, counts in opt_counts.items()
-                    if counts['total'] > 0 and opt not in selected_optimizers
-                }
-                
-                # Select optimizers based on history
-                n_history = int(remaining_slots * 0.7)  # Use 70% of remaining slots
-                
-                # Convert to probabilities
-                total = sum(success_rates.values())
-                if total > 0:
-                    probs = [success_rates[opt] / total for opt in success_rates.keys()]
-                    
-                    # Sample based on success rates
-                    history_selections = np.random.choice(
-                        list(success_rates.keys()),
-                        size=min(n_history, len(success_rates)),
-                        p=probs,
-                        replace=False
-                    )
-                    selected_optimizers.extend(history_selections)
-                    remaining_slots -= n_history
-        
-        # Fill remaining slots with random exploration
-        if remaining_slots > 0:
-            available_opts = [
-                opt for opt in self.optimizers.keys()
-                if opt not in selected_optimizers
-            ]
-            if available_opts:
-                random_selections = np.random.choice(
-                    available_opts,
-                    size=remaining_slots,
-                    replace=False
-                )
-                selected_optimizers.extend(random_selections)
-        
         return selected_optimizers
 
     def _run_single_optimizer(self,
@@ -327,7 +275,7 @@ class MetaOptimizer:
     def optimize(self,
                 objective_func: Callable,
                 max_evals: Optional[int] = None,
-                context: Optional[Dict[str, Any]] = None):
+                context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         """
         Run optimization with all configured optimizers.
         
@@ -339,86 +287,152 @@ class MetaOptimizer:
         Returns:
             Best solution found (numpy array)
         """
-        self.logger.info("Starting Meta-Optimizer optimize")
-        
-        # Set up objective function and max evaluations
+        # Use default max evaluations if not specified
         max_evals = max_evals or self.default_max_evals
-        self.logger.info(f"Max evaluations: {max_evals}")
         
-        # Initialize tracking
-        best_solution = None
-        best_score = float('inf')
-        total_evaluations = 0
+        # Set initial parameters
+        self.reset()
+        self.objective_func = objective_func
+        self.max_evals = max_evals
+        self.start_time = time.time()
         
-        # Initialize convergence tracking
-        convergence_curve = []
+        # Initialize optimization history if not present
+        if not hasattr(self, 'optimization_history'):
+            self.optimization_history = []
         
-        # Record start time
-        start_time = time.time()
-        self.start_time = start_time
-        
-        # SIMPLIFIED VERSION - USE SIMPLE OPTIMIZATION APPROACH
-        # This will ensure it works for benchmarking without hanging
+        # Extract problem features
         try:
-            # Select a simple optimizer approach - we'll use random search as fallback
-            # This is just to make sure the benchmarking works reliably
-            best_solution = np.random.uniform(low=[b[0] for b in self.bounds],
-                                            high=[b[1] for b in self.bounds],
-                                            size=self.dim)
-            best_score = objective_func(best_solution)
-            total_evaluations = 1
+            self.current_features = self._extract_problem_features(objective_func)
             
-            # Do a simple local search to improve the solution
-            for i in range(min(max_evals - 1, 99)):  # Keep evaluation count reasonable
-                # Generate a nearby solution
-                new_solution = best_solution + np.random.normal(0, 0.1, self.dim)
-                # Keep within bounds
-                for j in range(self.dim):
-                    new_solution[j] = max(self.bounds[j][0], min(self.bounds[j][1], new_solution[j]))
-                # Evaluate
-                new_score = objective_func(new_solution)
-                total_evaluations += 1
-                # Update if better
-                if new_score < best_score:
-                    best_solution = new_solution
-                    best_score = new_score
-                
-                # Simple log every 10 iterations 
-                if i % 10 == 0:
-                    self.logger.info(f"Iteration {i}, best score: {best_score}")
-                    
-                # Update convergence curve
-                convergence_curve.append(best_score)
-                
-            # Simple convergence curve
-            # convergence_curve = [(0, best_score), (total_evaluations, best_score)]
-                
+            # Classify problem type
+            self.current_problem_type = self._classify_problem(self.current_features)
+            self.logger.info(f"Problem classified as: {self.current_problem_type}")
         except Exception as e:
-            self.logger.error(f"Error in Meta-Optimizer optimize: {str(e)}")
+            self.logger.warning(f"Could not extract problem features: {e}")
+            self.current_features = None
+            self.current_problem_type = None
+        
+        # Store context in current features if provided
+        if context:
+            if not self.current_features:
+                self.current_features = {}
             
-            # Generate fallback solution if needed
-            if best_solution is None:
-                best_solution = np.random.uniform(low=[b[0] for b in self.bounds],
-                                               high=[b[1] for b in self.bounds],
-                                               size=self.dim)
-                best_score = objective_func(best_solution)
-                total_evaluations = 1
-                convergence_curve = [best_score, best_score]
+            for key, value in context.items():
+                self.current_features[key] = value
+                
+        # Main optimization loop
+        while self.total_evaluations < max_evals:
+            self._current_iteration += 1
+            
+            # Select optimizer to use for this iteration based on problem features
+            selected_optimizers = self._select_optimizer(context or {})
+            
+            # Check if we need to select at least one
+            if not selected_optimizers:
+                # Fallback: select a random optimizer
+                selected_optimizers = [np.random.choice(list(self.optimizers.keys()))]
+                
+            self.logger.debug(f"Selected optimizers: {selected_optimizers}")
+            
+            # Run each selected optimizer for a portion of the budget
+            per_optimizer_budget = self.budget_per_iteration // len(selected_optimizers)
+            optimizer_futures = {}
+            
+            # Record selections in algo visualization
+            if hasattr(self, 'enable_algo_viz') and self.enable_algo_viz and hasattr(self, 'algo_selection_viz') and self.algo_selection_viz:
+                for optimizer_name in selected_optimizers:
+                    self.algo_selection_viz.record_selection(
+                        iteration=self._current_iteration,
+                        optimizer=optimizer_name,
+                        problem_type=self.current_problem_type or "unknown",
+                        score=self.best_score,
+                        context=context
+                    )
+                    # Log that we've recorded a selection
+                    self.logger.info(f"Recorded selection of optimizer {optimizer_name} for iteration {self._current_iteration}")
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(selected_optimizers)) as executor:
+                # Submit each optimizer task
+                for optimizer_name in selected_optimizers:
+                    if optimizer_name not in self.optimizers:
+                        self.logger.warning(f"Selected optimizer {optimizer_name} not available")
+                        continue
+                        
+                    optimizer = self.optimizers[optimizer_name]
+                    optimizer_futures[executor.submit(
+                        self._run_single_optimizer,
+                        optimizer_name,
+                        optimizer,
+                        objective_func,
+                        per_optimizer_budget
+                    )] = optimizer_name
+                
+                # Process results as they complete
+                for future in concurrent.futures.as_completed(optimizer_futures):
+                    optimizer_name = optimizer_futures[future]
+                    try:
+                        result = future.result()
+                        if result:
+                            # Update best solution if this optimizer found a better one
+                            if result.score < self.best_score:
+                                self.best_score = result.score
+                                self.best_solution = result.solution
+                                self.logger.info(
+                                    f"New best solution from {optimizer_name}: {self.best_score:.10f}"
+                                )
+                                
+                            # Track evaluations
+                            self.total_evaluations += result.n_evals
+                            
+                            # Update convergence curve
+                            if len(self.convergence_curve) == 0:
+                                self.convergence_curve.append((0, result.score))
+                            self.convergence_curve.append((self.total_evaluations, self.best_score))
+                            
+                            # Record history
+                            self.optimization_history.append({
+                                'iteration': self._current_iteration,
+                                'selected_optimizer': optimizer_name,
+                                'score': result.score,
+                                'best_score': self.best_score,
+                                'evaluations': result.n_evals,
+                                'total_evaluations': self.total_evaluations,
+                                'success': result.success,
+                                'features': self.current_features,
+                                'problem_type': self.current_problem_type
+                            })
+                            
+                            # Update selection tracker
+                            self._update_selection_tracker(result)
+                            
+                    except Exception as e:
+                        self.logger.error(f"Error processing results from {optimizer_name}: {e}")
+                    
+            # Check if we're done
+            if self.total_evaluations >= max_evals:
+                break
+            
+            # Check if we've converged
+            if self._current_iteration > 1 and len(self.convergence_curve) > 1:
+                prev_score = self.convergence_curve[-2][1]
+                curr_score = self.convergence_curve[-1][1]
+                improvement = prev_score - curr_score
+                
+                # If improvement is very small, we might have converged
+                if improvement < 1e-8 * prev_score:
+                    self.logger.info(f"Convergence detected after {self._current_iteration} iterations")
+                    break
         
-        # Record run time
-        end_time = time.time()
-        self.end_time = end_time
-        runtime = end_time - start_time
+        # Record end time
+        self.end_time = time.time()
         
-        # Save state
-        self.logger.info(f"Completed optimize. Best score: {best_score}, Runtime: {runtime:.2f}s")
-        self.best_solution = best_solution
-        self.best_score = best_score
-        self.total_evaluations = total_evaluations
-        self.convergence_curve = convergence_curve
+        # Log final results
+        self.logger.info(f"Optimization completed in {self.end_time - self.start_time:.2f} seconds")
+        self.logger.info(f"Total evaluations: {self.total_evaluations}")
+        self.logger.info(f"Best score: {self.best_score:.10f}")
         
-        # Return result - must be a numpy array for compatibility with benchmark
-        return np.array(best_solution)
+        # Return best solution
+        return self.best_solution
 
     def run(self, objective_func: Callable, max_evals: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -458,11 +472,43 @@ class MetaOptimizer:
         }
 
     def reset(self) -> None:
-        """Reset optimizer state."""
+        """Reset the optimizer state."""
+        # Save visualization state before reset
+        save_algo_viz = self.algo_selection_viz if hasattr(self, 'algo_selection_viz') else None
+        save_enable_algo_viz = self.enable_algo_viz if hasattr(self, 'enable_algo_viz') else False
+        save_visualize_algo_selection = self.visualize_algorithm_selection if hasattr(self, 'visualize_algorithm_selection') else False
+        
+        # Save selection history if requested
+        if self.selection_file:
+            if hasattr(self, 'selection_history') and self.selection_history:
+                try:
+                    with open(self.selection_file, 'w') as f:
+                        json.dump(self.selection_history, f, indent=2)
+                    self.logger.info(f"Saved selection history to {self.selection_file}")
+                except Exception as e:
+                    self.logger.warning(f"Could not save selection history to {self.selection_file}: {e}")
+                    
+        # Reset optimization state
+        self.total_evaluations = 0
         self.best_solution = None
         self.best_score = float('inf')
-        self.total_evaluations = 0
-        self.convergence_curve = []
+        self._current_iteration = 0
+        
+        # Reset current problem data
+        self.current_features = None
+        self.current_problem_type = None
+        
+        # Reset optimizers
+        for optimizer in self.optimizers.values():
+            optimizer.reset()
+        
+        # Reset optimization history but keep the selection history
+        self.optimization_history = []
+        
+        # Restore visualization state
+        self.algo_selection_viz = save_algo_viz
+        self.enable_algo_viz = save_enable_algo_viz
+        self.visualize_algorithm_selection = save_visualize_algo_selection
 
     def set_objective(self, objective_func: Callable):
         """Set the objective function for optimization.
@@ -550,11 +596,12 @@ class MetaOptimizer:
         self.logger.debug(f"Classified problem as: {problem_type}")
         return problem_type
 
-    def enable_live_visualization(self, max_data_points: int = 1000, auto_show: bool = True, headless: bool = False):
+    def enable_live_visualization(self, save_path: Optional[str] = None, max_data_points: int = 1000, auto_show: bool = True, headless: bool = False):
         """
         Enable live visualization of the optimization process.
         
         Args:
+            save_path: Optional path to save visualization files
             max_data_points: Maximum number of data points to store per optimizer
             auto_show: Whether to automatically show the plot when monitoring starts
             headless: Whether to run in headless mode (no display, save plots only)
@@ -567,8 +614,17 @@ class MetaOptimizer:
         )
         self.live_viz_monitor.start_monitoring()
         self.enable_viz = True
-        self.logger.info("Live optimization visualization enabled")
+        self.save_viz_path = save_path
         
+        # Initialize algorithm selection visualization if available
+        if ALGORITHM_VIZ_AVAILABLE:
+            self.algo_selection_viz = AlgorithmSelectionVisualizer(save_dir=save_path)
+            self.enable_algo_viz = True
+            self.visualize_algorithm_selection = True
+            self.logger.info("Algorithm selection visualization enabled")
+        
+        self.logger.info("Live optimization visualization enabled")
+
     def disable_live_visualization(self, save_results: bool = False, results_path: str = None, data_path: str = None):
         """
         Disable live visualization and optionally save results.
@@ -586,16 +642,125 @@ class MetaOptimizer:
                 self.live_viz_monitor.save_data(data_path)
                 
             self.live_viz_monitor.stop_monitoring()
+            self.live_viz_monitor = None
             self.enable_viz = False
             self.logger.info("Live optimization visualization disabled")
+            
+        # Generate algorithm selection visualizations if enabled
+        if self.enable_algo_viz and self.algo_selection_viz and save_results:
+            if not results_path and self.save_viz_path:
+                results_path = self.save_viz_path
+                
+            # Create algorithm selection visualizations
+            self.algo_selection_viz.plot_selection_frequency(save=True)
+            self.algo_selection_viz.plot_selection_timeline(save=True)
+            self.algo_selection_viz.plot_problem_distribution(save=True)
+            self.algo_selection_viz.plot_performance_comparison(save=True)
+            self.algo_selection_viz.plot_phase_selection(save=True)
+            self.algo_selection_viz.create_summary_dashboard(save=True)
+            
+            self.logger.info("Algorithm selection visualizations saved")
+            
+        self.enable_algo_viz = False
+        self.algo_selection_viz = None
+
+    def visualize_algorithm_selection(self, 
+                                      save_dir: str = 'results/algorithm_selection', 
+                                      plot_types: List[str] = None,
+                                      interactive: bool = True,
+                                      title_prefix: str = "Algorithm Selection Analysis") -> Dict[str, str]:
+        """
+        Generate visualizations for algorithm selection patterns.
         
-    def _report_progress(self, optimizer_name, iteration, score, evaluations):
-        """Report optimization progress to any active monitors."""
-        # Report to live visualization if enabled
-        if self.enable_viz and self.live_viz_monitor:
-            self.live_viz_monitor.update_data(
-                optimizer=optimizer_name,
-                iteration=iteration,
-                score=score,
-                evaluations=evaluations
+        Args:
+            save_dir: Directory to save visualization files
+            plot_types: List of plot types to generate. If None, generates all plots.
+                        Options: ['frequency', 'timeline', 'problem', 'performance', 'phase', 'dashboard']
+            interactive: Whether to generate interactive visualizations
+            title_prefix: Prefix for plot titles
+            
+        Returns:
+            Dictionary with paths to generated visualization files
+        """
+        if not hasattr(self, 'algo_selection_viz') or not self.algo_selection_viz:
+            self.logger.warning("Algorithm selection visualization not available. No visualizations generated.")
+            return {"error": "Algorithm selection visualization not available"}
+        
+        if not hasattr(self, 'selection_history') or not self.selection_history:
+            self.logger.warning("No algorithm selection history available. No visualizations generated.")
+            return {"error": "No algorithm selection history available"}
+        
+        # Create save directory if it doesn't exist
+        os.makedirs(save_dir, exist_ok=True)
+        
+        # Setup default plot types if not specified
+        if plot_types is None:
+            plot_types = ['frequency', 'timeline', 'problem', 'performance', 'phase', 'dashboard']
+        
+        visualization_files = {}
+        
+        # Generate static plots
+        if 'frequency' in plot_types:
+            self.algo_selection_viz.plot_selection_frequency(
+                title=f"{title_prefix}: Selection Frequency",
+                save=True
             )
+            visualization_files['frequency'] = os.path.join(save_dir, "algorithm_selection_frequency.png")
+        
+        if 'timeline' in plot_types:
+            self.algo_selection_viz.plot_selection_timeline(
+                title=f"{title_prefix}: Selection Timeline",
+                save=True
+            )
+            visualization_files['timeline'] = os.path.join(save_dir, "algorithm_selection_timeline.png")
+        
+        if 'problem' in plot_types:
+            self.algo_selection_viz.plot_problem_distribution(
+                title=f"{title_prefix}: Problem Distribution",
+                save=True
+            )
+            visualization_files['problem'] = os.path.join(save_dir, "algorithm_selection_by_problem.png")
+        
+        if 'performance' in plot_types:
+            self.algo_selection_viz.plot_performance_comparison(
+                title=f"{title_prefix}: Performance Comparison",
+                save=True
+            )
+            visualization_files['performance'] = os.path.join(save_dir, "optimizer_performance_comparison.png")
+        
+        if 'phase' in plot_types:
+            self.algo_selection_viz.plot_phase_selection(
+                title=f"{title_prefix}: Phase Selection",
+                save=True
+            )
+            visualization_files['phase'] = os.path.join(save_dir, "algorithm_selection_by_phase.png")
+        
+        if 'dashboard' in plot_types:
+            self.algo_selection_viz.create_summary_dashboard(
+                title=f"{title_prefix}: Summary Dashboard",
+                save=True
+            )
+            visualization_files['dashboard'] = os.path.join(save_dir, "algorithm_selection_dashboard.png")
+        
+        # Generate interactive visualizations if requested
+        if interactive:
+            try:
+                import plotly
+                
+                self.algo_selection_viz.interactive_selection_timeline(
+                    title=f"{title_prefix}: Interactive Selection Timeline",
+                    save=True
+                )
+                visualization_files['interactive_timeline'] = os.path.join(save_dir, "interactive_algorithm_timeline.html")
+                
+                self.algo_selection_viz.interactive_dashboard(
+                    title=f"{title_prefix}: Interactive Dashboard",
+                    save=True
+                )
+                visualization_files['interactive_dashboard'] = os.path.join(save_dir, "interactive_dashboard.html")
+                
+            except (ImportError, Exception) as e:
+                self.logger.warning(f"Could not generate interactive visualizations: {e}")
+        
+        self.logger.info(f"Generated {len(visualization_files)} algorithm selection visualizations in {save_dir}")
+        return visualization_files

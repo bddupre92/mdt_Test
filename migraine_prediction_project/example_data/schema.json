@@ -1,0 +1,58 @@
+{
+  "version": 5,
+  "core_features": [
+    "sleep_hours",
+    "stress_level",
+    "weather_pressure",
+    "heart_rate",
+    "hormonal_level"
+  ],
+  "target": "migraine_occurred",
+  "optional_features": [
+    "screen_time_hours",
+    "hydration_level",
+    "activity_minutes",
+    "hydration_ml",
+    "caffeine_mg"
+  ],
+  "derived_features": {
+    "stress_sleep_ratio": "df['stress_level'] / df['sleep_hours']",
+    "stress_per_sleep": "df['stress_level'] / df['sleep_hours']"
+  },
+  "transformations": {},
+  "history": [
+    {
+      "version": 2,
+      "action": "add_columns",
+      "columns": [
+        "screen_time_hours",
+        "hydration_level",
+        "activity_minutes"
+      ],
+      "timestamp": "2025-03-05T08:02:34.894745"
+    },
+    {
+      "version": 3,
+      "action": "add_derived_feature",
+      "feature": "stress_sleep_ratio",
+      "formula": "df['stress_level'] / df['sleep_hours']",
+      "timestamp": "2025-03-05T08:02:34.937314"
+    },
+    {
+      "version": 4,
+      "action": "add_columns",
+      "columns": [
+        "hydration_ml",
+        "caffeine_mg"
+      ],
+      "timestamp": "2025-03-05T08:06:30.922896"
+    },
+    {
+      "version": 5,
+      "action": "add_derived_feature",
+      "feature": "stress_per_sleep",
+      "formula": "df['stress_level'] / df['sleep_hours']",
+      "timestamp": "2025-03-05T08:06:30.964451"
+    }
+  ]
+}
