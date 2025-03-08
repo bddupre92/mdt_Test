@@ -14,9 +14,9 @@ class AntColonyOptimizer(BaseOptimizer):
     def __init__(self,
                  dim: int,
                  bounds: List[Tuple[float, float]],
-                 population_size: int = 50,
+                 population_size: int = 30,
                  max_evals: int = 10000,
-                 adaptive: bool = True,
+                 adaptive: bool = False,
                  evaporation_rate: float = 0.05,
                  intensification: float = 2.5,
                  alpha: float = 1.0,
@@ -28,6 +28,8 @@ class AntColonyOptimizer(BaseOptimizer):
                  rho: float = 0.05,
                  q0: float = 0.7,
                  verbose: bool = False,
+                 timeout: float = 60,
+                 iteration_timeout: float = 10,
                  **kwargs):
         """
         Initialize ACO optimizer.
@@ -49,14 +51,21 @@ class AntColonyOptimizer(BaseOptimizer):
             rho: Pheromone evaporation rate
             q0: Exploration-exploitation trade-off
             verbose: Whether to show progress bars
+            timeout: Optimization timeout
+            iteration_timeout: Iteration timeout
         """
-        # Only pass parameters that BaseOptimizer accepts
-        super().__init__(dim=dim, bounds=bounds, population_size=population_size, adaptive=adaptive)
+        # Call parent constructor with timeout parameters
+        super().__init__(dim=dim, bounds=bounds, population_size=population_size, 
+                        adaptive=adaptive, timeout=timeout, 
+                        iteration_timeout=iteration_timeout,
+                        verbose=verbose)
         
-        # Store max_evals as instance variable
+        # Initialize best solution tracking
+        self.best_score = float('inf')
+        self.best_solution = None
+        
+        # Store parameters
         self.max_evals = max_evals
-        
-        # ACO parameters
         self.evaporation_rate = evaporation_rate
         self.intensification = intensification
         self.alpha = alpha
@@ -67,19 +76,31 @@ class AntColonyOptimizer(BaseOptimizer):
         self.tau_max = tau_max
         self.rho = rho
         self.q0 = q0
+        self.verbose = verbose
         
-        # Initialize pheromone matrix
-        self.pheromone = np.full((dim, num_points), initial_pheromone)
+        # Store bounds
+        self.lower_bounds = np.array([b[0] for b in bounds])
+        self.upper_bounds = np.array([b[1] for b in bounds])
         
-        # Initialize population
+        # Initialize pheromone matrix with proper initialization
+        self.pheromone = np.ones((dim, population_size)) * self.initial_pheromone
+        
+        # Initialize population with proper initialization
         self.population = self._init_population()
-        self.population_scores = np.full(population_size, np.inf)
+        self.scores = np.full(population_size, float('inf'))
         
-        # Success tracking
-        self.success_history = np.zeros(20)  # Track last 20 iterations
+        # Initialize success tracking
+        self.success_window = 20  # Fixed window size for success tracking
+        self.success_history = np.zeros(self.success_window, dtype=int)
         self.success_idx = 0
         
-        # Adaptive parameters
+        # Initialize convergence history
+        self.convergence_curve = []
+        self.eval_curve = []
+        self.time_curve = []
+        self.start_time = None
+        
+        # Initialize parameter history
         if adaptive:
             self.param_history = {
                 'rho': [rho],
@@ -91,22 +112,28 @@ class AntColonyOptimizer(BaseOptimizer):
             self.param_history = {
                 'diversity': []
             }
-        
-        # Verbose mode
-        self.verbose = verbose
     
     def reset(self):
         """Reset optimizer state"""
+        # Call parent reset method
         super().reset()
         
-        # Initialize population
+        # Reset pheromone matrix
+        self.pheromone = np.ones((self.dim, self.population_size)) * self.initial_pheromone
+        
+        # Reset population with proper initialization
         self.population = self._init_population()
-        self.population_scores = np.full(self.population_size, np.inf)
+        self.scores = np.full(self.population_size, float('inf'))
         
-        # Initialize pheromone matrix
-        self.pheromone = np.full((self.dim, self.num_points), self.initial_pheromone)
+        # Initialize best solution tracking
+        self.best_score = float('inf')
+        self.best_solution = np.random.uniform(self.lower_bounds, self.upper_bounds, size=self.dim)
         
-        # Initialize adaptive parameters
+        # Reset success tracking
+        self.success_history = np.zeros(self.success_window, dtype=int)
+        self.success_idx = 0
+        
+        # Initialize parameter history
         if self.adaptive:
             self.param_history = {
                 'rho': [self.rho],
@@ -147,21 +174,54 @@ class AntColonyOptimizer(BaseOptimizer):
     
     def _select_region(self, dim: int) -> int:
         """Select region using pheromone levels"""
-        pheromone = self.pheromone[dim]
-        heuristic = 1.0 / (1.0 + np.abs(np.linspace(self.bounds[dim][0], self.bounds[dim][1], self.num_points)))
+        # Ensure valid pheromone values
+        pheromone = np.clip(self.pheromone[dim], self.tau_min, self.tau_max)
+        
+        # Create heuristic values
+        bounds_range = np.linspace(self.bounds[dim][0], self.bounds[dim][1], self.num_points)
+        heuristic = 1.0 / (1.0 + np.abs(bounds_range))
         
         # Combine pheromone and heuristic information
         probs = (pheromone ** self.alpha) * (heuristic ** self.beta)
-        probs = probs / np.sum(probs)
         
-        return np.random.choice(self.num_points, p=probs)
+        # Handle case where all probabilities are zero
+        sum_probs = np.sum(probs)
+        if sum_probs <= 0:
+            return np.random.randint(0, self.num_points)
+        
+        probs = probs / sum_probs
+        
+        # Ensure valid probabilities
+        if np.isnan(probs).any() or np.isinf(probs).any():
+            return np.random.randint(0, self.num_points)
+        
+        # Use roulette wheel selection
+        try:
+            return np.random.choice(self.num_points, p=probs)
+        except ValueError:
+            # Fallback to random selection if probabilities don't sum to 1
+            return np.random.randint(0, self.num_points)
     
     def _construct_solution(self) -> np.ndarray:
         """Construct new solution using pheromone information"""
+        # Initialize solution array
         solution = np.zeros(self.dim)
+        
+        # Ensure pheromone matrix is initialized
+        if not hasattr(self, 'pheromone') or self.pheromone is None:
+            self.pheromone = np.ones((self.dim, self.population_size)) * self.initial_pheromone
+        
+        # Construct solution dimension by dimension
         for i in range(self.dim):
+            # Select region using pheromone information
             region = self._select_region(i)
+            
+            # Convert region to continuous value
             solution[i] = self._value_from_index(i, region)
+            
+            # Ensure solution is within bounds
+            solution[i] = min(max(solution[i], self.lower_bounds[i]), self.upper_bounds[i])
+        
         return solution
     
     def _iterate(self, objective_func: Callable) -> Tuple[np.ndarray, float]:
@@ -174,40 +234,41 @@ class AntColonyOptimizer(BaseOptimizer):
         Returns:
             Tuple of (best solution, best score)
         """
-        # Start iteration timer
         iter_start_time = time.time()
         
-        # Initialize success counter for this iteration
-        success_count = 0
+        # Ensure best solution and score are properly initialized
+        if not hasattr(self, 'best_score') or self.best_score is None:
+            self.best_score = float('inf')
+            
+        if not hasattr(self, 'best_solution') or self.best_solution is None:
+            self.best_solution = np.random.uniform(self.lower_bounds, self.upper_bounds, size=self.dim)
+            
+        if not hasattr(self, '_current_iteration'):
+            self._current_iteration = 0
+            
+        # Check if pheromone matrix is initialized
+        if not hasattr(self, 'pheromone') or self.pheromone is None:
+            self.pheromone = np.ones((self.dim, self.population_size)) * self.initial_pheromone
         
         # Generate solutions for each ant
         solutions = []
         scores = []
         
         for ant in range(self.population_size):
+            # Check stop criteria
+            if hasattr(self, '_check_stop_criteria') and self._check_stop_criteria():
+                break
+                
+            # Check iteration timeout
+            if time.time() - iter_start_time > self.iteration_timeout:
+                self.logger.warning("Iteration timeout reached")
+                break
+                
             # Construct solution
             solution = self._construct_solution()
             
-            # Apply local search with probability q0
-            if np.random.random() < self.q0:
-                for d in range(self.dim):
-                    # Generate small perturbation
-                    delta = np.random.normal(0, 0.1)
-                    new_val = solution[d] + delta
-                    new_val = np.clip(new_val, self.bounds[d][0], self.bounds[d][1])
-                    
-                    # Keep better solution
-                    temp_sol = solution.copy()
-                    temp_sol[d] = new_val
-                    
-                    # Evaluate the perturbed solution
-                    if objective_func(temp_sol) < objective_func(solution):
-                        solution[d] = new_val
-                        self.evaluations += 1
-            
             # Evaluate solution
-            score = objective_func(solution)
-            self.evaluations += 1
+            score = self._evaluate(solution, objective_func)
             
             solutions.append(solution)
             scores.append(score)
@@ -217,55 +278,27 @@ class AntColonyOptimizer(BaseOptimizer):
                 self.best_score = score
                 self.best_solution = solution.copy()
                 self.last_improvement_iter = self._current_iteration
-                success_count += 1
-        
-        # Update population with new solutions
-        combined_solutions = np.vstack((self.population, solutions))
-        combined_scores = np.concatenate((self.population_scores, scores))
-        
-        # Select best solutions
-        best_indices = np.argsort(combined_scores)[:self.population_size]
-        self.population = combined_solutions[best_indices]
-        self.population_scores = combined_scores[best_indices]
+                self.success_history[self.success_idx] = 1
+            else:
+                self.success_history[self.success_idx] = 0
+                
+            self.success_idx = (self.success_idx + 1) % len(self.success_history)
         
         # Update pheromone trails
-        self._update_pheromones(solutions, scores)
+        if solutions:  # Only update if we have solutions
+            self._update_pheromones(solutions, scores)
+            
+            # Update parameters if adaptive
+            if self.adaptive:
+                self._update_parameters()
+                
+            # Track diversity
+            self._update_diversity()
         
-        # Apply evaporation
-        self.pheromone *= (1 - self.evaporation_rate)
+        # Increment iteration counter
+        self._current_iteration += 1
         
-        # Enforce pheromone bounds
-        self.pheromone = np.clip(self.pheromone, self.tau_min, self.tau_max)
-        
-        # Update success history
-        success_rate = success_count / self.population_size
-        self.success_history.append(success_rate > 0)
-        
-        # Update selection pressure
-        self.selection_pressure.append(success_rate)
-        
-        # Update parameters based on performance
-        self._update_parameters()
-        
-        # Update diversity metrics
-        self._update_diversity()
-        
-        # Estimate problem characteristics
-        self._estimate_problem_characteristics()
-        
-        # Record time for this iteration
-        iter_time = time.time() - iter_start_time
-        self.time_per_iteration.append(iter_time)
-        
-        # Update convergence curve
-        self.convergence_curve.append(self.best_score)
-        
-        # Update stagnation count
-        if self._current_iteration - self.last_improvement_iter > 10:
-            self.stagnation_count += 1
-        
-        # Return current best solution and score
-        return self.best_solution, self.best_score
+        return self.best_solution.copy(), float(self.best_score)
     
     def _update_parameters(self):
         """Update optimizer parameters based on performance"""
@@ -295,171 +328,108 @@ class AntColonyOptimizer(BaseOptimizer):
         self.param_history['q0'].append(self.q0)
         self.param_history['success_rate'].append(success_rate)
     
-    def _optimize(self, objective_func: Callable, context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
-        """Run ACO optimization"""
-        # Store objective function for local search
-        self.objective_func = objective_func
-        
-        # Initialize pheromone matrix
-        self.pheromone = np.ones((self.dim, self.num_points)) * self.initial_pheromone
-        
-        pbar = None
-        if self.verbose:
-            pbar = tqdm(total=self.max_evals, desc="ACO Optimization")
-            pbar.update(0)
-        
-        while not self._check_convergence():
-            # Generate solutions for each ant
-            solutions = []
-            scores = []
-            for ant in range(self.population_size):
-                # Construct solution
-                solution = np.zeros(self.dim)
-                for d in range(self.dim):
-                    # Calculate probabilities
-                    pheromone = self.pheromone[d]
-                    heuristic = 1.0 / (1.0 + np.abs(np.linspace(self.bounds[d][0], self.bounds[d][1], self.num_points)))
-                    
-                    # Combine pheromone and heuristic information
-                    probs = (pheromone ** self.alpha) * (heuristic ** self.beta)
-                    probs = probs / np.sum(probs)
-                    
-                    # Select value
-                    point_idx = np.random.choice(self.num_points, p=probs)
-                    solution[d] = self._value_from_index(d, point_idx)
-                    
-                    # Local search with probability q0
-                    if np.random.random() < self.q0:
-                        # Generate small perturbation
-                        delta = np.random.normal(0, 0.1)
-                        new_val = solution[d] + delta
-                        new_val = np.clip(new_val, self.bounds[d][0], self.bounds[d][1])
-                        
-                        # Keep better solution
-                        temp_sol = solution.copy()
-                        temp_sol[d] = new_val
-                        if objective_func(temp_sol) < objective_func(solution):
-                            solution[d] = new_val
-                
-                # Evaluate solution
-                score = self._evaluate(solution, objective_func)
-                solutions.append(solution)
-                scores.append(score)
-                
-                # Update best solution
-                if score < self.best_score:
-                    self.best_solution = solution.copy()
-                    self.best_score = score
-            
-            # Update pheromone trails
-            self._update_pheromones(solutions, scores)
-            
-            # Apply evaporation
-            self.pheromone *= (1 - self.evaporation_rate)
-            
-            # Enforce pheromone bounds
-            self.pheromone = np.clip(self.pheromone, self.tau_min, self.tau_max)
-            
-            # Update parameters if adaptive
-            if self.adaptive:
-                self._update_parameters()
-            
-            # Track diversity
-            self._update_diversity()
-            
-            # Update progress bar
-            if pbar:
-                pbar.update(self.population_size)
-                pbar.set_postfix({"best_score": f"{self.best_score:.6f}"})
-        
-        # Clean up
-        del self.objective_func
-        
-        if pbar:
-            pbar.close()
-        
-        return self.best_solution, self.best_score
-    
     def optimize(self, objective_func: Callable,
                 max_evals: Optional[int] = None,
                 record_history: bool = True,
                 context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
         """
-        Run ACO optimization.
+        Run optimization.
         
         Args:
-            objective_func: Function to minimize
-            max_evals: Maximum number of function evaluations (overrides init value)
-            record_history: Whether to record convergence and parameter history
-            context: Optional problem context
+            objective_func: Objective function to minimize
+            max_evals: Maximum function evaluations (if None, use self.max_evals)
+            record_history: Whether to record optimization history
+            context: Additional optimization context
             
         Returns:
-            Best solution found and its score
+            Tuple of (best solution, best score)
         """
-        # Update max_evals if provided
+        # Set parameters
         if max_evals is not None:
             self.max_evals = max_evals
-            
+        
+        # Early initialization of best_score and best_solution
+        if not hasattr(self, 'best_score') or self.best_score is None:
+            self.best_score = float('inf')
+        
+        if not hasattr(self, 'best_solution') or self.best_solution is None:
+            self.best_solution = np.random.uniform(self.lower_bounds, self.upper_bounds, size=self.dim)
+        
+        # Reset evaluation counter
+        self.evaluations = 0
+        self._current_iteration = 0
         self.start_time = time.time()
         
-        # Initialize progress bar if verbose is enabled
-        pbar = None
-        if self.verbose:
-            pbar = tqdm(total=self.max_evals, desc="ACO Optimization")
-            pbar.update(0)
-            
-        # Initialize pheromone matrix
-        self.pheromone = np.ones((self.dim, self.num_points)) * self.initial_pheromone
+        # Try initializing the pheromone matrix and population
+        if not hasattr(self, 'pheromone') or self.pheromone is None:
+            self.pheromone = np.ones((self.dim, self.population_size)) * self.initial_pheromone
         
-        while not self._check_convergence():
-            # Generate solutions
-            solutions = []
-            scores = []
-            
-            for ant in range(self.population_size):
-                # Construct solution
-                solution = self._construct_solution()
+        if not hasattr(self, 'population') or self.population is None:
+            self.population = self._init_population()
+            self.scores = np.full(self.population_size, float('inf'))
+        
+        # Initialize progress bar
+        if self.verbose:
+            pbar = tqdm(total=self.max_evals, desc=f"ACO Optimization")
+            pbar.n = self.evaluations
+            pbar.refresh()
+        else:
+            pbar = None
+        
+        # Main loop
+        try:
+            while self.evaluations < self.max_evals:
+                # Check stop criteria
+                if hasattr(self, '_check_stop_criteria') and self._check_stop_criteria():
+                    break
                 
-                # Evaluate solution
-                score = self._evaluate(solution, objective_func)
+                # Iterate once
+                solution, score = self._iterate(objective_func)
                 
-                solutions.append(solution)
-                scores.append(score)
+                # Update best solution if better
+                if score < self.best_score:
+                    self.best_score = score
+                    self.best_solution = solution.copy()
                 
-            # Convert to numpy arrays
-            solutions = np.array(solutions)
-            scores = np.array(scores)
-            
-            # Update population
-            combined_solutions = np.vstack((self.population, solutions))
-            combined_scores = np.concatenate((self.population_scores, scores))
-            
-            # Select best solutions
-            best_indices = np.argsort(combined_scores)[:self.population_size]
-            self.population = combined_solutions[best_indices]
-            self.population_scores = combined_scores[best_indices]
-            
-            # Update pheromone trails
-            self._update_pheromones(solutions, scores)
-            
-            # Update parameters
-            if self.adaptive:
-                self._update_parameters()
-            
-            # Track diversity
-            self._update_diversity()
-            
-            # Update progress bar
-            if pbar:
-                pbar.update(self.population_size)
-                pbar.set_postfix({"best_score": f"{self.best_score:.6f}"})
+                # Record history
+                if record_history:
+                    self._record_history()
+                
+                # Update progress bar
+                if pbar is not None:
+                    pbar.n = self.evaluations
+                    pbar.refresh()
+                
+                # Increment iteration counter
+                self._current_iteration += 1
+        except Exception as e:
+            if pbar is not None:
+                pbar.close()
+            self.logger.error(f"Error during optimization: {e}")
+            import traceback
+            traceback.print_exc()
+            # Ensure we still return something valid
+            if not hasattr(self, 'best_solution') or self.best_solution is None:
+                self.best_solution = np.random.uniform(self.lower_bounds, self.upper_bounds, size=self.dim)
+            if not hasattr(self, 'best_score') or self.best_score is None:
+                self.best_score = float('inf')
+        finally:
+            if pbar is not None:
+                pbar.close()
         
         self.end_time = time.time()
         
-        if pbar:
-            pbar.close()
-        
-        return self.best_solution, self.best_score
+        # Double-check we're returning valid values
+        if isinstance(self.best_solution, np.ndarray) and not np.isnan(self.best_score):
+            return self.best_solution.copy(), float(self.best_score)
+        else:
+            # Return fallback values if something went wrong
+            fallback_solution = np.random.uniform(self.lower_bounds, self.upper_bounds, size=self.dim)
+            return fallback_solution, float('inf')
+
+    def _optimize(self, objective_func: Callable, context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
+        """Run ACO optimization - deprecated, use optimize instead"""
+        return self.optimize(objective_func, context=context)
     
     def _update_diversity(self):
         """Track diversity"""
@@ -496,6 +466,16 @@ class AntColonyOptimizer(BaseOptimizer):
         Returns:
             Objective function value
         """
+        # Initialize attributes if needed
+        if not hasattr(self, 'best_score') or self.best_score is None:
+            self.best_score = float('inf')
+            
+        if not hasattr(self, 'best_solution') or self.best_solution is None:
+            self.best_solution = np.zeros(self.dim)
+            
+        if not hasattr(self, 'evaluations'):
+            self.evaluations = 0
+        
         # Increment evaluation counter
         self.evaluations += 1
         
@@ -534,3 +514,34 @@ class AntColonyOptimizer(BaseOptimizer):
             'verbose': self.verbose
         }
         return params
+
+    def _record_history(self):
+        """
+        Record optimization history.
+        """
+        # Record best score
+        self.convergence_curve.append(self.best_score)
+        
+        # Record time
+        self.time_curve.append(time.time() - self.start_time)
+        
+        # Record evaluations
+        self.eval_curve.append(self.evaluations)
+
+    def _init_population(self) -> np.ndarray:
+        """Initialize population with random solutions."""
+        # Generate initial population
+        population = np.random.uniform(
+            low=self.lower_bounds,
+            high=self.upper_bounds,
+            size=(self.population_size, self.dim)
+        )
+        
+        # Initialize best solution
+        self.best_score = float('inf')
+        self.best_solution = np.random.uniform(self.lower_bounds, self.upper_bounds, size=self.dim)
+        
+        # Initialize scores
+        self.scores = np.full(self.population_size, float('inf'))
+        
+        return population

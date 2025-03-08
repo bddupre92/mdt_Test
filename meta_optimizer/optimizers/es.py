@@ -16,10 +16,10 @@ class EvolutionStrategyOptimizer(BaseOptimizer):
     def __init__(self,
                  dim: int,
                  bounds: List[Tuple[float, float]],
-                 population_size: int = 50,
-                 offspring_ratio: float = 0.5,
-                 initial_step_size: float = 0.5,
-                 adaptation_rate: float = 0.1,
+                 population_size: int = 20,  # Reduced default population size
+                 offspring_ratio: float = 1.0,  # Increased offspring ratio
+                 initial_step_size: float = 0.3,  # Reduced initial step size
+                 adaptation_rate: float = 0.2,  # Increased adaptation rate
                  max_evals: int = 10000,
                  timeout: float = 30.0,
                  adaptive: bool = True,
@@ -65,9 +65,13 @@ class EvolutionStrategyOptimizer(BaseOptimizer):
             'diversity': []
         }
         
+        # Initialize population with size based on max_evals
+        self.population_size = min(population_size, max(5, max_evals // 10))  # Ensure reasonable population size
+        self.offspring_size = max(1, int(offspring_ratio * self.population_size))
+        
         # Initialize population
         self.population = self._init_population()
-        self.population_scores = np.full(population_size, np.inf)
+        self.population_scores = np.full(self.population_size, np.inf)
         
         # Initialize tracking variables
         self.evaluations = 0
@@ -445,13 +449,14 @@ class EvolutionStrategyOptimizer(BaseOptimizer):
         self.last_improvement_iter = 0  # Initialize improvement tracker
         
         # Main optimization loop
-        max_iters = 2000  # Increase maximum iterations
+        remaining_evals = max(0, self.max_evals - self.evaluations)
+        max_iters = remaining_evals // (self.offspring_size + 1)  # Account for offspring and potential local search
         iter_count = 0
         
-        logging.debug(f"ES: Starting optimization loop with max_iters={max_iters}")
+        logging.debug(f"ES: Starting optimization loop with max_evals={remaining_evals}, max_iters={max_iters}")
         
-        # Create progress bar
-        with tqdm(total=max_iters, desc="ES Optimization", disable=not hasattr(self, 'verbose') or not self.verbose) as pbar:
+        # Create progress bar tracking evaluations instead of iterations
+        with tqdm(total=remaining_evals, desc="ES Optimization", unit="evals", position=1, leave=True) as pbar:
             while not self._check_convergence() and iter_count < max_iters:
                 # Record current best solution
                 self.convergence_curve.append(float(self.best_score))
@@ -459,15 +464,30 @@ class EvolutionStrategyOptimizer(BaseOptimizer):
                 # Log progress periodically
                 if iter_count % 50 == 0:
                     logging.debug(f"ES: Iteration {iter_count}, best score: {self.best_score:.6f}, evals: {self.evaluations}")
-                    pbar.set_postfix({"best_score": f"{self.best_score:.6f}", "evals": self.evaluations})
+                    runtime = time.time() - self.start_time
+                    evals_per_sec = self.evaluations / max(runtime, 0.001)
+                    success_rate = np.mean(self.success_history) * 100
+                    pbar.set_postfix({
+                        "best": f"{self.best_score:.2e}",
+                        "e/s": f"{evals_per_sec:.1f}",
+                        "success": f"{success_rate:.0f}%",
+                        "div": f"{self._calculate_diversity():.2f}"
+                    })
                     
                 # Main iteration
                 new_best, score = self._iterate(objective_func)
                 self._current_iteration = iter_count
                 
+                # Update progress based on actual evaluations
+                pbar.n = self.evaluations - (self.max_evals - remaining_evals)
+                pbar.refresh()
+                
                 # Increment iteration counter
                 iter_count += 1
-                pbar.update(1)
+                
+                # Check if we're close to evaluation budget
+                if self.evaluations >= self.max_evals - self.offspring_size:
+                    break
                 
         # Add final local search phase for the best solution
         if self.best_score > 0.01:  # Only if we haven't already converged well
@@ -476,9 +496,10 @@ class EvolutionStrategyOptimizer(BaseOptimizer):
             # Use smaller step sizes for fine-tuning
             local_step_size = 0.01
             
-            # Perform local search for a set number of iterations
-            local_search_iters = 100
-            with tqdm(total=local_search_iters, desc="ES Local Search", disable=not hasattr(self, 'verbose') or not self.verbose) as ls_pbar:
+            # Calculate remaining evaluations for local search
+            remaining_local_evals = max(0, self.max_evals - self.evaluations)
+            local_search_iters = min(100, remaining_local_evals)
+            with tqdm(total=local_search_iters, desc="ES Local Search", unit="iter", position=1, leave=True) as ls_pbar:
                 for ls_iter in range(local_search_iters):  # Local search iterations
                     if self.evaluations >= self.max_evals or time.time() - self.start_time > self.timeout:
                         break
@@ -510,7 +531,13 @@ class EvolutionStrategyOptimizer(BaseOptimizer):
                         self.best_solution = variations[best_var_idx].copy()
                         self.best_score = scores[best_var_idx]
                         logging.debug(f"ES: Local search improved score to {self.best_score:.6f}")
-                        ls_pbar.set_postfix({"best_score": f"{self.best_score:.6f}"})
+                        runtime = time.time() - self.start_time
+                        evals_per_sec = self.evaluations / max(runtime, 0.001)
+                        ls_pbar.set_postfix({
+                            "best": f"{self.best_score:.2e}",
+                            "e/s": f"{evals_per_sec:.1f}",
+                            "step": f"{local_step_size:.2e}"
+                        })
                     else:
                         # No improvement, reduce step size
                         local_step_size *= 0.5

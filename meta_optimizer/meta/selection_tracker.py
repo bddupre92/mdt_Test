@@ -51,6 +51,33 @@ class SelectionTracker:
         if self.tracker_file:
             self.save_data()
             
+    def get_history(self) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get the complete selection history.
+        
+        Returns:
+            Dictionary mapping problem types to lists of selection records
+        """
+        # Convert defaultdict to regular dict for serialization
+        history = {}
+        for problem_type, selections in self.selections.items():
+            # Convert any numpy values to standard Python types for serialization
+            processed_selections = []
+            for selection in selections:
+                processed_selection = {}
+                for key, value in selection.items():
+                    if key == 'features' and isinstance(value, dict):
+                        processed_selection[key] = {k: float(v) if isinstance(v, np.generic) else v 
+                                                  for k, v in value.items()}
+                    elif isinstance(value, np.generic):
+                        processed_selection[key] = value.item()
+                    else:
+                        processed_selection[key] = value
+                processed_selections.append(processed_selection)
+            history[problem_type] = processed_selections
+        
+        return history
+            
     def get_selection_stats(self, problem_type: Optional[str] = None) -> pd.DataFrame:
         """
         Get statistics about optimizer selections.

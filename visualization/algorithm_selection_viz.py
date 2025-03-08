@@ -17,6 +17,7 @@ import sys
 from typing import Dict, List, Optional, Any
 from collections import defaultdict
 import logging
+import time
 
 # Import save_plot function
 sys.path.append(str(Path(__file__).parent.parent))
@@ -64,6 +65,7 @@ class AlgorithmSelectionVisualizer:
             'optimizer': optimizer,
             'problem_type': problem_type,
             'score': score,
+            'timestamp': time.time(),  # Add timestamp
             'context': context or {}
         }
         self.selection_history.append(entry)
@@ -73,10 +75,30 @@ class AlgorithmSelectionVisualizer:
         if optimizer not in self.performance_history:
             self.performance_history[optimizer] = []
         
+        # Calculate improvement if there are previous entries
+        improvement = 0.0
+        relative_improvement = 0.0
+        previous_entries = [e for e in self.performance_history[optimizer] 
+                          if e['problem_type'] == problem_type]
+        
+        if previous_entries:
+            prev_score = previous_entries[-1]['score']
+            improvement = prev_score - score  # Positive means improvement
+            
+            # Calculate relative improvement safely (avoid division by zero)
+            if abs(prev_score) > 1e-10:  # Use small epsilon instead of exact zero
+                relative_improvement = improvement / abs(prev_score)
+            else:
+                # If previous score was effectively zero, use absolute improvement
+                relative_improvement = improvement
+        
         self.performance_history[optimizer].append({
             'iteration': iteration,
             'score': score,
-            'problem_type': problem_type
+            'problem_type': problem_type,
+            'improvement': improvement,
+            'relative_improvement': relative_improvement,
+            'timestamp': time.time()
         })
     
     def plot_selection_frequency(self, title: str = "Algorithm Selection Frequency", save: bool = True, filename: str = "algorithm_selection_frequency.png") -> None:
@@ -229,7 +251,7 @@ class AlgorithmSelectionVisualizer:
     
     def plot_problem_distribution(self, title: str = "Algorithm Selection by Problem Type", save: bool = True, filename: str = "algorithm_selection_by_problem.png"):
         """
-        Plot the distribution of algorithms selected for each problem type.
+        Plot the distribution of algorithm selections by problem type.
         
         Args:
             title: Plot title
@@ -239,34 +261,70 @@ class AlgorithmSelectionVisualizer:
         Returns:
             Matplotlib figure
         """
+        # Check if there's any data to plot
         if not self.selection_history:
             self.logger.warning("No selection history to visualize")
             return None
         
-        # Prepare data
-        df = pd.DataFrame(self.selection_history)
-        
-        # Count selections per optimizer and problem type
-        problem_optimizer_counts = df.groupby(['problem_type', 'optimizer']).size().unstack(fill_value=0)
-        
         # Create figure
         fig, ax = plt.subplots(figsize=(12, 8))
         
-        # Plot heatmap
-        sns.heatmap(problem_optimizer_counts, annot=True, fmt='d', cmap='YlGnBu', ax=ax)
+        # Prepare data
+        df = pd.DataFrame(self.selection_history)
         
-        # Add chart labels
-        ax.set_title(title)
-        ax.set_xlabel('Optimizer')
-        ax.set_ylabel('Problem Type')
+        # Check if more than one problem type
+        if len(self.problem_types) > 1:
+            try:
+                # Create a pivot table for problem types vs. optimizers
+                pivot = pd.crosstab(df['problem_type'], df['optimizer'])
+                
+                # Create a heatmap
+                sns.heatmap(pivot, annot=True, fmt='d', cmap='YlGnBu', ax=ax, cbar_kws={'label': 'Count'})
+                
+                ax.set_title(title)
+                ax.set_xlabel('Optimizer')
+                ax.set_ylabel('Problem Type')
+            except Exception as e:
+                self.logger.warning(f"Error creating problem distribution heatmap: {e}")
+                # Fallback to simple text display
+                ax.text(0.5, 0.5, f"Error creating heatmap: {str(e)}",
+                       horizontalalignment='center', verticalalignment='center',
+                       transform=ax.transAxes, fontsize=12)
+                ax.set_title(title)
+                ax.axis('off')
+        else:
+            # Only one problem type, show count per optimizer
+            problem_type = list(self.problem_types)[0]
+            
+            # Count by optimizer
+            optimizer_counts = df.groupby('optimizer').size().reset_index(name='count')
+            
+            # Sort by count
+            optimizer_counts = optimizer_counts.sort_values('count', ascending=False)
+            
+            # Create bar chart
+            sns.barplot(x='optimizer', y='count', data=optimizer_counts, ax=ax)
+            
+            # Add the count above each bar
+            for i, (_, row) in enumerate(optimizer_counts.iterrows()):
+                ax.text(i, row['count'] + 0.1, str(row['count']), 
+                       ha='center', fontsize=10)
+            
+            ax.set_title(f"{title}\nProblem Type: {problem_type}")
+            ax.set_xlabel('Optimizer')
+            ax.set_ylabel('Selection Count')
+            
+            # Rotate labels if there are many optimizers
+            if len(optimizer_counts) > 4:
+                plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
         
         plt.tight_layout()
         
         # Save if requested
-        if save and self.save_dir:
-            save_path = os.path.join(self.save_dir, filename)
-            fig.savefig(save_path)
-            self.logger.info(f"Saved problem distribution plot to {save_path}")
+        if save:
+            os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
+            plt.savefig(filename, dpi=300, bbox_inches='tight')
+            print(f"Saved problem distribution plot to {filename}")
         
         return fig
     
@@ -294,37 +352,75 @@ class AlgorithmSelectionVisualizer:
                     'optimizer': optimizer,
                     'iteration': entry['iteration'],
                     'score': entry['score'],
-                    'problem_type': entry['problem_type']
+                    'problem_type': entry['problem_type'],
+                    'improvement': entry.get('improvement', 0),
+                    'relative_improvement': entry.get('relative_improvement', 0)
                 })
         
         df = pd.DataFrame(data)
         
-        # Create figure
-        fig, ax = plt.subplots(figsize=(12, 8))
+        # Create figure with multiple subplots
+        fig, axs = plt.subplots(2, 2, figsize=(16, 12))
         
-        # Plot boxplot
-        sns.boxplot(x='optimizer', y='score', hue='problem_type', data=df, ax=ax)
+        # 1. Boxplot of final scores by optimizer and problem type
+        sns.boxplot(x='optimizer', y='score', hue='problem_type', data=df, ax=axs[0, 0])
+        axs[0, 0].set_title('Score Distribution by Optimizer')
+        axs[0, 0].set_xlabel('Optimizer')
+        axs[0, 0].set_ylabel('Score (lower is better)')
         
         # If scores are very small, use log scale
-        if df['score'].median() < 0.01:
-            ax.set_yscale('log')
+        if df['score'].median() < 0.01 and df['score'].min() > 0:
+            axs[0, 0].set_yscale('log')
         
-        # Add chart labels
-        ax.set_title(title)
-        ax.set_xlabel('Optimizer')
-        ax.set_ylabel('Score (lower is better)')
+        # 2. Line plot showing score progression by iteration
+        # Group by optimizer and iteration, get the min score at each iteration
+        progression_df = df.groupby(['optimizer', 'iteration']).agg({'score': 'min'}).reset_index()
         
-        # Rotate x-labels if many optimizers
-        if len(df['optimizer'].unique()) > 4:
-            plt.xticks(rotation=45, ha='right')
+        # Plot the progression lines for each optimizer
+        for optimizer in progression_df['optimizer'].unique():
+            subset = progression_df[progression_df['optimizer'] == optimizer]
+            axs[0, 1].plot(subset['iteration'], subset['score'], 'o-', label=optimizer)
+        
+        axs[0, 1].set_title('Score Progression by Iteration')
+        axs[0, 1].set_xlabel('Iteration')
+        axs[0, 1].set_ylabel('Best Score')
+        axs[0, 1].legend()
+        
+        # 3. Bar chart of improvement rates
+        improvement_df = df.groupby('optimizer').agg({
+            'improvement': 'mean',
+            'relative_improvement': 'mean'
+        }).reset_index()
+        
+        improvement_df = improvement_df.sort_values('relative_improvement', ascending=False)
+        sns.barplot(x='optimizer', y='relative_improvement', data=improvement_df, ax=axs[1, 0])
+        axs[1, 0].set_title('Average Relative Improvement by Optimizer')
+        axs[1, 0].set_xlabel('Optimizer')
+        axs[1, 0].set_ylabel('Relative Improvement')
+        
+        # 4. Success rate (improvement > 0)
+        success_df = df.groupby(['optimizer', 'iteration']).agg({
+            'improvement': lambda x: (np.array(x) > 0).mean() * 100  # Calculate % of positive improvements
+        }).reset_index()
+        
+        success_summary = success_df.groupby('optimizer').agg({
+            'improvement': 'mean'  # Average success rate across iterations
+        }).reset_index()
+        
+        success_summary = success_summary.sort_values('improvement', ascending=False)
+        sns.barplot(x='optimizer', y='improvement', data=success_summary, ax=axs[1, 1])
+        axs[1, 1].set_title('Success Rate by Optimizer (%)')
+        axs[1, 1].set_xlabel('Optimizer')
+        axs[1, 1].set_ylabel('Success Rate (%)')
         
         plt.tight_layout()
+        plt.suptitle(title, fontsize=16)
+        plt.subplots_adjust(top=0.95)
         
-        # Save if requested
-        if save and self.save_dir:
-            save_path = os.path.join(self.save_dir, filename)
-            fig.savefig(save_path)
-            self.logger.info(f"Saved performance comparison plot to {save_path}")
+        if save:
+            os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
+            plt.savefig(filename, dpi=300, bbox_inches='tight')
+            print(f"Saved performance comparison plot to {filename}")
         
         return fig
     
@@ -409,159 +505,256 @@ class AlgorithmSelectionVisualizer:
     
     def create_summary_dashboard(self, title: str = "Algorithm Selection Summary", save: bool = True, filename: str = "algorithm_selection_dashboard.png"):
         """
-        Create a comprehensive dashboard with multiple visualization panels.
+        Create a comprehensive dashboard of algorithm selection data.
         
         Args:
-            title: Title for the dashboard
-            save: Whether to save the dashboard
-            filename: Filename to save the dashboard
+            title: Plot title
+            save: Whether to save the plot
+            filename: Filename to save the plot
             
         Returns:
             Matplotlib figure
         """
+        # Check if there's any data to plot
         if not self.selection_history:
-            self.logger.warning("No selection history to visualize")
-            
-            # Create an empty plot with a message
-            plt.figure(figsize=(16, 10))
-            plt.text(0.5, 0.5, "No algorithm selection data available for dashboard", 
-                    horizontalalignment='center', verticalalignment='center',
-                    transform=plt.gca().transAxes, fontsize=16)
-            plt.title(title)
-            
-            if save and self.save_dir:
-                save_path = Path(self.save_dir) / filename
-                save_path.parent.mkdir(parents=True, exist_ok=True)
-                plt.savefig(save_path, dpi=300, bbox_inches='tight')
-                print(f"Saved empty dashboard to {save_path}")
-            
-            plt.close()
+            self.logger.warning("No selection history to visualize in dashboard")
             return None
         
-        # Create figure
-        fig = plt.figure(figsize=(20, 16))
-        gs = gridspec.GridSpec(3, 2, figure=fig)
+        # Create a larger figure
+        fig = plt.figure(figsize=(18, 14))
         
-        # Panel 1: Selection frequency
+        # Set up a complex grid layout for better organization
+        gs = gridspec.GridSpec(3, 3, figure=fig, height_ratios=[1, 1, 1.2])
+        
+        # ====================== TOP ROW ======================
+        # 1. Algorithm Selection Frequency (Bar chart)
         ax1 = fig.add_subplot(gs[0, 0])
-        optimizer_counts = defaultdict(int)
+        # Count selections by optimizer
+        optimizer_counts = {}
         for entry in self.selection_history:
-            optimizer_counts[entry['optimizer']] += 1
+            optimizer = entry['optimizer']
+            optimizer_counts[optimizer] = optimizer_counts.get(optimizer, 0) + 1
         
-        optimizers = sorted(optimizer_counts.keys(), key=lambda x: optimizer_counts[x], reverse=True)
-        frequencies = [optimizer_counts[opt] for opt in optimizers]
+        # Sort by frequency
+        sorted_optimizers = sorted(optimizer_counts.items(), key=lambda x: x[1], reverse=True)
+        optimizers, counts = zip(*sorted_optimizers) if sorted_optimizers else ([], [])
         
-        bars = ax1.bar(optimizers, frequencies)
-        for bar in bars:
-            height = bar.get_height()
-            ax1.annotate(f'{height}',
-                        xy=(bar.get_x() + bar.get_width() / 2, height),
-                        xytext=(0, 3),
-                        textcoords="offset points",
-                        ha='center', va='bottom')
+        sns.barplot(x=list(optimizers), y=list(counts), ax=ax1)
+        ax1.set_title("Algorithm Selection Frequency")
+        ax1.set_xlabel("Optimizer")
+        ax1.set_ylabel("Frequency")
         
-        ax1.set_title('Algorithm Selection Frequency')
-        ax1.set_xlabel('Optimizer')
-        ax1.set_ylabel('Frequency')
-        plt.setp(ax1.get_xticklabels(), rotation=45, ha='right')
+        # Rotate labels if there are many optimizers
+        if len(optimizers) > 4:
+            plt.setp(ax1.get_xticklabels(), rotation=45, ha='right')
         
-        # Panel 2: Problem type distribution
+        # 2. Problem Type Distribution (Pie chart or bar chart depending on number of problem types)
         ax2 = fig.add_subplot(gs[0, 1])
-        df = pd.DataFrame(self.selection_history)
-        if len(self.problem_types) > 1:
-            problem_optimizer_counts = df.groupby(['problem_type', 'optimizer']).size().unstack(fill_value=0)
-            sns.heatmap(problem_optimizer_counts, annot=True, fmt='d', cmap='YlGnBu', ax=ax2)
-            ax2.set_title('Algorithm Selection by Problem Type')
-            ax2.set_xlabel('Optimizer')
-            ax2.set_ylabel('Problem Type')
+        problem_counts = {}
+        for entry in self.selection_history:
+            problem = entry['problem_type']
+            problem_counts[problem] = problem_counts.get(problem, 0) + 1
+        
+        if len(problem_counts) > 1:
+            # Multiple problem types - use pie chart
+            problems = list(problem_counts.keys())
+            counts = list(problem_counts.values())
+            ax2.pie(counts, labels=problems, autopct='%1.1f%%', startangle=90,
+                    wedgeprops={'linewidth': 1, 'edgecolor': 'white'})
+            ax2.set_title("Problem Type Distribution")
         else:
-            ax2.text(0.5, 0.5, "Only one problem type available", ha='center', va='center', fontsize=14)
-            ax2.set_title('Problem Type Distribution')
+            # Only one problem type - use text display
+            ax2.text(0.5, 0.5, f"Only one problem type available\n{list(problem_counts.keys())[0]}",
+                    horizontalalignment='center', verticalalignment='center', 
+                    transform=ax2.transAxes, fontsize=12)
+            ax2.set_title("Problem Type Distribution")
             ax2.axis('off')
         
-        # Panel 3: Selection timeline
-        ax3 = fig.add_subplot(gs[1, :])
-        optimizers = df['optimizer'].unique()
-        colors = plt.cm.tab10.colors[:len(optimizers)]
-        optimizer_colors = {opt: color for opt, color in zip(optimizers, colors)}
+        # 3. Algorithm Selection Timeline (Line plot with dots)
+        ax3 = fig.add_subplot(gs[0, 2])
+        # Group by iteration
+        timeline_data = []
+        for entry in self.selection_history:
+            timeline_data.append({
+                'Iteration': entry['iteration'],
+                'Optimizer': entry['optimizer']
+            })
         
-        y_pos = {opt: i for i, opt in enumerate(optimizers)}
+        df_timeline = pd.DataFrame(timeline_data)
         
-        for opt in optimizers:
-            opt_data = df[df['optimizer'] == opt]
-            ax3.scatter(opt_data['iteration'], [y_pos[opt]] * len(opt_data), 
-                      label=opt, color=optimizer_colors[opt], s=50, alpha=0.7)
+        # Get unique optimizers and assign colors
+        unique_optimizers = df_timeline['Optimizer'].unique()
+        colors = plt.cm.tab10(np.linspace(0, 1, len(unique_optimizers)))
+        color_map = dict(zip(unique_optimizers, colors))
+        
+        # Plot each optimizer as a separate line
+        for optimizer in unique_optimizers:
+            subset = df_timeline[df_timeline['Optimizer'] == optimizer]
+            ax3.plot(subset['Iteration'], [unique_optimizers.tolist().index(optimizer)] * len(subset),
+                    'o-', label=optimizer)
         
         ax3.set_title('Algorithm Selection Timeline')
         ax3.set_xlabel('Iteration')
         ax3.set_ylabel('Optimizer')
-        ax3.set_yticks(list(y_pos.values()))
-        ax3.set_yticklabels(list(y_pos.keys()))
+        ax3.set_yticks(range(len(unique_optimizers)))
+        ax3.set_yticklabels(unique_optimizers)
         ax3.grid(True, linestyle='--', alpha=0.7)
-        ax3.legend(title="Optimizers", bbox_to_anchor=(1.05, 1), loc='upper left')
         
-        # Panel 4: Performance comparison
-        ax4 = fig.add_subplot(gs[2, 0])
-        data = []
+        # ====================== MIDDLE ROW ======================
+        # 4. Performance Comparison (Box plot or violin plot)
+        ax4 = fig.add_subplot(gs[1, :2])  # Span two columns
+        
+        # Prepare performance data
+        perf_data = []
         for optimizer, history in self.performance_history.items():
             for entry in history:
-                data.append({
-                    'optimizer': optimizer,
-                    'iteration': entry['iteration'],
-                    'score': entry['score'],
-                    'problem_type': entry['problem_type']
+                perf_data.append({
+                    'Optimizer': optimizer,
+                    'Score': entry['score'],
+                    'Problem Type': entry['problem_type']
                 })
         
-        perf_df = pd.DataFrame(data)
-        sns.boxplot(x='optimizer', y='score', data=perf_df, ax=ax4)
+        df_perf = pd.DataFrame(perf_data)
         
-        if perf_df['score'].median() < 0.01:
-            ax4.set_yscale('log')
-        
-        ax4.set_title('Performance Comparison')
+        # Create a more informative boxplot
+        sns.boxplot(x='Optimizer', y='Score', hue='Problem Type', data=df_perf, ax=ax4)
+        ax4.set_title('Optimizer Performance Comparison')
         ax4.set_xlabel('Optimizer')
         ax4.set_ylabel('Score (lower is better)')
-        plt.setp(ax4.get_xticklabels(), rotation=45, ha='right')
         
-        # Panel 5: Algorithm success rate
-        ax5 = fig.add_subplot(gs[2, 1])
-        success_data = {}
+        # If scores are very small, use log scale
+        if df_perf['Score'].median() < 0.01 and df_perf['Score'].min() > 0:
+            ax4.set_yscale('log')
+        
+        # Rotate labels if there are many optimizers
+        if len(unique_optimizers) > 4:
+            plt.setp(ax4.get_xticklabels(), rotation=45, ha='right')
+        
+        # 5. Improvement Rate (Bar chart)
+        ax5 = fig.add_subplot(gs[1, 2])
+        
+        # Calculate improvement for each optimizer
+        improvement_data = {}
+        
         for optimizer, history in self.performance_history.items():
-            # Calculate improvement rate
-            if len(history) > 1:
-                start_score = history[0]['score']
-                end_score = history[-1]['score']
-                improvement = start_score - end_score
-                success_data[optimizer] = improvement / start_score if start_score != 0 else 0
+            # Sort by iteration
+            sorted_history = sorted(history, key=lambda x: x['iteration'])
+            
+            # Calculate improvements between iterations
+            improvements = []
+            for i in range(1, len(sorted_history)):
+                prev_score = sorted_history[i-1]['score']
+                curr_score = sorted_history[i]['score']
+                # Positive improvement means score got better (lower)
+                imp = prev_score - curr_score
+                # Calculate relative improvement
+                if abs(prev_score) > 1e-10:  # Avoid division by zero
+                    relative_imp = imp / abs(prev_score)
+                else:
+                    relative_imp = imp  # Use absolute if previous was zero
+                improvements.append(relative_imp)
+            
+            # Store average improvement
+            if improvements:
+                improvement_data[optimizer] = np.mean(improvements)
             else:
-                success_data[optimizer] = 0
+                improvement_data[optimizer] = 0
         
-        # Sort by success rate
-        sorted_optimizers = sorted(success_data.keys(), key=lambda x: success_data[x], reverse=True)
-        success_rates = [success_data[opt] for opt in sorted_optimizers]
+        # Sort by improvement rate
+        sorted_improvements = sorted(improvement_data.items(), key=lambda x: x[1], reverse=True)
+        imp_optimizers, imp_values = zip(*sorted_improvements) if sorted_improvements else ([], [])
         
-        success_bars = ax5.bar(sorted_optimizers, success_rates)
-        for bar in success_bars:
-            height = bar.get_height()
-            ax5.annotate(f'{height:.2f}',
-                        xy=(bar.get_x() + bar.get_width() / 2, height),
-                        xytext=(0, 3),
-                        textcoords="offset points",
-                        ha='center', va='bottom')
-        
+        # Create color-coded bar chart (green for positive, red for negative)
+        colors = ['green' if imp >= 0 else 'red' for imp in imp_values]
+        ax5.bar(imp_optimizers, imp_values, color=colors)
         ax5.set_title('Algorithm Improvement Rate')
         ax5.set_xlabel('Optimizer')
         ax5.set_ylabel('Relative Improvement')
-        plt.setp(ax5.get_xticklabels(), rotation=45, ha='right')
+        ax5.axhline(y=0, color='black', linestyle='-', alpha=0.3)  # Add zero line
         
-        plt.suptitle(title, fontsize=16)
+        # Rotate labels if needed
+        if len(imp_optimizers) > 4:
+            plt.setp(ax5.get_xticklabels(), rotation=45, ha='right')
+        
+        # ====================== BOTTOM ROW ======================
+        # 6. Detailed Statistics Table
+        ax6 = fig.add_subplot(gs[2, :])  # Span all columns
+        ax6.axis('off')  # Turn off axis
+        
+        # Compute detailed statistics
+        stats_data = []
+        for optimizer in unique_optimizers:
+            # Filter entries for this optimizer
+            entries = [e for e in self.selection_history if e['optimizer'] == optimizer]
+            
+            # Get performance history
+            perf_entries = self.performance_history.get(optimizer, [])
+            
+            # Calculate statistics
+            selection_count = len(entries)
+            selection_percentage = (selection_count / len(self.selection_history)) * 100 if self.selection_history else 0
+            
+            best_score = min([e['score'] for e in perf_entries]) if perf_entries else float('nan')
+            avg_score = np.mean([e['score'] for e in perf_entries]) if perf_entries else float('nan')
+            
+            # Calculate success rate (how often this optimizer improved the solution)
+            improvements = []
+            for i in range(1, len(perf_entries)):
+                prev = perf_entries[i-1]['score'] 
+                curr = perf_entries[i]['score']
+                improvements.append(1 if curr < prev else 0)  # 1 if improved, 0 otherwise
+            
+            success_rate = (np.mean(improvements) * 100) if improvements else 0
+            
+            # Calculate average improvement
+            avg_improvement = np.mean([prev - curr for prev, curr in zip(
+                [e['score'] for e in perf_entries[:-1]], 
+                [e['score'] for e in perf_entries[1:]]
+            )]) if len(perf_entries) > 1 else 0
+            
+            # Store statistics
+            stats_data.append({
+                'Optimizer': optimizer,
+                'Selections': selection_count,
+                'Selection %': f"{selection_percentage:.1f}%",
+                'Best Score': f"{best_score:.6f}",
+                'Avg Score': f"{avg_score:.6f}",
+                'Success Rate': f"{success_rate:.1f}%",
+                'Avg Improvement': f"{avg_improvement:.6f}"
+            })
+        
+        # Create a visually appealing table
+        table_data = [[d[col] for col in d.keys()] for d in stats_data]
+        table_columns = list(stats_data[0].keys()) if stats_data else []
+        
+        table = ax6.table(
+            cellText=table_data,
+            colLabels=table_columns,
+            loc='center',
+            cellLoc='center',
+            colColours=['#c9daf8'] * len(table_columns)
+        )
+        
+        # Style the table
+        table.auto_set_font_size(False)
+        table.set_fontsize(10)
+        table.scale(1, 1.5)  # Adjust row height
+        
+        # Add table title
+        ax6.set_title('Optimizer Performance Statistics', pad=20, fontsize=14, fontweight='bold')
+        
+        # Add mega title
+        plt.suptitle(title, fontsize=16, y=0.98)
+        
+        # Adjust layout
         plt.tight_layout()
+        plt.subplots_adjust(top=0.92)
         
         # Save if requested
-        if save and self.save_dir:
-            save_path = os.path.join(self.save_dir, filename)
-            fig.savefig(save_path)
-            self.logger.info(f"Saved summary dashboard to {save_path}")
+        if save:
+            os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
+            plt.savefig(filename, dpi=300, bbox_inches='tight')
+            print(f"Saved algorithm selection dashboard to {filename}")
         
         return fig
 

@@ -450,24 +450,30 @@ class EvolutionStrategyOptimizer(BaseOptimizer):
         
         logging.debug(f"ES: Starting optimization loop with max_iters={max_iters}")
         
-        # Create progress bar
-        with tqdm(total=max_iters, desc="ES Optimization", disable=not hasattr(self, 'verbose') or not self.verbose) as pbar:
-            while not self._check_convergence() and iter_count < max_iters:
-                # Record current best solution
-                self.convergence_curve.append(float(self.best_score))
-                
-                # Log progress periodically
-                if iter_count % 50 == 0:
-                    logging.debug(f"ES: Iteration {iter_count}, best score: {self.best_score:.6f}, evals: {self.evaluations}")
-                    pbar.set_postfix({"best_score": f"{self.best_score:.6f}", "evals": self.evaluations})
+        # Initialize tracking variables
+        self._track_progress = hasattr(self, 'verbose') and self.verbose
+        self._progress_str = ""
+        
+        while not self._check_convergence() and iter_count < max_iters:
+            # Record current best solution
+            self.convergence_curve.append(float(self.best_score))
+            
+            # Update progress tracking
+            if self._track_progress and iter_count % 10 == 0:
+                self._progress_str = f"ES ({self.name}) | Evals: {self.evaluations}/{self.max_evals} | Best: {self.best_score:.2e} | Iter: {iter_count} | Div: {self._calculate_diversity():.2e}"
+                logging.info(self._progress_str)
                     
-                # Main iteration
-                new_best, score = self._iterate(objective_func)
-                self._current_iteration = iter_count
-                
-                # Increment iteration counter
-                iter_count += 1
-                pbar.update(1)
+            # Main iteration
+            new_best, score = self._iterate(objective_func)
+            self._current_iteration = iter_count
+            
+            # Update progress tracking
+            if self._track_progress and iter_count % 10 == 0:
+                self._progress_str = f"ES ({self.name}) | Evals: {self.evaluations}/{self.max_evals} | Best: {self.best_score:.2e} | Iter: {iter_count} | Div: {self._calculate_diversity():.2e}"
+                logging.info(self._progress_str)
+            
+            # Increment iteration counter
+            iter_count += 1
                 
         # Add final local search phase for the best solution
         if self.best_score > 0.01:  # Only if we haven't already converged well
@@ -478,48 +484,52 @@ class EvolutionStrategyOptimizer(BaseOptimizer):
             
             # Perform local search for a set number of iterations
             local_search_iters = 100
-            with tqdm(total=local_search_iters, desc="ES Local Search", disable=not hasattr(self, 'verbose') or not self.verbose) as ls_pbar:
-                for ls_iter in range(local_search_iters):  # Local search iterations
-                    if self.evaluations >= self.max_evals or time.time() - self.start_time > self.timeout:
+            
+            # Log start of local search
+            if self._track_progress:
+                logging.info(f"ES ({self.name}) | Starting local search from score {self.best_score:.2e}")
+            
+            for ls_iter in range(local_search_iters):  # Local search iterations
+                if self.evaluations >= self.max_evals or time.time() - self.start_time > self.timeout:
+                    break
+                    
+                # Create variations of the best solution
+                variations = []
+                scores = []
+                
+                # Create multiple variations with decreasing step sizes
+                decay_factor = 0.95
+                curr_step = local_step_size
+                
+                for _ in range(10):  # Try 10 variations per iteration
+                    # Create a variation with decreasing step size
+                    variation = self.best_solution + np.random.normal(0, curr_step, size=self.dim)
+                    variation = self._bound_solution(variation)
+                    score = objective_func(variation)
+                    self.evaluations += 1
+                    
+                    variations.append(variation)
+                    scores.append(score)
+                    
+                    # Decrease step size for next variation
+                    curr_step *= decay_factor
+                
+                # Check if any variations are better
+                best_var_idx = np.argmin(scores)
+                if scores[best_var_idx] < self.best_score:
+                    self.best_solution = variations[best_var_idx].copy()
+                    self.best_score = scores[best_var_idx]
+                    logging.debug(f"ES: Local search improved score to {self.best_score:.6f}")
+                else:
+                    # No improvement, reduce step size
+                    local_step_size *= 0.5
+                    if local_step_size < 1e-6:
+                        logging.debug("ES: Local search converged (step size too small)")
                         break
-                        
-                    # Create variations of the best solution
-                    variations = []
-                    scores = []
                     
-                    # Create multiple variations with decreasing step sizes
-                    decay_factor = 0.95
-                    curr_step = local_step_size
-                    
-                    for _ in range(10):  # Try 10 variations per iteration
-                        # Create a variation with decreasing step size
-                        variation = self.best_solution + np.random.normal(0, curr_step, size=self.dim)
-                        variation = self._bound_solution(variation)
-                        score = objective_func(variation)
-                        self.evaluations += 1
-                        
-                        variations.append(variation)
-                        scores.append(score)
-                        
-                        # Decrease step size for next variation
-                        curr_step *= decay_factor
-                    
-                    # Check if any variations are better
-                    best_var_idx = np.argmin(scores)
-                    if scores[best_var_idx] < self.best_score:
-                        self.best_solution = variations[best_var_idx].copy()
-                        self.best_score = scores[best_var_idx]
-                        logging.debug(f"ES: Local search improved score to {self.best_score:.6f}")
-                        ls_pbar.set_postfix({"best_score": f"{self.best_score:.6f}"})
-                    else:
-                        # No improvement, reduce step size
-                        local_step_size *= 0.5
-                        if local_step_size < 1e-6:
-                            logging.debug("ES: Local search converged (step size too small)")
-                            break
-                    
-                    # Update progress bar
-                    ls_pbar.update(1)
+                # Update progress tracking
+                if self._track_progress and ls_iter % 10 == 0:
+                    logging.info(f"ES ({self.name}) | Local Search | Iter: {ls_iter}/{local_search_iters} | Best: {self.best_score:.2e}")
         
         # Record final best
         self.convergence_curve.append(float(self.best_score))
@@ -550,13 +560,20 @@ class EvolutionStrategyOptimizer(BaseOptimizer):
     def _record_history(self):
         """Record optimization history"""
         # Record convergence history
-        self.convergence_curve.append(self.best_score)
+        self.convergence_curve.append(float(self.best_score))
         
         # Record evaluation count
-        self.eval_curve.append(self.evaluations)
+        self.eval_curve.append(int(self.evaluations))
         
         # Record time
-        self.time_curve.append(time.time() - self.start_time)
+        self.time_curve.append(float(time.time() - self.start_time))
+        
+        # Record diversity with proper type
+        if hasattr(self, 'diversity_history'):
+            diversity = float(self._calculate_diversity())
+            self.diversity_history.append(diversity)
+            if hasattr(self, 'param_history'):
+                self.param_history['diversity'].append(diversity)
 
     def get_parameters(self) -> Dict[str, Any]:
         """

@@ -11,11 +11,17 @@ from dataclasses import dataclass
 from threading import Lock
 import time
 from tqdm import tqdm  
+import signal
+import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+import psutil
+import gc
 
 from .optimization_history import OptimizationHistory
 from .problem_analysis import ProblemAnalyzer
 from .selection_tracker import SelectionTracker
 from visualization.live_visualization import LiveOptimizationMonitor
+from ..optimizers.base_optimizer import BaseOptimizer, OptimizationResult
 
 @dataclass
 class OptimizationResult:
@@ -27,7 +33,7 @@ class OptimizationResult:
     success: bool = False
 
 
-class MetaOptimizer:
+class MetaOptimizer(BaseOptimizer):
     """Meta-optimizer that learns to select the best optimization algorithm."""
     def __init__(self, 
                  dim: int,
@@ -38,7 +44,11 @@ class MetaOptimizer:
                  n_parallel: int = 2,
                  budget_per_iteration: int = 100,
                  default_max_evals: int = 1000,
-                 verbose: bool = False):
+                 verbose: bool = False,
+                 timeout: int = 60,
+                 iteration_timeout: int = 10,
+                 **kwargs):
+        super().__init__(dim=dim, timeout=timeout, iteration_timeout=iteration_timeout, **kwargs)
         self.dim = dim
         self.bounds = bounds
         self.optimizers = optimizers
@@ -109,6 +119,16 @@ class MetaOptimizer:
         self.min_exploration_rate = 0.1
         self.exploration_decay = 0.995
         self.confidence_threshold = 0.7
+        
+        self.max_memory_gb = kwargs.get('max_memory_gb', 4)  # Add memory limit
+        self.stop_flag = threading.Event()
+        self.current_optimizer = None
+        
+        # Configure logging with more detail
+        logging.basicConfig(level=logging.DEBUG)
+        self.logger.setLevel(logging.DEBUG)
+
+        self.visualization_enabled = kwargs.get('visualization_enabled', True)
 
     def _calculate_exploration_rate(self) -> float:
         """Calculate adaptive exploration rate based on progress and performance."""
@@ -328,97 +348,90 @@ class MetaOptimizer:
                 objective_func: Callable,
                 max_evals: Optional[int] = None,
                 context: Optional[Dict[str, Any]] = None):
-        """
-        Run optimization with all configured optimizers.
-        
-        Args:
-            objective_func: Objective function to minimize
-            max_evals: Maximum number of function evaluations
-            context: Optional context information
-            
-        Returns:
-            Best solution found (numpy array)
-        """
-        self.logger.info("Starting Meta-Optimizer optimize")
-        
-        # Set up objective function and max evaluations
-        max_evals = max_evals or self.default_max_evals
-        self.logger.info(f"Max evaluations: {max_evals}")
-        
-        # Initialize tracking
-        best_solution = None
-        best_score = float('inf')
-        total_evaluations = 0
-        
-        # Initialize convergence tracking
-        convergence_curve = []
-        
-        # Record start time
+        """Run optimization with enhanced timeout and resource monitoring"""
+        self.logger.info("Starting optimization with enhanced monitoring")
         start_time = time.time()
-        self.start_time = start_time
         
-        # SIMPLIFIED VERSION - USE SIMPLE OPTIMIZATION APPROACH
-        # This will ensure it works for benchmarking without hanging
-        try:
-            # Select a simple optimizer approach - we'll use random search as fallback
-            # This is just to make sure the benchmarking works reliably
-            best_solution = np.random.uniform(low=[b[0] for b in self.bounds],
-                                            high=[b[1] for b in self.bounds],
-                                            size=self.dim)
-            best_score = objective_func(best_solution)
-            total_evaluations = 1
+        def check_resources():
+            """Check system resources"""
+            process = psutil.Process(os.getpid())
+            memory_gb = process.memory_info().rss / 1024 / 1024 / 1024
+            if memory_gb > self.max_memory_gb:
+                self.logger.warning(f"Memory usage ({memory_gb:.2f}GB) exceeded limit ({self.max_memory_gb}GB)")
+                return False
+            return True
+
+        def run_single_optimizer(name, optimizer):
+            """Run a single optimizer with timeout"""
+            if self.stop_flag.is_set():
+                return None
+                
+            self.logger.info(f"Starting optimizer: {name}")
+            self.current_optimizer = optimizer
             
-            # Do a simple local search to improve the solution
-            for i in range(min(max_evals - 1, 99)):  # Keep evaluation count reasonable
-                # Generate a nearby solution
-                new_solution = best_solution + np.random.normal(0, 0.1, self.dim)
-                # Keep within bounds
-                for j in range(self.dim):
-                    new_solution[j] = max(self.bounds[j][0], min(self.bounds[j][1], new_solution[j]))
-                # Evaluate
-                new_score = objective_func(new_solution)
-                total_evaluations += 1
-                # Update if better
-                if new_score < best_score:
-                    best_solution = new_solution
-                    best_score = new_score
+            try:
+                # Set iteration budget
+                iter_max_evals = max_evals // len(self.optimizers) if max_evals else 1000
                 
-                # Simple log every 10 iterations 
-                if i % 10 == 0:
-                    self.logger.info(f"Iteration {i}, best score: {best_score}")
+                # Run with timeout
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(optimizer.optimize, objective_func, iter_max_evals)
+                    try:
+                        result = future.result(timeout=self.iteration_timeout)
+                        if isinstance(result, tuple):
+                            return result[0], result[1]  # solution, score
+                        return result, objective_func(result)
+                    except TimeoutError:
+                        self.logger.warning(f"Optimizer {name} timed out")
+                        return None
+                    except Exception as e:
+                        self.logger.error(f"Error in optimizer {name}: {str(e)}")
+                        return None
+            except Exception as e:
+                self.logger.error(f"Failed to run optimizer {name}: {str(e)}")
+                return None
+
+        try:
+            best_solution = None
+            best_score = float('inf')
+            
+            # Run optimizers sequentially with timeouts
+            for name, optimizer in self.optimizers.items():
+                if time.time() - start_time > self.timeout:
+                    self.logger.warning("Global timeout reached")
+                    break
                     
-                # Update convergence curve
-                convergence_curve.append(best_score)
+                if not check_resources():
+                    self.logger.warning("Resource limit exceeded")
+                    break
                 
-            # Simple convergence curve
-            # convergence_curve = [(0, best_score), (total_evaluations, best_score)]
+                result = run_single_optimizer(name, optimizer)
+                if result is not None:
+                    solution, score = result
+                    if score < best_score:
+                        best_score = score
+                        best_solution = solution
+                        self.logger.info(f"New best score: {best_score} from {name}")
+                
+                # Force garbage collection between optimizers
+                gc.collect()
+                
+            if best_solution is not None:
+                self.best_solution = best_solution
+                self.best_score = best_score
+                return best_solution, best_score
+            else:
+                self.logger.error("No valid solution found")
+                return None, float('inf')
                 
         except Exception as e:
-            self.logger.error(f"Error in Meta-Optimizer optimize: {str(e)}")
-            
-            # Generate fallback solution if needed
-            if best_solution is None:
-                best_solution = np.random.uniform(low=[b[0] for b in self.bounds],
-                                               high=[b[1] for b in self.bounds],
-                                               size=self.dim)
-                best_score = objective_func(best_solution)
-                total_evaluations = 1
-                convergence_curve = [best_score, best_score]
-        
-        # Record run time
-        end_time = time.time()
-        self.end_time = end_time
-        runtime = end_time - start_time
-        
-        # Save state
-        self.logger.info(f"Completed optimize. Best score: {best_score}, Runtime: {runtime:.2f}s")
-        self.best_solution = best_solution
-        self.best_score = best_score
-        self.total_evaluations = total_evaluations
-        self.convergence_curve = convergence_curve
-        
-        # Return result - must be a numpy array for compatibility with benchmark
-        return np.array(best_solution)
+            self.logger.error(f"Optimization failed: {str(e)}")
+            return None, float('inf')
+        finally:
+            self.stop_flag.clear()
+            self.current_optimizer = None
+            duration = time.time() - start_time
+            self.logger.info(f"Optimization completed in {duration:.2f} seconds")
 
     def run(self, objective_func: Callable, max_evals: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -463,6 +476,8 @@ class MetaOptimizer:
         self.best_score = float('inf')
         self.total_evaluations = 0
         self.convergence_curve = []
+        self.stop_flag.clear()
+        self.current_optimizer = None
 
     def set_objective(self, objective_func: Callable):
         """Set the objective function for optimization.
@@ -599,3 +614,72 @@ class MetaOptimizer:
                 score=score,
                 evaluations=evaluations
             )
+
+    def stop(self):
+        """Stop optimization"""
+        self.stop_flag.set()
+        if self.current_optimizer and hasattr(self.current_optimizer, 'stop'):
+            self.current_optimizer.stop()
+
+    def _optimize(self, objective_function, max_evals):
+        self.logger.info("Algorithm selection visualization enabled")
+        self.logger.debug(f"Available optimizers: {list(self.optimizers.keys())}")
+        
+        # Extract problem features
+        features = self._extract_problem_features(objective_function)
+        self.logger.debug(f"Extracted problem features: {features}")
+        
+        # Classify problem
+        problem_type = self._classify_problem(features)
+        self.logger.debug(f"Classified problem as: {problem_type}")
+        self.logger.info(f"Problem classified as: {problem_type}")
+        
+        # Select initial optimizer
+        selected_optimizers = self._select_optimizers(problem_type, features)
+        self.logger.debug(f"Selected optimizers: {selected_optimizers}")
+        
+        best_solution = None
+        best_score = float('inf')
+        total_evals = 0
+        
+        start_time = time.time()
+        
+        try:
+            for i, opt_name in enumerate(selected_optimizers, 1):
+                if self._check_stop_criteria(total_evals, max_evals, best_score):
+                    break
+                    
+                self.logger.info(f"Recorded selection of optimizer {opt_name} for iteration {i}")
+                optimizer = self.optimizers[opt_name]
+                optimizer.reset()
+                
+                remaining_evals = max_evals - total_evals
+                if remaining_evals <= 0:
+                    break
+                    
+                result = optimizer.optimize(objective_function, max_evals=remaining_evals)
+                
+                if result.success and result.best_score < best_score:
+                    best_score = result.best_score
+                    best_solution = result.best_solution
+                    self.logger.info(f"New best solution from {opt_name}: {best_score}")
+                
+                total_evals += result.evaluations
+                
+                if time.time() - start_time > self.timeout:
+                    self.logger.warning("Meta-optimization timeout reached")
+                    break
+                    
+        except Exception as e:
+            self.logger.error(f"Error during meta-optimization: {str(e)}")
+            if best_solution is None:
+                raise
+                
+        return best_solution, best_score
+
+    def _select_optimizers(self, problem_type, features):
+        """Select appropriate optimizers based on problem classification."""
+        # For demonstration, randomly select one optimizer
+        selected = np.random.choice(list(self.optimizers.keys()), size=1)
+        self.logger.info(f"Randomly selected 1 optimizers for demonstration: {selected}")
+        return selected

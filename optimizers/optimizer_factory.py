@@ -9,11 +9,32 @@ import numpy as np
 import logging
 import scipy.optimize as optimize
 import time
-from .base_optimizer import BaseOptimizer
-from .de import DifferentialEvolutionOptimizer
-from .es import EvolutionStrategyOptimizer
-from .aco import AntColonyOptimizer
-from .gwo import GreyWolfOptimizer
+from optimizers.base_optimizer import BaseOptimizer
+from optimizers.ant_colony import AntColonyOptimizer
+from optimizers.grey_wolf import GreyWolfOptimizer
+from optimizers.differential_evolution import DifferentialEvolutionOptimizer
+from optimizers.evolution_strategy import EvolutionStrategyOptimizer
+from meta.meta_optimizer import MetaOptimizer
+import importlib
+import sys
+import os
+
+# Add the project root to the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import and reload optimizer modules
+from optimizers.ant_colony import AntColonyOptimizer
+from optimizers.grey_wolf import GreyWolfOptimizer
+from optimizers.differential_evolution import DifferentialEvolutionOptimizer
+from optimizers.evolution_strategy import EvolutionStrategyOptimizer
+from meta.meta_optimizer import MetaOptimizer
+
+# Force reload of modules
+importlib.reload(sys.modules['optimizers.ant_colony'])
+importlib.reload(sys.modules['optimizers.grey_wolf'])
+importlib.reload(sys.modules['optimizers.differential_evolution'])
+importlib.reload(sys.modules['optimizers.evolution_strategy'])
+importlib.reload(sys.modules['meta.meta_optimizer'])
 
 class DifferentialEvolutionWrapper(DifferentialEvolutionOptimizer):
     """Wrapper for Differential Evolution optimizer that implements BaseOptimizer interface."""
@@ -1057,25 +1078,40 @@ class OptimizerFactory:
         return list(self.optimizers.keys())
 
 
-def create_optimizers(dim: int = 5, bounds: Optional[List[Tuple[float, float]]] = None) -> Dict[str, Any]:
-    """
-    Create dictionary of optimization algorithms
+def create_optimizers(dim, population_size=None, timeout=60, iteration_timeout=10, **kwargs):
+    """Create a dictionary of optimizers with proper timeout handling."""
+    optimizers = {}
     
-    Args:
-        dim: Problem dimension
-        bounds: Optional bounds for each dimension
-        
-    Returns:
-        Dictionary mapping algorithm names to optimizer instances
-    """
-    if bounds is None:
-        bounds = [(0, 1)] * dim
-        
-    return {
-        'DE (Standard)': DifferentialEvolutionWrapper(dim=dim, bounds=bounds, adaptive=False, name="DE (Standard)"),
-        'DE (Adaptive)': DifferentialEvolutionWrapper(dim=dim, bounds=bounds, population_size=20, adaptive=True, name="DE (Adaptive)"),
-        'ES (Standard)': EvolutionStrategyWrapper(dim=dim, bounds=bounds, adaptive=False, name="ES (Standard)"),
-        'ES (Adaptive)': EvolutionStrategyWrapper(dim=dim, bounds=bounds, adaptive=True, name="ES (Adaptive)"),
-        'ACO': AntColonyWrapper(dim=dim, bounds=bounds, adaptive=True, name="ACO"),
-        'GWO': GreyWolfWrapper(dim=dim, bounds=bounds, name="GWO")
+    # Common parameters for all optimizers
+    optimizer_params = {
+        'dim': dim,
+        'population_size': population_size,
+        'timeout': timeout,
+        'iteration_timeout': iteration_timeout
     }
+    
+    # Base optimizers
+    optimizers['ACO'] = AntColonyOptimizer(**optimizer_params)
+    optimizers['GWO'] = GreyWolfOptimizer(**optimizer_params)
+    optimizers['DE'] = DifferentialEvolutionOptimizer(**optimizer_params)
+    optimizers['ES'] = EvolutionStrategyOptimizer(**optimizer_params)
+    
+    # Adaptive variants
+    adaptive_params = optimizer_params.copy()
+    adaptive_params['adaptive'] = True
+    optimizers['DE (Adaptive)'] = DifferentialEvolutionOptimizer(**adaptive_params)
+    optimizers['ES (Adaptive)'] = EvolutionStrategyOptimizer(**adaptive_params)
+    
+    # Meta-optimizer
+    base_optimizers = {
+        'DE': optimizers['DE'],
+        'ES': optimizers['ES']
+    }
+    meta_params = optimizer_params.copy()
+    meta_params.update({
+        'optimizers': base_optimizers,
+        'n_parallel': 2
+    })
+    optimizers['Meta-Optimizer'] = MetaOptimizer(**meta_params)
+    
+    return optimizers

@@ -86,89 +86,69 @@ class OptimizerState:
 class BaseOptimizer(ABC):
     """Base class for optimization algorithms."""
     
-    def __init__(self, dim: int, bounds: List[Tuple[float, float]], 
-                 population_size: Optional[int] = None,
-                 adaptive: bool = True):
-        """
-        Initialize optimizer.
-        
-        Args:
-            dim: Number of dimensions
-            bounds: List of (min, max) bounds for each dimension
-            population_size: Optional population size
-            adaptive: Whether to use adaptive parameters
-        """
+    def __init__(self,
+                 dim: int,
+                 bounds: List[Tuple[float, float]],
+                 population_size: int = 30,
+                 adaptive: bool = False,
+                 timeout: float = 60,
+                 iteration_timeout: float = 10,
+                 verbose: bool = False):
+        """Initialize base optimizer."""
+        # Store parameters
         self.dim = dim
         self.bounds = bounds
-        self.population_size = population_size or min(100, 10 * dim)
+        self.population_size = population_size
         self.adaptive = adaptive
+        self.timeout = timeout
+        self.iteration_timeout = iteration_timeout
+        self.verbose = verbose
         
-        # Initialize state
-        self.objective_func = None
-        self.max_evals = None
-        self.best_solution = None
-        self.best_score = float('inf')
-        self.population = None
-        self.evaluations = 0
-        self._current_iteration = 0
-        self.start_time = 0
-        self.end_time = 0
-        
-        # Performance tracking
-        self.success_history = []
-        self.diversity_history = []
-        self.convergence_curve = []
-        self.history = []
-        
-        # Advanced metrics
-        self.time_per_iteration = []
-        self.last_improvement_iter = 0
-        self.convergence_rate = None
-        self.stagnation_count = 0
-        
-        # Problem characteristics
-        self.gradient_estimates = []
-        self.local_optima_count = 0
-        self.landscape_ruggedness = None
-        
-        # Exploration/exploitation balance
-        self.exploration_phase = True
-        self.selection_pressure = []
-        
-        # Parameter adaptation
-        self.parameter_history = {}
-        
-        # Progress callback for live visualization
+        # Initialize tolerance and progress callback
+        self.tolerance = 1e-8
         self.progress_callback = None
         
-        # Configure logging
-        self.logger = logging.getLogger(f"{self.__class__.__name__}")
-        self.logger.setLevel(logging.DEBUG)
+        # Initialize best solution tracking
+        self.best_score = float('inf')
+        self.best_solution = None
         
-        # Log initialization
-        self.logger.info(f"Initializing {self.__class__.__name__} with dim={dim}")
-        self.logger.debug(f"Bounds: {bounds}")
-        self.logger.debug(f"Population size: {self.population_size}")
+        # Initialize population
+        self.population = None
+        self.scores = None
+        
+        # Initialize evaluation counter
+        self.evaluations = 0
+        self._current_iteration = 0
+        self.last_improvement_iter = 0
+        
+        # Initialize logger
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.setLevel(logging.DEBUG if verbose else logging.INFO)
+        
+        # Initialize convergence history
+        self.convergence_curve = []
+        self.eval_curve = []
+        self.time_curve = []
+        self.start_time = None
+        
+        # Initialize parameter history
+        self.param_history = {}
         
     def set_objective(self, func: Callable) -> None:
         """Set objective function."""
         self.objective_func = func
         
     def _init_population(self) -> np.ndarray:
-        """Initialize population using Latin Hypercube Sampling."""
-        population = np.zeros((self.population_size, self.dim))
+        """Initialize population with random solutions."""
+        population = np.random.uniform(
+            low=np.array([b[0] for b in self.bounds]),
+            high=np.array([b[1] for b in self.bounds]),
+            size=(self.population_size, self.dim)
+        )
         
-        # Generate Latin Hypercube samples
-        for i in range(self.dim):
-            population[:, i] = np.random.permutation(
-                np.linspace(0, 1, self.population_size)
-            )
-            
-        # Scale to bounds
-        for i in range(self.dim):
-            low, high = self.bounds[i]
-            population[:, i] = low + (high - low) * population[:, i]
-            
+        # Initialize scores array
+        self.scores = np.full(self.population_size, float('inf'))
+        
         return population
         
     def _update_diversity(self) -> None:
@@ -363,7 +343,7 @@ class BaseOptimizer(ABC):
             landscape_ruggedness=self.landscape_ruggedness,
             exploration_phase=self.exploration_phase,
             selection_pressure=self.selection_pressure,
-            parameter_history=self.parameter_history
+            parameter_history=self.param_history
         )
         
     def set_state(self, state: 'OptimizerState') -> None:
@@ -388,20 +368,21 @@ class BaseOptimizer(ABC):
         self.landscape_ruggedness = state.landscape_ruggedness
         self.exploration_phase = state.exploration_phase
         self.selection_pressure = state.selection_pressure
-        self.parameter_history = state.parameter_history
+        self.param_history = state.parameter_history
         
     def reset(self) -> None:
         """Reset optimizer state."""
         self.best_solution = None
-        self.best_score = float('inf')
+        self.best_score = float('inf')  # Reset to infinity
         self.population = None
         self.evaluations = 0
         self._current_iteration = 0
-        self.start_time = 0
+        self.start_time = None
         self.end_time = 0
+        self.stop_flag = False
+        self.convergence_curve = []
         self.success_history = []
         self.diversity_history = []
-        self.convergence_curve = []
         self.history = []
         self.time_per_iteration = []
         self.last_improvement_iter = 0
@@ -412,44 +393,32 @@ class BaseOptimizer(ABC):
         self.landscape_ruggedness = None
         self.exploration_phase = True
         self.selection_pressure = []
-        self.parameter_history = {}
+        self.param_history = {}
     
     def optimize(self, objective_func: Callable, max_evals: Optional[int] = None) -> np.ndarray:
         """
-        Optimize the objective function and return the best solution.
-        This method is designed to be compatible with the OptimizerAnalyzer.
+        Optimize the objective function.
         
         Args:
-            objective_func: Objective function to minimize
+            objective_func: Function to minimize
             max_evals: Maximum number of function evaluations
             
         Returns:
-            Best solution found (numpy array)
+            Best solution found
         """
-        self.logger.info(f"Starting {self.__class__.__name__}.optimize with max_evals={max_evals}")
+        # Set max evaluations
+        self.max_evals = max_evals or 1000 * self.dim
+        self.max_iterations = self.max_evals // self.population_size
         
-        # Run the optimization process
+        # Initialize if needed
+        if self.population is None:
+            self.population = self._init_population()
+        
+        # Run optimization
         result = self.run(objective_func, max_evals)
         
-        # Extract the best solution to return
-        best_solution = result.get('solution', None)
-        
-        # Convert to numpy array if needed
-        if best_solution is not None and not isinstance(best_solution, np.ndarray):
-            if isinstance(best_solution, list):
-                best_solution = np.array(best_solution)
-            else:
-                # Try to convert or fallback to zeros
-                try:
-                    best_solution = np.array(best_solution)
-                except:
-                    self.logger.error(f"Could not convert solution to numpy array: {best_solution}")
-                    best_solution = np.zeros(self.dim)
-        
-        # Return the best solution
-        self.logger.info(f"Completed optimize with best score: {self.best_score}")
-        return best_solution
-    
+        return self.best_solution
+
     def _bound_solution(self, solution: np.ndarray) -> np.ndarray:
         """Ensure solution stays within bounds.
         
@@ -502,3 +471,16 @@ class BaseOptimizer(ABC):
                 self.convergence_curve.append(self.convergence_curve[-1])
             else:
                 self.convergence_curve.append(self.best_score)
+
+    def stop(self):
+        """Stop the optimization process"""
+        self.stop_flag = True
+
+    def _check_stop_criteria(self):
+        """Check if optimization should stop"""
+        return (
+            getattr(self, 'stop_flag', False) or 
+            getattr(self, '_current_iteration', 0) >= getattr(self, 'max_iterations', float('inf')) or 
+            (self.best_score is not None and self.best_score <= self.tolerance) or
+            (getattr(self, 'start_time', None) and time.time() - self.start_time > self.timeout)
+        )

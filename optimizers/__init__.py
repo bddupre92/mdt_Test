@@ -1,13 +1,17 @@
-from .de import DifferentialEvolutionOptimizer
-from .es import EvolutionStrategyOptimizer
+"""
+Optimizers package initialization
+"""
+
+from .base_optimizer import BaseOptimizer
 from .aco import AntColonyOptimizer
 from .gwo import GreyWolfOptimizer
-from .optimizer_factory import create_optimizers
+from .differential_evolution import DifferentialEvolutionOptimizer
+from .evolution_strategy import EvolutionStrategyOptimizer
 
 __all__ = [
-    'DifferentialEvolutionOptimizer',
-    'EvolutionStrategyOptimizer',
+    'BaseOptimizer',
     'AntColonyOptimizer',
     'GreyWolfOptimizer',
-    'create_optimizers'
+    'DifferentialEvolutionOptimizer',
+    'EvolutionStrategyOptimizer'
 ]

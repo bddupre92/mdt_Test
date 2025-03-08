@@ -12,19 +12,28 @@ class EvolutionStrategyOptimizer(BaseOptimizer):
                  population_size: Optional[int] = None,
                  mu: Optional[int] = None,
                  sigma: float = 0.1,
-                 adaptive: bool = True):
+                 adaptive: bool = True,
+                 timeout: float = 60,
+                 iteration_timeout: float = 10,
+                 verbose: bool = False,
+                 **kwargs):
         """
         Initialize ES optimizer.
         
         Args:
             dim: Number of dimensions
             bounds: List of (min, max) bounds for each dimension
-            population_size: Optional population size (λ)
-            mu: Parent population size (μ)
+            population_size: Optional population size (lambda)
+            mu: Number of parents (if None, mu = population_size // 4)
             sigma: Initial step size
             adaptive: Whether to use adaptive parameters
+            timeout: Maximum optimization time
+            iteration_timeout: Maximum time per iteration
+            verbose: Whether to show progress bars
         """
-        super().__init__(dim, bounds, population_size, adaptive)
+        super().__init__(dim=dim, bounds=bounds, population_size=population_size, 
+                        adaptive=adaptive, timeout=timeout, 
+                        iteration_timeout=iteration_timeout, verbose=verbose)
         
         # ES-specific parameters
         self.mu = mu or self.population_size // 4

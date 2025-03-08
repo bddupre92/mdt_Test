@@ -913,3 +913,12 @@ class OptimizerAnalyzer:
         # Save report
         with open('results/optimization_report.html', 'w') as f:
             f.write(html_content)
+    
+    def _update_plot_data(self):
+        """Update plot data"""
+        try:
+            # Code that might raise an exception
+            pass
+        except SomeException as e:
+            # Handle the exception
+            print(f"An error occurred: {e}")

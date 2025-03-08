@@ -16,6 +16,22 @@ The framework consists of the following main components:
 4. **Drift Detection**: System for detecting and adapting to concept drift
 5. **Benchmarking**: Tools for evaluating and comparing optimizers
 6. **Utilities**: Common utilities used across the framework
+7. **Migraine Prediction**: Integration with migraine prediction functionality
+
+## Module Availability Detection
+
+The framework implements a robust system for detecting the availability of optional modules:
+
+- `MIGRAINE_MODULES_AVAILABLE`: Checks if migraine prediction modules are available
+- `OPTIMIZER_AVAILABLE`: Checks if the MetaOptimizer is available
+- `EXPLAINABILITY_AVAILABLE`: Checks if explainability components are available
+
+These flags are set during initialization and used throughout the framework to determine whether certain functionality should be enabled. If a required module is not available, the framework will log a warning and skip the functionality rather than crashing.
+
+This design ensures that:
+1. Users get informative error messages when attempting to use unavailable functionality
+2. The framework can run with a minimal set of dependencies
+3. Additional functionality can be enabled by installing the appropriate packages
 
 ## Component Relationships
 

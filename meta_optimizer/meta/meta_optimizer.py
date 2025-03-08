@@ -55,12 +55,17 @@ class MetaOptimizer:
                  verbose: bool = False):
         self.dim = dim
         self.bounds = bounds
+        # Set verbosity for all optimizers
+        for optimizer in optimizers.values():
+            if hasattr(optimizer, 'verbose'):
+                optimizer.verbose = verbose
         self.optimizers = optimizers
         self.history_file = history_file
         self.selection_file = selection_file
         self.n_parallel = n_parallel
         self.budget_per_iteration = budget_per_iteration
         self.default_max_evals = default_max_evals
+        self.verbose = verbose
         self.logger = logging.getLogger('MetaOptimizer')
         if not self.logger.handlers:  
             handler = logging.StreamHandler()
@@ -201,52 +206,20 @@ class MetaOptimizer:
             
         return selected_optimizers
 
-    def _run_single_optimizer(self,
-                            optimizer_name: str,
-                            optimizer: 'BaseOptimizer',
-                            objective_func: Callable,
-                            max_evals: int,
-                            record_history: bool = True) -> Optional[OptimizationResult]:
-        """Run a single optimizer and return its results"""
+    def _run_single_optimizer(self, optimizer_name: str, objective_func: Callable, max_evals: int) -> OptimizationResult:
+        """Run a single optimizer and return its result."""
+        optimizer = self.optimizers[optimizer_name]
+        optimizer.reset()
+        
+        # Set max_iterations based on max_evals
+        optimizer.max_iterations = max_evals
+        optimizer.max_evals = max_evals
+        
+        # Run optimization
         try:
-            # Reset optimizer state
-            optimizer.reset()
-            
-            # Set max evaluations
-            optimizer.max_evals = max_evals
-            
-            # Create wrapped objective that ensures numpy array input
-            def wrapped_objective(x):
-                x = np.asarray(x)
-                return float(objective_func(x))
-            
-            # Run optimization
-            start_time = time.time()
-            solution, score = optimizer.optimize(wrapped_objective)
-            end_time = time.time()
-            
-            if solution is None:
-                return None
-                
-            # Convert to numpy array and ensure float score
-            solution = np.asarray(solution)
-            score = float(score)
-            
-            with self._eval_lock:
-                self.total_evaluations += optimizer.evaluations
-                if record_history and hasattr(self, 'optimization_history'):
-                    # Record optimization history
-                    self.optimization_history.append(score)
-                    if self.current_features:
-                        self.history.add_record(
-                            features=self.current_features,
-                            optimizer=optimizer_name,
-                            performance=score,
-                            success=score < 1e-4
-                        )
-            
-            success = score < 1e-4
-            
+            # Unpack the tuple returned by optimize
+            solution, score = optimizer.optimize(objective_func, max_evals=max_evals)
+            success = score < float('inf')
             return OptimizationResult(
                 optimizer_name=optimizer_name,
                 solution=solution,
@@ -254,10 +227,15 @@ class MetaOptimizer:
                 n_evals=optimizer.evaluations,
                 success=success
             )
-            
         except Exception as e:
             self.logger.error(f"Optimizer {optimizer_name} failed: {str(e)}")
-            return None
+            return OptimizationResult(
+                optimizer_name=optimizer_name,
+                solution=None,
+                score=float('inf'),
+                n_evals=0,
+                success=False
+            )
 
     def _update_selection_tracker(self, results):
         """Update selection tracker with optimization results."""
@@ -320,144 +298,241 @@ class MetaOptimizer:
             for key, value in context.items():
                 self.current_features[key] = value
                 
-        # Main optimization loop
-        while self.total_evaluations < max_evals:
-            self._current_iteration += 1
+        # Main optimization loop with progress bar
+        with tqdm(total=max_evals, desc=f"Meta Optimization ({self.current_problem_type or 'unknown'})", 
+                  unit="evals", position=0, leave=True, 
+                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]',
+                  dynamic_ncols=True) as pbar:
+            pbar.n = self.total_evaluations
+            pbar.set_postfix_str(f"Best: {self.best_score:.2e} | Iter: {self._current_iteration}")
+            pbar.refresh()
             
-            # Select optimizer to use for this iteration based on problem features
-            selected_optimizers = self._select_optimizer(context or {})
+            # Store progress bar for updates
+            self._progress_bar = pbar
             
-            # Check if we need to select at least one
-            if not selected_optimizers:
-                # Fallback: select a random optimizer
-                selected_optimizers = [np.random.choice(list(self.optimizers.keys()))]
+            while self.total_evaluations < max_evals:
+                self._current_iteration += 1
                 
-            self.logger.debug(f"Selected optimizers: {selected_optimizers}")
-            
-            # Run each selected optimizer for a portion of the budget
-            per_optimizer_budget = self.budget_per_iteration // len(selected_optimizers)
-            optimizer_futures = {}
-            
-            # Record selections in algo visualization
-            if hasattr(self, 'enable_algo_viz') and self.enable_algo_viz and hasattr(self, 'algo_selection_viz') and self.algo_selection_viz:
-                for optimizer_name in selected_optimizers:
-                    self.algo_selection_viz.record_selection(
-                        iteration=self._current_iteration,
-                        optimizer=optimizer_name,
-                        problem_type=self.current_problem_type or "unknown",
-                        score=self.best_score,
-                        context=context
-                    )
-                    # Log that we've recorded a selection
-                    self.logger.info(f"Recorded selection of optimizer {optimizer_name} for iteration {self._current_iteration}")
-            
-            with concurrent.futures.ThreadPoolExecutor(max_workers=len(selected_optimizers)) as executor:
-                # Submit each optimizer task
-                for optimizer_name in selected_optimizers:
-                    if optimizer_name not in self.optimizers:
-                        self.logger.warning(f"Selected optimizer {optimizer_name} not available")
-                        continue
-                        
-                    optimizer = self.optimizers[optimizer_name]
-                    optimizer_futures[executor.submit(
-                        self._run_single_optimizer,
-                        optimizer_name,
-                        optimizer,
-                        objective_func,
-                        per_optimizer_budget
-                    )] = optimizer_name
-                
-                # Process results as they complete
-                for future in concurrent.futures.as_completed(optimizer_futures):
-                    optimizer_name = optimizer_futures[future]
-                    try:
-                        result = future.result()
-                        if result:
-                            # Update best solution if this optimizer found a better one
-                            if result.score < self.best_score:
-                                self.best_score = result.score
-                                self.best_solution = result.solution
-                                self.logger.info(
-                                    f"New best solution from {optimizer_name}: {self.best_score:.10f}"
-                                )
-                                
-                            # Track evaluations
-                            self.total_evaluations += result.n_evals
-                            
-                            # Update convergence curve
-                            if len(self.convergence_curve) == 0:
-                                self.convergence_curve.append((0, result.score))
-                            self.convergence_curve.append((self.total_evaluations, self.best_score))
-                            
-                            # Record history
-                            self.optimization_history.append({
-                                'iteration': self._current_iteration,
-                                'selected_optimizer': optimizer_name,
-                                'score': result.score,
-                                'best_score': self.best_score,
-                                'evaluations': result.n_evals,
-                                'total_evaluations': self.total_evaluations,
-                                'success': result.success,
-                                'features': self.current_features,
-                                'problem_type': self.current_problem_type
-                            })
-                            
-                            # Update selection tracker
-                            self._update_selection_tracker(result)
-                            
-                    except Exception as e:
-                        self.logger.error(f"Error processing results from {optimizer_name}: {e}")
+                # Calculate remaining evaluations
+                remaining_evals = max_evals - self.total_evaluations
+                if remaining_evals <= 0:
+                    continue
                     
-            # Check if we're done
-            if self.total_evaluations >= max_evals:
-                break
-            
-            # Check if we've converged
-            if self._current_iteration > 1 and len(self.convergence_curve) > 1:
-                prev_score = self.convergence_curve[-2][1]
-                curr_score = self.convergence_curve[-1][1]
-                improvement = prev_score - curr_score
+                # Select optimizer to use for this iteration based on problem features
+                selected_optimizers = self._select_optimizer(context or {})
                 
-                # If improvement is very small, we might have converged
-                if improvement < 1e-8 * prev_score:
-                    self.logger.info(f"Convergence detected after {self._current_iteration} iterations")
-                    break
+                # Check if we need to select at least one
+                if not selected_optimizers:
+                    # Fallback: select a random optimizer
+                    selected_optimizers = [np.random.choice(list(self.optimizers.keys()))]
+                self.logger.debug(f"Selected optimizers: {selected_optimizers}")
+                
+                # Calculate budget for this iteration
+                iteration_budget = min(self.budget_per_iteration, remaining_evals)
+                
+                # Run each selected optimizer for a portion of the budget
+                per_optimizer_budget = iteration_budget // len(selected_optimizers)
+                optimizer_futures = {}
+                
+                # Record selections in algo visualization
+                if hasattr(self, 'enable_algo_viz') and self.enable_algo_viz and hasattr(self, 'algo_selection_viz') and self.algo_selection_viz:
+                    for optimizer_name in selected_optimizers:
+                        self.algo_selection_viz.record_selection(
+                            iteration=self._current_iteration,
+                            optimizer=optimizer_name,
+                            problem_type=self.current_problem_type or "unknown",
+                            score=self.best_score,
+                            context=context
+                        )
+                        # Log that we've recorded a selection
+                        self.logger.info(f"Recorded selection of optimizer {optimizer_name} for iteration {self._current_iteration}")
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=len(selected_optimizers)) as executor:
+                    # Submit each optimizer task
+                    for optimizer_name in selected_optimizers:
+                        if optimizer_name not in self.optimizers:
+                            self.logger.warning(f"Selected optimizer {optimizer_name} not available")
+                            continue
+                            
+                        optimizer = self.optimizers[optimizer_name]
+                        optimizer_futures[executor.submit(
+                            self._run_single_optimizer,
+                            optimizer_name,
+                            objective_func,
+                            per_optimizer_budget
+                        )] = optimizer_name
+                
+                    # Process results as they complete
+                    for future in concurrent.futures.as_completed(optimizer_futures):
+                        optimizer_name = optimizer_futures[future]
+                        try:
+                            result = future.result()
+                            if result and result.solution is not None:
+                                # Update best solution if this optimizer found a better one
+                                if result.score < self.best_score:
+                                    self.best_score = result.score
+                                    self.best_solution = result.solution.copy()
+                                    self.logger.info(
+                                        f"New best solution from {optimizer_name}: {self.best_score:.10f}"
+                                    )
+                                    # Update progress bar with new best score
+                                    pbar.set_postfix_str(f"Best: {self.best_score:.2e} | Iter: {self._current_iteration} | Opt: {optimizer_name}")
+                                    
+                                # Track evaluations and update progress
+                                self.total_evaluations += result.n_evals
+                                pbar.n = self.total_evaluations
+                                pbar.refresh()
+                                
+                                # Update progress bar description
+                                runtime = time.time() - self.start_time
+                                evals_per_sec = self.total_evaluations / max(runtime, 0.001)
+                                pbar.set_postfix({
+                                    "best": f"{self.best_score:.2e}",
+                                    "opt": optimizer_name.split('Optimizer')[0],
+                                    "iter": self._current_iteration,
+                                    "success": f"{result.success * 100:.0f}%",
+                                    "e/s": f"{evals_per_sec:.1f}"
+                                })
+                                
+                                # Update convergence curve
+                                if len(self.convergence_curve) == 0:
+                                    self.convergence_curve.append((0, result.score))
+                                self.convergence_curve.append((self.total_evaluations, self.best_score))
+                                
+                                # Record history
+                                self.optimization_history.append({
+                                    'iteration': self._current_iteration,
+                                    'selected_optimizer': optimizer_name,
+                                    'score': result.score,
+                                    'best_score': self.best_score,
+                                    'evaluations': result.n_evals,
+                                    'total_evaluations': self.total_evaluations,
+                                    'success': result.success,
+                                    'features': self.current_features,
+                                    'problem_type': self.current_problem_type
+                                })
+                                
+                                # Update selection tracker
+                                if hasattr(self, 'selection_tracker') and self.selection_tracker:
+                                    self.selection_tracker.record_selection(
+                                        problem_type=self.current_problem_type,
+                                        optimizer=optimizer_name,
+                                        features=self.current_features,
+                                        success=result.success,
+                                        score=result.score
+                                    )
+                        except Exception as e:
+                            self.logger.error(f"Error processing result from {optimizer_name}: {str(e)}")
+                            continue
+                
+                # Check if we've converged
+                if self._current_iteration > 1 and len(self.convergence_curve) > 1:
+                    prev_score = self.convergence_curve[-2][1]
+                    curr_score = self.convergence_curve[-1][1]
+                    improvement = prev_score - curr_score
+                    
+                    # If improvement is very small, we might have converged
+                    if improvement < 1e-8 * prev_score:
+                        self.logger.info(f"Convergence detected after {self._current_iteration} iterations")
+                        return self.best_solution
         
-        # Record end time
+        # Record end time and cleanup
         self.end_time = time.time()
+        runtime = self.end_time - self.start_time
+        
+        # Calculate success metrics
+        success_count = sum(1 for h in self.optimization_history if h.get('success', False))
+        total_runs = len(self.optimization_history)
+        success_rate = (success_count / total_runs * 100) if total_runs > 0 else 0
         
         # Log final results
-        self.logger.info(f"Optimization completed in {self.end_time - self.start_time:.2f} seconds")
-        self.logger.info(f"Total evaluations: {self.total_evaluations}")
-        self.logger.info(f"Best score: {self.best_score:.10f}")
+        self.logger.info("Optimization Summary:")
+        self.logger.info(f"  Runtime: {runtime:.2f} seconds")
+        self.logger.info(f"  Total evaluations: {self.total_evaluations}")
+        self.logger.info(f"  Best score: {self.best_score:.10f}")
+        self.logger.info(f"  Success rate: {success_rate:.1f}%")
+        self.logger.info(f"  Iterations: {self._current_iteration}")
+        
+        # Update visualization if enabled
+        if self.enable_viz and self.live_viz_monitor:
+            self.live_viz_monitor.flush()
+            if self.save_viz_path:
+                self.live_viz_monitor.save(self.save_viz_path)
         
         # Return best solution
         return self.best_solution
 
-    def run(self, objective_func: Callable, max_evals: Optional[int] = None) -> Dict[str, Any]:
+    def run(self, objective_func: Optional[Callable] = None, max_evals: Optional[int] = None, record_history: bool = True, export_data: bool = False, export_format: str = 'json', export_path: Optional[str] = None) -> Dict[str, Any]:
         """
-        Run optimization method compatible with the Meta-Optimizer interface.
+        Run the optimizer with the given objective function.
         
         Args:
             objective_func: Objective function to minimize
-            max_evals: Maximum number of function evaluations
+            max_evals: Maximum function evaluations (uses default if None)
+            record_history: Whether to record optimization history
+            export_data: Whether to export optimization data
+            export_format: Format for data export ('json', 'csv', or 'both')
+            export_path: Path to save exported data (uses 'results/optimization_data' if None)
             
         Returns:
             Dictionary with optimization results
         """
-        self.logger.info("Starting Meta-Optimizer run")
+        # Use stored objective function if none provided
+        if objective_func is None:
+            if hasattr(self, 'objective_func'):
+                objective_func = self.objective_func
+            else:
+                raise ValueError("No objective function provided or stored")
         
-        # Call the optimize method which contains our implementation
-        self.optimize(objective_func, max_evals)
+        # Store objective function
+        self.objective_func = objective_func
         
-        # Return result in expected dictionary format
-        return {
-            'solution': self.best_solution,
-            'score': self.best_score,
+        # Run optimization
+        solution = self.optimize(objective_func, max_evals=max_evals)
+        
+        # Extract optimizer states
+        optimizer_states = {}
+        for name, optimizer in self.optimizers.items():
+            if hasattr(optimizer, 'get_state'):
+                optimizer_states[name] = optimizer.get_state()
+        
+        # Update selection strategy if needed
+        if optimizer_states:
+            self._update_selection_strategy(optimizer_states)
+        
+        # Prepare result dictionary
+        result = {
+            'solution': solution.tolist() if isinstance(solution, np.ndarray) else solution,
+            'score': float(self.best_score) if hasattr(self, 'best_score') else None,
             'evaluations': self.total_evaluations,
-            'runtime': (self.end_time - self.start_time) if hasattr(self, 'end_time') and self.end_time > 0 else 0,
-            'convergence_curve': self.convergence_curve if hasattr(self, 'convergence_curve') else []
+            'iterations': self._current_iteration,
+            'runtime': time.time() - self.start_time,
+            'problem_type': self.current_problem_type,
+            'best_optimizer': self.best_optimizer,
+            'optimizer_states': {name: state.to_dict() for name, state in optimizer_states.items()},
+            'success': hasattr(self, 'best_score') and self.best_score is not None
         }
+        
+        # Export data if requested
+        if export_data:
+            # Set default export path if none provided
+            if export_path is None:
+                export_path = os.path.join('results', 'optimization_data', 
+                                          f"optimization_{time.strftime('%Y%m%d_%H%M%S')}")
+            
+            # Export data in the specified format
+            export_file = self.export_data(
+                filename=export_path,
+                format=export_format,
+                include_history=record_history,
+                include_selections=True,
+                include_parameters=True
+            )
+            
+            # Add export path to result
+            result['export_path'] = export_file
+        
+        return result
 
     def get_parameters(self) -> Dict[str, Any]:
         """Get optimizer parameters
@@ -635,31 +710,41 @@ class MetaOptimizer:
             data_path: Path to save visualization data
         """
         if self.enable_viz and self.live_viz_monitor:
-            if save_results and results_path:
-                self.live_viz_monitor.save_results(results_path)
-                
-            if save_results and data_path:
-                self.live_viz_monitor.save_data(data_path)
-                
+            try:
+                if save_results and results_path:
+                    # Make sure we're calling the correct method
+                    self.live_viz_monitor.save_results(results_path)
+                    
+                if save_results and data_path:
+                    self.live_viz_monitor.save_data(data_path)
+            except Exception as e:
+                self.logger.error(f"Error saving visualization results: {e}")
+            
+            # Always stop monitoring even if saving failed
             self.live_viz_monitor.stop_monitoring()
             self.live_viz_monitor = None
             self.enable_viz = False
             self.logger.info("Live optimization visualization disabled")
-            
+        
         # Generate algorithm selection visualizations if enabled
         if self.enable_algo_viz and self.algo_selection_viz and save_results:
-            if not results_path and self.save_viz_path:
-                results_path = self.save_viz_path
+            try:
+                if not results_path and self.save_viz_path:
+                    results_path = self.save_viz_path
+                    
+                # Create algorithm selection visualizations
+                save_dir = os.path.dirname(os.path.abspath(results_path))
+                self.algo_selection_viz.plot_selection_frequency(save=True, filename=os.path.join(save_dir, "algorithm_selection_frequency.png"))
+                self.algo_selection_viz.plot_selection_timeline(save=True, filename=os.path.join(save_dir, "algorithm_selection_timeline.png"))
+                self.algo_selection_viz.plot_problem_distribution(save=True, filename=os.path.join(save_dir, "algorithm_selection_by_problem.png"))
+                self.algo_selection_viz.plot_performance_comparison(save=True, filename=os.path.join(save_dir, "optimizer_performance_comparison.png"))
+                self.algo_selection_viz.create_summary_dashboard(save=True, filename=os.path.join(save_dir, "algorithm_selection_dashboard.png"))
                 
-            # Create algorithm selection visualizations
-            self.algo_selection_viz.plot_selection_frequency(save=True)
-            self.algo_selection_viz.plot_selection_timeline(save=True)
-            self.algo_selection_viz.plot_problem_distribution(save=True)
-            self.algo_selection_viz.plot_performance_comparison(save=True)
-            self.algo_selection_viz.plot_phase_selection(save=True)
-            self.algo_selection_viz.create_summary_dashboard(save=True)
-            
-            self.logger.info("Algorithm selection visualizations saved")
+                self.logger.info("Algorithm selection visualizations saved")
+            except Exception as e:
+                self.logger.error(f"Error saving algorithm selection visualizations: {e}")
+                import traceback
+                traceback.print_exc()
             
         self.enable_algo_viz = False
         self.algo_selection_viz = None
@@ -764,3 +849,418 @@ class MetaOptimizer:
         
         self.logger.info(f"Generated {len(visualization_files)} algorithm selection visualizations in {save_dir}")
         return visualization_files
+
+    def _process_optimizer_result(self, result: OptimizationResult) -> None:
+        """Process result from an optimizer."""
+        if not result or not result.solution:
+            return
+            
+        # Update best solution if better
+        if result.score < self.best_score:
+            self.best_score = result.score
+            self.best_solution = result.solution.copy()
+            self.logger.info(f"New best solution from {result.optimizer_name}: {self.best_score}")
+            
+        # Record selection
+        if self.selection_tracker and self.current_features:
+            self.selection_tracker.record_selection(
+                problem_type=self.current_problem_type,
+                optimizer=result.optimizer_name,
+                features=self.current_features,
+                success=result.success,
+                score=result.score
+            )
+
+    def export_data(self, 
+                   filename: str, 
+                   format: str = 'json', 
+                   include_history: bool = True,
+                   include_selections: bool = True,
+                   include_parameters: bool = True) -> str:
+        """
+        Export optimization data to file in specified format.
+        
+        Args:
+            filename: Path to save the data (without extension)
+            format: Export format ('json', 'csv', or 'both')
+            include_history: Whether to include full optimization history
+            include_selections: Whether to include algorithm selections
+            include_parameters: Whether to include parameter adaptation history
+            
+        Returns:
+            Path to the exported file(s)
+        """
+        # Make sure directory exists
+        os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
+        
+        # Prepare data for export
+        export_data = self._prepare_export_data(
+            include_history=include_history,
+            include_selections=include_selections,
+            include_parameters=include_parameters
+        )
+        
+        # Export in the specified format
+        if format.lower() == 'json' or format.lower() == 'both':
+            self._export_to_json(f"{filename}.json", export_data)
+            self.logger.info(f"Exported optimization data to {filename}.json")
+        
+        if format.lower() == 'csv' or format.lower() == 'both':
+            self._export_to_csv(f"{filename}", export_data)
+            self.logger.info(f"Exported optimization data to CSV files in {os.path.dirname(filename)}")
+        
+        return filename
+
+    def _prepare_export_data(self, 
+                           include_history: bool = True,
+                           include_selections: bool = True,
+                           include_parameters: bool = True) -> Dict[str, Any]:
+        """
+        Prepare data for export.
+        
+        Args:
+            include_history: Whether to include full optimization history
+            include_selections: Whether to include algorithm selections
+            include_parameters: Whether to include parameter adaptation history
+            
+        Returns:
+            Dictionary with data for export
+        """
+        # Basic information about the optimization run
+        data = {
+            'optimization_info': {
+                'dimensions': self.dim,
+                'bounds': self.bounds,
+                'total_evaluations': self.total_evaluations,
+                'best_score': float(self.best_score) if hasattr(self, 'best_score') and self.best_score is not None else None,
+                'best_solution': self.best_solution.tolist() if hasattr(self, 'best_solution') and self.best_solution is not None else None,
+                'runtime': time.time() - self.start_time if hasattr(self, 'start_time') and self.start_time is not None else 0,
+                'iterations': self._current_iteration if hasattr(self, '_current_iteration') else 0,
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'problem_type': self.current_problem_type if hasattr(self, 'current_problem_type') else "unknown"
+            }
+        }
+        
+        # Include optimization history if requested
+        if include_history and hasattr(self, 'optimization_history'):
+            data['optimization_history'] = []
+            for entry in self.optimization_history:
+                # Convert numpy arrays to lists for serialization
+                history_entry = {}
+                for key, value in entry.items():
+                    if isinstance(value, np.ndarray):
+                        history_entry[key] = value.tolist()
+                    elif isinstance(value, np.generic):
+                        history_entry[key] = value.item()
+                    else:
+                        history_entry[key] = value
+                data['optimization_history'].append(history_entry)
+        
+        # Include algorithm selections if requested
+        if include_selections and hasattr(self, 'selection_tracker') and self.selection_tracker:
+            data['algorithm_selections'] = self.selection_tracker.get_history()
+        
+        # Include parameter adaptation history if requested
+        if include_parameters and hasattr(self, 'optimizers'):
+            data['parameter_history'] = {}
+            for name, optimizer in self.optimizers.items():
+                if hasattr(optimizer, 'param_history') and optimizer.param_history:
+                    param_history = {}
+                    for param, values in optimizer.param_history.items():
+                        # Convert numpy values to Python types
+                        if isinstance(values, list):
+                            param_history[param] = [float(v) if isinstance(v, np.generic) else v for v in values]
+                        else:
+                            param_history[param] = float(values) if isinstance(values, np.generic) else values
+                    data['parameter_history'][name] = param_history
+        
+        # Include problem features if available
+        if hasattr(self, 'current_features') and self.current_features is not None:
+            data['problem_features'] = {k: float(v) if isinstance(v, np.generic) else v 
+                                      for k, v in self.current_features.items()}
+        
+        return data
+
+    def _export_to_json(self, filename: str, data: Dict[str, Any]) -> None:
+        """
+        Export data to JSON file.
+        
+        Args:
+            filename: Path to save the JSON file
+            data: Data to export
+        """
+        import json
+        with open(filename, 'w') as f:
+            json.dump(data, f, indent=2)
+
+    def _export_to_csv(self, base_filename: str, data: Dict[str, Any]) -> None:
+        """
+        Export data to CSV files.
+        
+        Args:
+            base_filename: Base path for CSV files
+            data: Data to export
+        """
+        import pandas as pd
+        
+        # Export optimization info
+        pd.DataFrame([data['optimization_info']]).to_csv(f"{base_filename}_info.csv", index=False)
+        
+        # Export optimization history if available
+        if 'optimization_history' in data and data['optimization_history']:
+            pd.DataFrame(data['optimization_history']).to_csv(f"{base_filename}_history.csv", index=False)
+        
+        # Export algorithm selections if available
+        if 'algorithm_selections' in data and data['algorithm_selections']:
+            pd.DataFrame(data['algorithm_selections']).to_csv(f"{base_filename}_selections.csv", index=False)
+        
+        # Export parameter history if available
+        if 'parameter_history' in data and data['parameter_history']:
+            # Each optimizer gets its own CSV file
+            for optimizer_name, params in data['parameter_history'].items():
+                # Convert to DataFrame-friendly format
+                param_data = {}
+                max_length = 0
+                for param_name, values in params.items():
+                    if isinstance(values, list):
+                        param_data[param_name] = values
+                        max_length = max(max_length, len(values))
+                    else:
+                        param_data[param_name] = [values]
+                        max_length = max(max_length, 1)
+                
+                # Ensure all lists have the same length
+                for param_name, values in param_data.items():
+                    if len(values) < max_length:
+                        param_data[param_name] = values + [None] * (max_length - len(values))
+                
+                # Save to CSV
+                if param_data:
+                    pd.DataFrame(param_data).to_csv(f"{base_filename}_{optimizer_name}_params.csv", index=False)
+        
+        # Export problem features if available
+        if 'problem_features' in data and data['problem_features']:
+            pd.DataFrame([data['problem_features']]).to_csv(f"{base_filename}_features.csv", index=False)
+
+    def import_data(self, 
+                   filename: str,
+                   restore_state: bool = True,
+                   restore_optimizers: bool = True) -> Dict[str, Any]:
+        """
+        Import optimization data from a file.
+        
+        Args:
+            filename: Path to the data file (JSON) or base path for CSV files
+            restore_state: Whether to restore the meta-optimizer state
+            restore_optimizers: Whether to restore individual optimizer states
+            
+        Returns:
+            The imported data
+        """
+        # Determine file format and import data
+        if filename.endswith('.json'):
+            data = self._import_from_json(filename)
+        else:
+            # Assume CSV format
+            data = self._import_from_csv(filename.rstrip('.csv'))
+        
+        # Restore meta-optimizer state if requested
+        if restore_state:
+            self._restore_meta_optimizer_state(data)
+        
+        # Restore individual optimizer states if requested
+        if restore_optimizers:
+            self._restore_optimizer_states(data)
+        
+        return data
+
+    def _import_from_json(self, filename: str) -> Dict[str, Any]:
+        """
+        Import data from a JSON file.
+        
+        Args:
+            filename: Path to the JSON file
+            
+        Returns:
+            The imported data
+        """
+        import json
+        
+        # Make sure the file exists
+        if not os.path.exists(filename):
+            self.logger.error(f"File not found: {filename}")
+            return {}
+        
+        # Load the data
+        try:
+            with open(filename, 'r') as f:
+                data = json.load(f)
+            
+            self.logger.info(f"Imported data from {filename}")
+            return data
+        except Exception as e:
+            self.logger.error(f"Error importing data from {filename}: {e}")
+            return {}
+
+    def _import_from_csv(self, base_filename: str) -> Dict[str, Any]:
+        """
+        Import data from CSV files.
+        
+        Args:
+            base_filename: Base path for CSV files
+            
+        Returns:
+            The imported data
+        """
+        import pandas as pd
+        
+        # Initialize data structure
+        data = {
+            "optimization_info": {},
+            "optimization_history": [],
+            "algorithm_selections": [],
+            "parameter_history": {},
+            "problem_features": {}
+        }
+        
+        # Check if the directory exists
+        base_dir = os.path.dirname(base_filename)
+        if not os.path.exists(base_dir):
+            self.logger.error(f"Directory not found: {base_dir}")
+            return data
+        
+        # Import optimization info
+        info_path = f"{base_filename}_info.csv"
+        if os.path.exists(info_path):
+            try:
+                df_info = pd.read_csv(info_path)
+                if not df_info.empty:
+                    data["optimization_info"] = df_info.iloc[0].to_dict()
+            except Exception as e:
+                self.logger.error(f"Error importing optimization info: {e}")
+        
+        # Import optimization history
+        history_path = f"{base_filename}_history.csv"
+        if os.path.exists(history_path):
+            try:
+                df_history = pd.read_csv(history_path)
+                data["optimization_history"] = df_history.to_dict('records')
+            except Exception as e:
+                self.logger.error(f"Error importing optimization history: {e}")
+        
+        # Import algorithm selections
+        selections_path = f"{base_filename}_selections.csv"
+        if os.path.exists(selections_path):
+            try:
+                df_selections = pd.read_csv(selections_path)
+                data["algorithm_selections"] = df_selections.to_dict('records')
+            except Exception as e:
+                self.logger.error(f"Error importing algorithm selections: {e}")
+        
+        # Import problem features
+        features_path = f"{base_filename}_features.csv"
+        if os.path.exists(features_path):
+            try:
+                df_features = pd.read_csv(features_path)
+                if not df_features.empty:
+                    data["problem_features"] = df_features.iloc[0].to_dict()
+            except Exception as e:
+                self.logger.error(f"Error importing problem features: {e}")
+        
+        # Import parameter history for each optimizer
+        base_name = os.path.basename(base_filename)
+        try:
+            optimizer_files = [f for f in os.listdir(base_dir) 
+                             if f.startswith(base_name) and f.endswith("_params.csv")]
+            
+            for opt_file in optimizer_files:
+                # Extract optimizer name from filename
+                optimizer_name = opt_file.replace(base_name + "_", "").replace("_params.csv", "")
+                
+                # Read parameter data
+                param_path = os.path.join(base_dir, opt_file)
+                df_params = pd.read_csv(param_path)
+                
+                # Convert to dictionary structure
+                params_dict = {}
+                for column in df_params.columns:
+                    values = df_params[column].dropna().tolist()
+                    if len(values) == 1:
+                        params_dict[column] = values[0]
+                    else:
+                        params_dict[column] = values
+                
+                data["parameter_history"][optimizer_name] = params_dict
+        except Exception as e:
+            self.logger.error(f"Error importing parameter history: {e}")
+        
+        self.logger.info(f"Imported data from CSV files in {base_dir}")
+        return data
+
+    def _restore_meta_optimizer_state(self, data: Dict[str, Any]) -> None:
+        """
+        Restore meta-optimizer state from imported data.
+        
+        Args:
+            data: Imported data
+        """
+        # Extract basic information
+        info = data.get("optimization_info", {})
+        
+        # Restore basic parameters
+        if "dimensions" in info:
+            self.dim = int(info["dimensions"])
+        
+        if "bounds" in info:
+            bounds = info["bounds"]
+            # Convert bounds if needed
+            if not isinstance(bounds[0], tuple) and len(bounds) == self.dim * 2:
+                self.bounds = [(bounds[i*2], bounds[i*2+1]) for i in range(self.dim)]
+            else:
+                self.bounds = bounds
+        
+        # Restore best solution and score
+        if "best_solution" in info and "best_score" in info:
+            self.best_solution = np.array(info["best_solution"])
+            self.best_score = float(info["best_score"])
+        
+        # Restore problem features and type
+        if "problem_features" in data:
+            self.current_features = data["problem_features"]
+            self.current_problem_type = info.get("problem_type", "unknown")
+        
+        # Restore optimization history
+        if "optimization_history" in data:
+            self.optimization_history = data["optimization_history"]
+        
+        # Restore algorithm selections
+        if "algorithm_selections" in data and hasattr(self, "selection_tracker") and self.selection_tracker:
+            self.selection_tracker.history = data["algorithm_selections"]
+        
+        self.logger.info("Restored meta-optimizer state from imported data")
+
+    def _restore_optimizer_states(self, data: Dict[str, Any]) -> None:
+        """
+        Restore individual optimizer states from imported data.
+        
+        Args:
+            data: Imported data
+        """
+        # Restore parameter history for each optimizer
+        for opt_name, params in data.get("parameter_history", {}).items():
+            if opt_name in self.optimizers:
+                optimizer = self.optimizers[opt_name]
+                
+                # Restore parameters
+                for param_name, value in params.items():
+                    if hasattr(optimizer, param_name):
+                        try:
+                            setattr(optimizer, param_name, value)
+                        except Exception as e:
+                            self.logger.warning(f"Error setting {param_name} for {opt_name}: {e}")
+                
+                # Set parameter history
+                if hasattr(optimizer, "param_history"):
+                    optimizer.param_history = params
+        
+        self.logger.info("Restored optimizer states from imported data")

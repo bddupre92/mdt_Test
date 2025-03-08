@@ -151,9 +151,12 @@ def calculate_parameter_metrics(history: List[Dict[str, Any]]) -> Tuple[Dict[str
     
     return importance_scores, correlation_scores, interaction_scores
 
-def plot_optimization_progress(history: List[Dict[str, Any]], save_path: str = None):
+def plot_optimization_progress(history: List[Dict[str, Any]], save_path: str = None, show_optimizer_stats: bool = True):
     """Plot optimization progress over iterations with enhanced metrics"""
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+    if show_optimizer_stats:
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 15))
+    else:
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
     
     # Convert to DataFrame for easier manipulation
     df = pd.DataFrame(history)

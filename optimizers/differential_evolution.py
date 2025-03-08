@@ -13,7 +13,11 @@ class DifferentialEvolutionOptimizer(BaseOptimizer):
                  population_size: Optional[int] = None,
                  F: float = 0.8,
                  CR: float = 0.5,
-                 adaptive: bool = True):
+                 adaptive: bool = True,
+                 timeout: float = 60,
+                 iteration_timeout: float = 10,
+                 verbose: bool = False,
+                 **kwargs):
         """
         Initialize DE optimizer.
         
@@ -24,8 +28,13 @@ class DifferentialEvolutionOptimizer(BaseOptimizer):
             F: Mutation factor
             CR: Crossover rate
             adaptive: Whether to use adaptive parameters
+            timeout: Maximum optimization time
+            iteration_timeout: Maximum time per iteration
+            verbose: Whether to show progress bars
         """
-        super().__init__(dim, bounds, population_size, adaptive)
+        super().__init__(dim=dim, bounds=bounds, population_size=population_size, 
+                        adaptive=adaptive, timeout=timeout, 
+                        iteration_timeout=iteration_timeout, verbose=verbose)
         
         # DE-specific parameters
         self.F = F

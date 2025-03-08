@@ -62,6 +62,7 @@ python main.py --explain --explainer shap --explain-plots
 ## Documentation Files
 
 - [Command Line Interface](command_line_interface.md): Detailed documentation of all command-line arguments
+- [Command Line Fixes](command_line_fixes.md): Details about recent fixes to command-line arguments and implementation notes
 - [Drift Detection Guide](drift_detection_guide.md): Comprehensive guide to drift detection features and usage
 - [Optimizer Explainability](optimizer_explainability.md): Guide to the optimizer explainability features
 - [Model Explainability](model_explainability.md): Guide to the model explainability features
