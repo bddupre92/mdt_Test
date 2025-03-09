@@ -2624,6 +2624,8 @@ def parse_args():
     # Add optimizer comparison functionality
     parser.add_argument('--compare-optimizers', action='store_true',
                        help='Run comparison of all available optimizers on benchmark functions')
+    parser.add_argument('--n-runs', type=int, default=3, 
+                       help='Number of runs for each optimizer/function combination')
     
     # Migraine data import
     parser.add_argument('--import-migraine-data', action='store_true', help='Import new migraine data')
@@ -2691,8 +2693,16 @@ def run_optimizer_comparison(args):
     print("Starting optimizer comparison...")
     import numpy as np
     import time
+    import os
     from meta_optimizer.benchmark.test_functions import create_test_suite
     from meta_optimizer.optimizers.optimizer_factory import create_optimizers
+    from meta_optimizer.evaluation.metrics_collector import MetricsCollector
+    
+    # Create output directory
+    results_dir = 'results/optimizer_comparison'
+    if args.export_dir:
+        results_dir = args.export_dir
+    os.makedirs(results_dir, exist_ok=True)
     
     # Get benchmark functions
     test_suite = create_test_suite()
@@ -2712,76 +2722,125 @@ def run_optimizer_comparison(args):
     print(f"Running comparison with dimension = {dim}")
     print(f"Comparing {len(optimizer_types)} optimizers on {len(test_suite)} benchmark functions")
     
-    # Results storage
-    results = {}
+    # Initialize metrics collector
+    metrics_collector = MetricsCollector()
+    
+    # Number of runs for each optimizer/function combination
+    n_runs = args.n_runs if hasattr(args, 'n_runs') and args.n_runs else 3
     
     # Run each optimizer on each function
     for func_name, func_creator in test_suite.items():
         print(f"\nBenchmark: {func_name}")
-        results[func_name] = {}
         
         # Create test function with specified dimension
         test_function = func_creator(dim, bounds)
         
-        # Create all optimizers
-        optimizers = create_optimizers(dim=dim, bounds=bounds)
-        
-        for opt_name, opt_type in optimizer_types.items():
-            print(f"  Running {opt_name}...", end="", flush=True)
+        for run in range(n_runs):
+            print(f"  Run {run+1}/{n_runs}")
             
-            try:
-                # Get the appropriate optimizer
-                if opt_name == 'ACO':
-                    optimizer = optimizers['ACO']
-                elif opt_name == 'DE':
-                    optimizer = optimizers['DE (Standard)']
-                elif opt_name == 'ES':
-                    optimizer = optimizers['ES (Standard)']
-                elif opt_name == 'GWO':
-                    optimizer = optimizers['GWO']
-                else:
-                    raise ValueError(f"Unknown optimizer: {opt_name}")
+            # Create all optimizers
+            optimizers = create_optimizers(dim=dim, bounds=bounds)
+            
+            for opt_name, opt_type in optimizer_types.items():
+                print(f"    Testing {opt_name}...", end="", flush=True)
                 
-                # Define a wrapper function that returns the value only (not a tuple)
-                def objective_function(x):
-                    return test_function.evaluate(x)
-                
-                # Run optimization
-                start_time = time.time()
-                best_solution, best_score = optimizer.optimize(objective_function)
-                end_time = time.time()
-                
-                # Record results
-                results[func_name][opt_name] = {
-                    'best_score': best_score,
-                    'evaluations': optimizer.evaluations,
-                    'time': end_time - start_time
-                }
-                
-                print(f" Done. Best score: {best_score:.6f}")
-            except Exception as e:
-                print(f" Error: {str(e)}")
-                results[func_name][opt_name] = {
-                    'best_score': float('inf'),
-                    'evaluations': 0,
-                    'time': 0,
-                    'error': str(e)
-                }
+                try:
+                    # Get the appropriate optimizer
+                    if opt_name == 'ACO':
+                        optimizer = optimizers['ACO']
+                    elif opt_name == 'DE':
+                        optimizer = optimizers['DE (Standard)']
+                    elif opt_name == 'ES':
+                        optimizer = optimizers['ES (Standard)']
+                    elif opt_name == 'GWO':
+                        optimizer = optimizers['GWO']
+                    else:
+                        raise ValueError(f"Unknown optimizer: {opt_name}")
+                    
+                    # Define a wrapper function that returns the value only (not a tuple)
+                    def objective_function(x):
+                        return test_function.evaluate(x)
+                    
+                    # Run optimization
+                    start_time = time.time()
+                    best_solution, best_score = optimizer.optimize(objective_function)
+                    end_time = time.time()
+                    
+                    # Get convergence curve if available - check multiple attributes
+                    convergence_curve = None
+                    if hasattr(optimizer, 'convergence_curve') and optimizer.convergence_curve:
+                        convergence_curve = optimizer.convergence_curve
+                    elif hasattr(optimizer, 'history') and optimizer.history:
+                        if isinstance(optimizer.history[0], dict) and 'best_score' in optimizer.history[0]:
+                            convergence_curve = [h.get('best_score', float('inf')) for h in optimizer.history]
+                        else:
+                            # Try to extract scores if history items are tuples or other structures
+                            try:
+                                convergence_curve = [h[1] if isinstance(h, (list, tuple)) else h for h in optimizer.history]
+                            except (IndexError, TypeError):
+                                # If we can't extract it, create a simple curve
+                                convergence_curve = [best_score]
+                    
+                    # If we still don't have a convergence curve, create a simple one
+                    if not convergence_curve:
+                        convergence_curve = [best_score]
+                    
+                    # Add result to metrics collector
+                    metrics_collector.add_run_result(
+                        optimizer_name=opt_name,
+                        problem_name=func_name,
+                        best_score=best_score,
+                        convergence_time=end_time - start_time,
+                        evaluations=optimizer.evaluations,
+                        success=best_score < 1e-6,  # Consider success if score is very close to 0
+                        convergence_curve=convergence_curve
+                    )
+                    
+                    print(f" Done. Best score: {best_score:.6f}")
+                except Exception as e:
+                    print(f" Error: {str(e)}")
+                    # Record error in metrics
+                    metrics_collector.add_run_result(
+                        optimizer_name=opt_name,
+                        problem_name=func_name,
+                        best_score=float('inf'),
+                        convergence_time=0,
+                        evaluations=0,
+                        success=False
+                    )
     
     # Print summary
     print("\nSummary of Results:")
     print("===================")
     
-    for func_name in results:
+    # Calculate statistics
+    stats = metrics_collector.calculate_statistics()
+    
+    # Print results for each problem
+    for func_name in sorted(set(problem for opt in stats.values() for problem in opt.keys())):
         print(f"\n{func_name}:")
         # Sort optimizers by best score
-        sorted_optimizers = sorted(results[func_name].items(), key=lambda x: x[1]['best_score'])
+        problem_results = []
+        for optimizer in stats:
+            if func_name in stats[optimizer]:
+                problem_results.append((
+                    optimizer,
+                    stats[optimizer][func_name]['mean_score'],
+                    stats[optimizer][func_name]['mean_time'],
+                    stats[optimizer][func_name]['mean_evals'],
+                    stats[optimizer][func_name]['success_rate']
+                ))
         
-        for rank, (opt_name, res) in enumerate(sorted_optimizers, 1):
-            if 'error' in res:
-                print(f"  {rank}. {opt_name}: Error - {res['error']}")
-            else:
-                print(f"  {rank}. {opt_name}: Score = {res['best_score']:.6f}, Evals = {res['evaluations']}, Time = {res['time']:.2f}s")
+        # Sort by score (lower is better)
+        problem_results.sort(key=lambda x: x[1])
+        
+        for i, (opt, score, time, evals, success_rate) in enumerate(problem_results):
+            print(f"  {i+1}. {opt}: Score = {score:.6f}, Evals = {int(evals)}, Time = {time:.2f}s, Success = {success_rate:.2%}")
+    
+    # Generate full performance report
+    print("\nGenerating performance report...")
+    metrics_collector.generate_performance_report(results_dir)
+    print(f"Report saved to {results_dir}")
     
     print("\nOptimizer comparison completed.")
 

@@ -101,12 +101,57 @@ class Ackley(TestFunction):
         return np.zeros(self.dim), 0.0
 
 
+class Griewank(TestFunction):
+    """Griewank function: f(x) = 1 + sum(x^2)/4000 - prod(cos(x_i/sqrt(i)))"""
+    
+    def evaluate(self, x: np.ndarray) -> float:
+        """Evaluate the Griewank function at point x."""
+        sum_term = np.sum(x**2) / 4000
+        prod_term = np.prod(np.cos(x / np.sqrt(np.arange(1, len(x) + 1))))
+        return 1 + sum_term - prod_term
+    
+    def get_global_minimum(self) -> Tuple[np.ndarray, float]:
+        """Global minimum at the origin with value 0."""
+        return np.zeros(self.dim), 0.0
+
+
+class Schwefel(TestFunction):
+    """Schwefel function: f(x) = 418.9829*n - sum(x_i * sin(sqrt(|x_i|)))"""
+    
+    def evaluate(self, x: np.ndarray) -> float:
+        """Evaluate the Schwefel function at point x."""
+        return 418.9829 * self.dim - np.sum(x * np.sin(np.sqrt(np.abs(x))))
+    
+    def get_global_minimum(self) -> Tuple[np.ndarray, float]:
+        """Global minimum at (420.9687,...,420.9687) with value 0."""
+        return np.ones(self.dim) * 420.9687, 0.0
+
+
+class Levy(TestFunction):
+    """Levy function"""
+    
+    def evaluate(self, x: np.ndarray) -> float:
+        """Evaluate the Levy function at point x."""
+        w = 1 + (x - 1) / 4
+        term1 = np.sin(np.pi * w[0])**2
+        term2 = np.sum((w[:-1] - 1)**2 * (1 + 10 * np.sin(np.pi * w[:-1] + 1)**2))
+        term3 = (w[-1] - 1)**2 * (1 + np.sin(2 * np.pi * w[-1])**2)
+        return term1 + term2 + term3
+    
+    def get_global_minimum(self) -> Tuple[np.ndarray, float]:
+        """Global minimum at (1,...,1) with value 0."""
+        return np.ones(self.dim), 0.0
+
+
 # Dictionary mapping function names to their constructors
 TEST_FUNCTIONS = {
     "sphere": Sphere,
     "rosenbrock": Rosenbrock,
     "rastrigin": Rastrigin,
-    "ackley": Ackley
+    "ackley": Ackley,
+    "griewank": Griewank,
+    "schwefel": Schwefel,
+    "levy": Levy
 }
 
 
