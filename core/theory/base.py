@@ -77,6 +77,57 @@ class TheoreticalComponent(abc.ABC):
         return f"{self.__class__.__name__}(name={self.name!r})"
 
 
+class TheoryComponent(abc.ABC):
+    """
+    Simplified base class for theoretical components.
+    
+    This class provides a simpler interface for theoretical components that
+    don't require the full complexity of TheoreticalComponent, particularly
+    for temporal modeling and physiological data analysis.
+    """
+    
+    def __init__(self, description: str = ""):
+        """
+        Initialize a theory component.
+        
+        Args:
+            description: A description of the component's purpose
+        """
+        self.description = description
+    
+    @abc.abstractmethod
+    def analyze(self, *args, **kwargs) -> Dict[str, Any]:
+        """
+        Analyze the theoretical properties of the component.
+        
+        This method should be implemented by subclasses to analyze the
+        theoretical properties of the component and return a dictionary
+        of results.
+        
+        Returns:
+            A dictionary containing the analysis results
+        """
+        pass
+    
+    def get_formal_definition(self) -> str:
+        """
+        Get the formal mathematical definition of the component.
+        
+        Returns:
+            A string containing the formal mathematical definition
+        """
+        return "Formal definition not provided"
+    
+    def __repr__(self) -> str:
+        """
+        Get a string representation of the component.
+        
+        Returns:
+            A string representation of the component
+        """
+        return f"{self.__class__.__name__}()"
+
+
 class AlgorithmProperty(TheoreticalComponent):
     """
     Base class for theoretical properties of optimization algorithms.
