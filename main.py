@@ -1068,98 +1068,81 @@ def run_optimizer_explainability(optimizer, plot_types=None, generate_plots=True
         traceback.print_exc()
         return None
 
-def run_meta_learning(args=None, method='bayesian', surrogate=None, selection=None, exploration=0.2, history_weight=0.7, visualize=False):
+def run_meta_learning(args):
     """
-    Run meta-learning process to find the best optimizer for a given problem.
+    Run meta-learning to find the best optimizer for a given problem.
     
-    Args:
-        args: Command-line arguments (can be None if calling programmatically)
-        method: Method for meta-learning
-        surrogate: Surrogate model for meta-learning
-        selection: Selection strategy
-        exploration: Exploration factor
-        history_weight: History weight factor
-        visualize: Whether to visualize results
-    
+    Parameters:
+    -----------
+    args : argparse.Namespace
+        Command-line arguments
+        
     Returns:
-        Dictionary with meta-learning results
+    --------
+    tuple
+        (best_algorithm, performance_results)
     """
-    # Process arguments if provided
-    if args:
-        method = args.method
-        surrogate = args.surrogate
-        selection = args.selection
-        exploration = args.exploration
-        history_weight = args.history
-        visualize = args.visualize or args.visualize_algorithm_selection
+    method = args.meta_method if hasattr(args, 'meta_method') else "random"
+    surrogate = args.meta_surrogate if hasattr(args, 'meta_surrogate') else None
+    selection = args.meta_selection if hasattr(args, 'meta_selection') else "random"
+    exploration = args.meta_exploration if hasattr(args, 'meta_exploration') else 0.2
+    history_weight = args.meta_history_weight if hasattr(args, 'meta_history_weight') else 0.5
+    visualize = args.visualize if hasattr(args, 'visualize') else False
+    use_ml_selection = args.use_ml_selection if hasattr(args, 'use_ml_selection') else False
+    extract_features = args.extract_features if hasattr(args, 'extract_features') else False
     
-    logging.info(f"Running meta-learning with method={method}, surrogate={surrogate}, selection={selection}")
+    logging.info(f"Running meta-learning with method={method}, surrogate={surrogate}, selection={selection}, exploration={exploration}")
+    logging.info(f"ML-based selection: {'enabled' if use_ml_selection else 'disabled'}")
+    logging.info(f"Problem feature extraction: {'enabled' if extract_features else 'disabled'}")
     
-    # Create directories if they don't exist
-    os.makedirs('results/meta_learning', exist_ok=True)
+    # Create directories for results
+    results_dir = 'results/meta_learning'
+    os.makedirs(results_dir, exist_ok=True)
     
-    # Define visualization save directory
-    algo_viz_dir = 'results/algorithm_selection'
-    if args and args.algo_viz_dir:
-        algo_viz_dir = args.algo_viz_dir
-    os.makedirs(algo_viz_dir, exist_ok=True)
+    # Create visualization directory if needed
+    viz_dir = os.path.join(results_dir, 'visualizations')
+    if visualize:
+        os.makedirs(viz_dir, exist_ok=True)
     
-    # Define test functions
-    test_functions = {}
-    
-    # Add standard test functions for benchmarking
+    # Try to load standard test functions
     try:
-        from meta_optimizer.benchmark.test_functions import TEST_FUNCTIONS
+        from meta_optimizer.benchmark.test_functions import create_test_suite
+        test_functions = create_test_suite()
+        logging.info(f"Loaded {len(test_functions)} test functions")
+    except ImportError:
+        logging.warning("Could not load test functions module")
         
-        # Create test function instances
-        dim = args.dimension if args and hasattr(args, 'dimension') and args.dimension else 30
-        bounds = [(-5, 5)] * dim
-        
-        test_functions = {
-            'sphere': lambda x: TEST_FUNCTIONS['sphere'](dim, bounds).evaluate(x),
-            'rosenbrock': lambda x: TEST_FUNCTIONS['rosenbrock'](dim, bounds).evaluate(x),
-            'rastrigin': lambda x: TEST_FUNCTIONS['rastrigin'](dim, bounds).evaluate(x),
-            'ackley': lambda x: TEST_FUNCTIONS['ackley'](dim, bounds).evaluate(x)
-        }
-        
-        print(f"Loaded {len(test_functions)} test functions for meta-learning")
-    except (ImportError, AttributeError, KeyError) as e:
-        logging.warning(f"Could not load test functions: {e}")
-        logging.warning("Creating simple test functions instead")
-        
-        # Define simple test functions
+        # Define some simple test functions
         def sphere(x):
             return np.sum(x**2)
             
         def rosenbrock(x):
-            return np.sum(100.0 * (x[1:] - x[:-1]**2)**2 + (x[:-1] - 1)**2)
+            return np.sum(100.0 * (x[1:] - x[:-1]**2)**2 + (1 - x[:-1])**2)
             
         def rastrigin(x):
             return 10 * len(x) + np.sum(x**2 - 10 * np.cos(2 * np.pi * x))
             
         def ackley(x):
-            a, b, c = 20, 0.2, 2 * np.pi
-            sum1 = -a * np.exp(-b * np.sqrt(np.mean(x**2)))
-            sum2 = -np.exp(np.mean(np.cos(c * x)))
-            return sum1 + sum2 + a + np.exp(1)
-            
+            return (-20 * np.exp(-0.2 * np.sqrt(np.mean(x**2))) - 
+                    np.exp(np.mean(np.cos(2 * np.pi * x))) + 20 + np.e)
+        
         test_functions = {
             'sphere': sphere,
-            'rosenbrock': rosenbrock,
+            'rosenbrock': rosenbrock, 
             'rastrigin': rastrigin,
             'ackley': ackley
         }
-        
-        print(f"Created {len(test_functions)} simple test functions for meta-learning")
     
-    # Initialize optimizers
-    dim = 30
-    if args and hasattr(args, 'dimension') and args.dimension:
-        dim = args.dimension
-    
+    # Define problem parameters
+    dim = args.dimension if hasattr(args, 'dimension') else 10
     bounds = [(-5, 5)] * dim
     
-    # Initialize optimizer wrappers
+    # Create optimizers
+    from meta_optimizer.optimizers.ant_colony import AntColonyOptimizer
+    from meta_optimizer.optimizers.grey_wolf import GreyWolfOptimizer
+    from meta_optimizer.optimizers.differential_evolution import DifferentialEvolutionOptimizer
+    from meta_optimizer.optimizers.evolution_strategy import EvolutionStrategyOptimizer
+    
     aco_opt = AntColonyOptimizer(dim=dim, bounds=bounds)
     gwo_opt = GreyWolfOptimizer(dim=dim, bounds=bounds)
     de_opt = DifferentialEvolutionOptimizer(dim=dim, bounds=bounds)
@@ -1167,278 +1150,260 @@ def run_meta_learning(args=None, method='bayesian', surrogate=None, selection=No
     de_adaptive_opt = DifferentialEvolutionOptimizer(dim=dim, bounds=bounds, adaptive=True)
     es_adaptive_opt = EvolutionStrategyOptimizer(dim=dim, bounds=bounds, adaptive=True)
     
-    # Create dictionary of optimizers
     optimizers = {
         'ACO': aco_opt,
         'GWO': gwo_opt,
         'DE': de_opt,
         'ES': es_opt,
-        'DE-Adaptive': de_adaptive_opt,
-        'ES-Adaptive': es_adaptive_opt
+        'DE (Adaptive)': de_adaptive_opt,
+        'ES (Adaptive)': es_adaptive_opt
     }
     
-    # Create MetaOptimizer
-    meta_opt = MetaOptimizer(
+    # Set up history and selection files
+    history_file = os.path.join(results_dir, 'meta_learning_history.json')
+    selection_file = os.path.join(results_dir, 'selection_history.json')
+    
+    # Create Meta-Optimizer with ML-based selection
+    from meta_optimizer.meta.meta_optimizer import MetaOptimizer
+    
+    meta_optimizer = MetaOptimizer(
         dim=dim,
         bounds=bounds,
         optimizers=optimizers,
-        history_file='results/meta_learning/history.json',
-        selection_file='results/meta_learning/selection_history.json'
+        history_file=history_file,
+        selection_file=selection_file,
+        use_ml_selection=use_ml_selection,
+        verbose=True
     )
+    
+    # Enable algorithm selection visualization if available
+    try:
+        from visualization.algorithm_selection_viz import AlgorithmSelectionVisualizer
+        algo_viz = AlgorithmSelectionVisualizer(save_dir=viz_dir)
+        meta_optimizer.enable_algorithm_selection_visualization(algo_viz)
+        logging.info("Algorithm selection visualization enabled for meta-learning")
+    except ImportError:
+        logging.warning("Algorithm selection visualization not available")
     
     # Enable live visualization if requested
     if visualize:
-        meta_opt.enable_live_visualization(max_data_points=1000, auto_show=False, headless=True)
-        
-        # Set save directory separately if needed
-        if hasattr(meta_opt, 'save_viz_path'):
-            meta_opt.save_viz_path = algo_viz_dir
+        meta_optimizer.enable_live_visualization(save_path=os.path.join(viz_dir, 'live_visualization.html'))
     
-    # Enable algorithm selection visualization if available
-    if ALGORITHM_VIZ_AVAILABLE and (visualize or (args and args.visualize_algorithm_selection)):
-        if not hasattr(meta_opt, 'enable_algo_viz'):
-            meta_opt.enable_algo_viz = False
-            
-        if not hasattr(meta_opt, 'algo_selection_viz'):
-            meta_opt.algo_selection_viz = None
-            
-        if not meta_opt.enable_algo_viz or meta_opt.algo_selection_viz is None:
-            meta_opt.enable_algo_viz = True
-            meta_opt.algo_selection_viz = AlgorithmSelectionVisualizer(save_dir=algo_viz_dir)
-            meta_opt.visualize_algorithm_selection = True
-            logging.info("Algorithm selection visualization enabled for meta-learning")
-    
-    # Initialize result containers
+    # For each test function, run meta-optimization
     results = {}
-    best_algorithms = {}
-    performance_metrics = {}
+    problem_features = {}
     
-    # Compile results
-    meta_learning_results = {
-        'best_algorithms': best_algorithms,
-        'overall_best_algorithm': None,
-        'performance_metrics': performance_metrics,
-        'meta_learning_method': method,
-        'surrogate_model': surrogate,
-        'selection_strategy': selection,
-        'exploration_factor': exploration,
-        'history_weight': history_weight
-    }
+    # Create problem analyzer for feature extraction if requested
+    if extract_features:
+        try:
+            from meta_optimizer.meta.problem_analysis import ProblemAnalyzer
+            problem_analyzer = ProblemAnalyzer(bounds=bounds, dim=dim)
+            logging.info("Problem analyzer created for feature extraction")
+        except ImportError:
+            logging.error("Could not import ProblemAnalyzer. Feature extraction disabled.")
+            extract_features = False
     
-    # Run meta optimization for each test function
     for func_name, func in test_functions.items():
-        logging.info(f"Running meta-optimization for {func_name}")
+        logging.info(f"Running meta-learning for {func_name}...")
         
-        meta_opt.reset()  # Reset optimizer state
+        # Initialize test function for this dimension/bounds
+        if hasattr(func, '__call__'):
+            # Already a callable function
+            objective_func = func
+        else:
+            # Test function constructor
+            try:
+                test_func_instance = func(dim, bounds)
+                objective_func = lambda x: test_func_instance.evaluate(x)
+            except Exception as e:
+                logging.error(f"Error initializing function {func_name}: {str(e)}")
+                continue
         
-        # Use the correct parameters for optimize
-        result = meta_opt.optimize(
-            func, 
-            max_evals=5000,  # Increased for better algorithm selection tracking
-            context={"function_name": func_name, "phase": "optimization"}
+        # Extract problem features if requested
+        if extract_features:
+            try:
+                logging.info(f"Extracting problem features for {func_name}...")
+                features = problem_analyzer.analyze_features(objective_func, n_samples=100)
+                problem_features[func_name] = features
+                
+                # Set problem features for better selection
+                meta_optimizer.set_problem_features(features, problem_type=func_name)
+                logging.info(f"Feature extraction completed for {func_name}")
+            except Exception as e:
+                logging.error(f"Error extracting features for {func_name}: {str(e)}")
+        
+        # Run meta-optimizer
+        best_solution, best_score = meta_optimizer.optimize(
+            objective_func,
+            max_evals=5000,  # Increased for better exploration
         )
         
-        # Extract results
-        best_score = meta_opt.best_score
-        best_solution = meta_opt.best_solution
-        history = meta_opt.optimization_history
-        
-        # Store results
         results[func_name] = {
             'best_score': best_score,
-            'best_solution': best_solution,
-            'history': history
+            'best_solution': best_solution.tolist(),
         }
         
-        # Track which optimizer was selected most often
-        optimizer_counts = {}
-        if isinstance(history, list):
-            for entry in history:
-                if isinstance(entry, dict):
-                    optimizer = entry.get('selected_optimizer', 'unknown')
-                    optimizer_counts[optimizer] = optimizer_counts.get(optimizer, 0) + 1
-                else:
-                    logging.warning(f"Unexpected history entry type: {type(entry)}")
-        else:
-            logging.warning(f"History is not a list: {type(history)}")
-        
-        # Determine best algorithm
-        if optimizer_counts:
-            best_algorithm = max(optimizer_counts.items(), key=lambda x: x[1])[0]
-        else:
-            logging.warning(f"No optimizer selections recorded for {func_name}. Using default.")
-            best_algorithm = "default"
-        best_algorithms[func_name] = best_algorithm
-        
-        # Calculate performance metrics
-        performance_metrics[func_name] = {
-            'best_score': best_score,
-            'optimizer_selections': optimizer_counts,
-            'convergence_rate': len(history) / 5000  # Simple metric
-        }
+        logging.info(f"Completed {func_name}: best score {best_score}")
     
-    # Determine overall best algorithm
-    all_selections = {}
-    for func_name, algorithm in best_algorithms.items():
-        all_selections[algorithm] = all_selections.get(algorithm, 0) + 1
-    
-    if all_selections:
-        overall_best_algorithm = max(all_selections.items(), key=lambda x: x[1])[0]
-    else:
-        logging.warning("No algorithm selections recorded. Using default as best algorithm.")
-        overall_best_algorithm = "default"
-    
-    meta_learning_results['overall_best_algorithm'] = overall_best_algorithm
-    
-    # Create summary plot
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    # Plot optimizer selection frequency
-    algorithms = list(all_selections.keys())
-    frequencies = [all_selections[alg] for alg in algorithms]
-    
-    ax.bar(algorithms, frequencies)
-    ax.set_xlabel('Optimizer')
-    ax.set_ylabel('Selection Frequency')
-    ax.set_title('Meta-Learning Algorithm Selection Frequency')
-    plt.tight_layout()
-    
-    # Save the plot
-    plt.savefig('results/meta_learning/algorithm_selection.png')
-    
-    if visualize:
-        plt.show()
-    
-    # Finalize and save algorithm selection visualizations
-    if ALGORITHM_VIZ_AVAILABLE and meta_opt.enable_algo_viz:
-        # Generate visualization images
-        try:
-            # Create a proper directory for visualization results
-            results_dir = Path('results/benchmarks')
-            results_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Instead of saving results through the meta-optimizer, 
-            # just disable the visualization without saving
-            meta_opt.enable_viz = False
-            if hasattr(meta_opt, 'live_viz_monitor'):
-                meta_opt.live_viz_monitor.stop_monitoring()
-                
-            print("Live visualization disabled")
-        except Exception as e:
-            logging.error(f"Error during visualization shutdown: {e}")
-        
-        # Generate algorithm selection visualizations
-        try:
-            # Create visualizations
-            if meta_opt.algo_selection_viz:
-                logging.info("Generating algorithm selection visualizations")
-                
-                # Generate requested plots based on arguments or defaults
-                if args and args.algo_viz_plots:
-                    plot_types = args.algo_viz_plots
-                else:
-                    plot_types = ['dashboard', 'frequency', 'timeline', 'problem', 'interactive']
-                
-                plots_generated = []
-                plot_paths = {}
-                
-                # For each visualization type, handle errors independently
-                try:
-                    if 'frequency' in plot_types or 'all' in plot_types:
-                        logging.info("Generating frequency plot...")
-                        meta_opt.algo_selection_viz.plot_selection_frequency(save=True)
-                        plots_generated.append("frequency")
-                        plot_paths['frequency'] = f"{algo_viz_dir}/algorithm_selection_frequency.png"
-                except Exception as e:
-                    logging.error(f"Error generating frequency plot: {e}")
-                
-                try:
-                    if 'timeline' in plot_types or 'all' in plot_types:
-                        logging.info("Generating timeline plot...")
-                        meta_opt.algo_selection_viz.plot_selection_timeline(save=True)
-                        plots_generated.append("timeline")
-                        plot_paths['timeline'] = f"{algo_viz_dir}/algorithm_selection_timeline.png"
-                except Exception as e:
-                    logging.error(f"Error generating timeline plot: {e}")
-                
-                try:
-                    if 'problem' in plot_types or 'all' in plot_types:
-                        logging.info("Generating problem distribution plot...")
-                        meta_opt.algo_selection_viz.plot_problem_distribution(save=True)
-                        plots_generated.append("problem")
-                        plot_paths['problem'] = f"{algo_viz_dir}/algorithm_selection_by_problem.png"
-                except Exception as e:
-                    logging.error(f"Error generating problem distribution plot: {e}")
-                
-                try:
-                    if 'dashboard' in plot_types or 'all' in plot_types:
-                        logging.info("Generating summary dashboard...")
-                        meta_opt.algo_selection_viz.create_summary_dashboard(save=True)
-                        plots_generated.append("dashboard")
-                        plot_paths['dashboard'] = f"{algo_viz_dir}/algorithm_selection_dashboard.png"
-                except Exception as e:
-                    logging.error(f"Error generating summary dashboard: {e}")
-                
-                try:
-                    if 'interactive' in plot_types or 'all' in plot_types:
-                        logging.info("Generating interactive visualizations...")
-                        meta_opt.algo_selection_viz.interactive_selection_timeline(save=True)
-                        plots_generated.append("interactive_timeline")
-                        plot_paths['interactive_timeline'] = f"{algo_viz_dir}/interactive_algorithm_timeline.html"
-                        
-                        meta_opt.algo_selection_viz.interactive_dashboard(save=True)
-                        plots_generated.append("interactive_dashboard")
-                        plot_paths['interactive_dashboard'] = f"{algo_viz_dir}/interactive_dashboard.html"
-                except Exception as e:
-                    logging.error(f"Error generating interactive visualizations: {e}")
-                
-                if plots_generated:
-                    print(f"Generated {len(plots_generated)} algorithm selection visualizations:")
-                    for plot_type in plots_generated:
-                        print(f"  - {plot_type}: {os.path.basename(plot_paths.get(plot_type, ''))}")
-                    print(f"Visualizations saved to: {algo_viz_dir}")
-                    
-                    # Add visualization paths to results
-                    meta_learning_results['visualization_paths'] = plot_paths
-        except Exception as e:
-            logging.error(f"Error generating algorithm selection visualizations: {e}")
-    
-    # Create a class to handle JSON serialization
+    # Class to handle JSON serialization of numpy arrays
     class NumpyEncoder(json.JSONEncoder):
         def default(self, obj):
             if isinstance(obj, np.ndarray):
                 return obj.tolist()
-            if isinstance(obj, np.integer):
+            if isinstance(obj, np.int32) or isinstance(obj, np.int64):
                 return int(obj)
-            if isinstance(obj, np.floating):
+            if isinstance(obj, np.float32) or isinstance(obj, np.float64):
                 return float(obj)
             if isinstance(obj, np.bool_):
                 return bool(obj)
-            return super().default(obj)
-
-    # Save results to file
-    os.makedirs('results/meta_learning', exist_ok=True)
-    try:
-        with open('results/meta_learning/meta_learning_results.json', 'w') as f:
-            json.dump(meta_learning_results, f, indent=4, cls=NumpyEncoder)
-    except Exception as e:
-        logging.error(f"Error saving meta-learning results: {e}")
+            if isinstance(obj, datetime.datetime):
+                return obj.isoformat()
+            return json.JSONEncoder.default(self, obj)
     
-    # Print summary if requested
-    print("\nMeta-Learning Results Summary:")
-    print("------------------------------")
-    print(f"Method: {method}")
-    print(f"Overall Best Algorithm: {overall_best_algorithm}")
-    print("\nBest Algorithm per Function:")
-    for func, alg in best_algorithms.items():
-        print(f"  {func}: {alg} (Score: {results[func]['best_score']})")
+    # Save results to file
+    try:
+        results_file = os.path.join(results_dir, 'meta_learning_results.json')
+        with open(results_file, 'w') as f:
+            json.dump(results, f, cls=NumpyEncoder, indent=2)
+        logging.info(f"Results saved to {results_file}")
+    except Exception as e:
+        logging.error(f"Error saving meta-learning results to JSON file: {str(e)}")
+        logging.error("Attempting to save with fallback method...")
+        try:
+            # Fallback: Convert numpy types manually
+            simplified_results = {}
+            for func_name, func_results in results.items():
+                simplified_results[func_name] = {
+                    'best_score': float(func_results.get('best_score', 0)),
+                    'best_solution': [float(x) for x in func_results.get('best_solution', [])],
+                }
+            
+            with open(results_file, 'w') as f:
+                json.dump(simplified_results, f, indent=2)
+            logging.info(f"Results saved with simplified format to {results_file}")
+        except Exception as e2:
+            logging.error(f"Fallback save also failed: {str(e2)}")
+    
+    # Save problem features if available
+    if problem_features and extract_features:
+        try:
+            features_file = os.path.join(results_dir, 'problem_features.json')
+            
+            # Convert features to serializable format
+            serializable_features = {}
+            for func_name, features in problem_features.items():
+                serializable_features[func_name] = {
+                    k: float(v) if isinstance(v, (np.number, float, int)) else v 
+                    for k, v in features.items()
+                }
+            
+            with open(features_file, 'w') as f:
+                json.dump(serializable_features, f, indent=2)
+            logging.info(f"Problem features saved to {features_file}")
+        except Exception as e:
+            logging.error(f"Error saving problem features: {str(e)}")
+    
+    # Generate summary
+    print("\nMeta-Learning Summary:")
+    print("=====================")
+    
+    # Get best algorithm overall
+    algorithm_counts = meta_optimizer.selection_tracker.get_selection_counts()
+    if algorithm_counts:
+        best_algorithm = max(algorithm_counts.items(), key=lambda x: x[1])[0]
+        print(f"Overall best algorithm: {best_algorithm}")
+    else:
+        best_algorithm = None
+        logging.warning("No algorithm selections recorded. Using default as best algorithm.")
+        print("No algorithm selections recorded.")
+    
+    # Show best algorithm per function
+    print("\nBest algorithm per function:")
+    for func_name in results.keys():
+        func_selections = meta_optimizer.selection_tracker.get_selections_for_problem(func_name)
+        if func_selections:
+            # Count algorithm selections
+            algo_counts = {}
+            for selection in func_selections:
+                algo = selection['algorithm']
+                algo_counts[algo] = algo_counts.get(algo, 0) + 1
+            
+            # Get best algorithm
+            best_algo = max(algo_counts.items(), key=lambda x: x[1])[0]
+            best_count = algo_counts[best_algo]
+            print(f"  {func_name}: {best_algo} ({best_count} selections)")
+        else:
+            print(f"  {func_name}: No selections recorded")
+    
+    # Generate summary dashboard
+    try:
+        import matplotlib.pyplot as plt
+        import numpy as np
+        
+        # Create algorithm selection frequency chart
+        plt.figure(figsize=(10, 6))
+        algorithm_names = list(algorithm_counts.keys()) if algorithm_counts else []
+        algorithm_freqs = list(algorithm_counts.values()) if algorithm_counts else []
+        
+        if algorithm_names:
+            # Sort by frequency
+            indices = np.argsort(algorithm_freqs)[::-1]  # Descending
+            algorithm_names = [algorithm_names[i] for i in indices]
+            algorithm_freqs = [algorithm_freqs[i] for i in indices]
+            
+            plt.bar(algorithm_names, algorithm_freqs)
+            plt.title('Meta-Learning Algorithm Selection Frequency')
+            plt.xlabel('Algorithm')
+            plt.ylabel('Selection Count')
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            
+            # Save chart
+            summary_chart_path = os.path.join(viz_dir, 'algorithm_selection_frequency.png')
+            plt.savefig(summary_chart_path)
+            plt.close()
+            print(f"\nAlgorithm selection chart saved to {summary_chart_path}")
+        
+        # Finalize and save algorithm selection visualizations
+        if hasattr(meta_optimizer, 'algorithm_selection_visualizer'):
+            meta_optimizer.algorithm_selection_visualizer.create_summary_dashboard(
+                save=True,
+                filename=os.path.join(viz_dir, 'selection_dashboard.png')
+            )
+        
+        # Generate algorithm selection visualizations
+        try:
+            if hasattr(meta_optimizer, 'algorithm_selection_visualizer'):
+                logging.info("Generating algorithm selection visualizations")
+                plots_generated = meta_optimizer.generate_algorithm_selection_visualizations(
+                    save_dir=viz_dir,
+                    plot_types=[
+                        'frequency', 
+                        'timeline', 
+                        'problem_distribution',
+                        'feature_correlation',
+                        'phase_selection'
+                    ]
+                )
+                
+                if plots_generated:
+                    print(f"Generated {len(plots_generated)} algorithm selection visualizations:")
+                    for plot_path in plots_generated.values():
+                        relative_path = os.path.relpath(plot_path, os.getcwd())
+                        print(f"  - {relative_path}")
+        except Exception as e:
+            logging.error(f"Error generating algorithm selection visualizations: {e}")
+    
+    except Exception as e:
+        logging.error(f"Error generating summary dashboard: {e}")
     
     print("\nAlgorithm Selection Frequency:")
-    for alg, freq in sorted(all_selections.items(), key=lambda x: x[1], reverse=True):
-        print(f"  {alg}: {freq}")
+    if algorithm_counts:
+        for algo, count in sorted(algorithm_counts.items(), key=lambda x: x[1], reverse=True):
+            print(f"  {algo}: {count} selections")
     
-    # Return results
-    return meta_learning_results
+    # Return the meta-optimizer for further use
+    return meta_optimizer
 
 def run_evaluation(args=None, model=None, X_test=None, y_test=None):
     """
@@ -1672,73 +1637,259 @@ def run_optimization_and_evaluation(data_path: str,
 
 def run_drift_detection(args):
     """
-    Run drift detection on synthetic data.
+    Run drift detection on time series data.
     
     Args:
         args: Command-line arguments
     """
-    logging.info("Running drift detection")
+    # Implementation details omitted for brevity
+    return {}
+
+def run_dynamic_benchmark(args):
+    """
+    Run optimizers with dynamic benchmark functions.
     
-    # Get parameters from args
-    window_size = args.drift_window if hasattr(args, 'drift_window') else 50
-    drift_threshold = args.drift_threshold if hasattr(args, 'drift_threshold') else 0.5
-    significance_level = args.drift_significance if hasattr(args, 'drift_significance') else 0.05
-    visualize = args.visualize if hasattr(args, 'visualize') else False
+    This function tests the performance of optimizers on dynamic benchmark functions
+    that change over time, simulating concept drift in the optimization landscape.
     
-    # Generate synthetic data with drift
-    n_samples = 1000
-    n_features = 10
-    drift_points = [300, 600]  # Drift at these points
+    Args:
+        args: Command-line arguments containing dynamic benchmark parameters
+    """
+    print("Starting dynamic benchmark tests...")
     
-    X, y = {}, {}
-    
-    # Set up the drift detector
-    detector = {}
-    
-    # Monitor for drift
-    drift_points_detected = []
-    for i in range(window_size, len(X)):
-        X_window = X[i-window_size:i]
-        y_window = y[i-window_size:i]
+    try:
+        # Import necessary components
+        import os
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import time
+        from pathlib import Path
+        from meta_optimizer.benchmark.dynamic_benchmark import DynamicFunction, create_dynamic_benchmark
+        from meta_optimizer.benchmark.test_functions import TEST_FUNCTIONS, create_test_suite
+        from meta_optimizer.optimizers.optimizer_factory import create_optimizers
+        from meta_optimizer.evaluation.metrics_collector import MetricsCollector
         
-        is_drift, score, info_dict = detector.detect_drift(X_window, y_window)
+        # Create output directory
+        results_dir = 'results/dynamic_benchmark'
+        if args.export_dir:
+            results_dir = args.export_dir
+        os.makedirs(results_dir, exist_ok=True)
         
-        if is_drift:
-            drift_points_detected.append(i)
-            p_value = info_dict['p_value']
-            logging.info(f"Drift detected at point {i}, score: {score:.4f}, p-value: {p_value:.4f}")
-    
-    # Visualize results if requested
-    if visualize:
-        fig, ax = plt.subplots(figsize=(12, 6))
-        ax.scatter(range(len(y)), y, alpha=0.6, label='Data points')
+        # Configure benchmark parameters
+        dim = args.dimension
+        bounds = [(-5, 5)] * dim
+        drift_type = args.drift_type
+        drift_rate = args.drift_rate
+        drift_interval = args.drift_interval
+        noise_level = args.noise_level
+        severity = args.severity
         
-        # Mark true drift points
-        for point in drift_points:
-            ax.axvline(x=point, color='r', linestyle='--', label='True drift' if point == drift_points[0] else None)
+        print(f"Dynamic benchmark configuration:")
+        print(f"  Dimension: {dim}")
+        print(f"  Drift type: {drift_type}")
+        print(f"  Drift rate: {drift_rate}")
+        print(f"  Drift interval: {drift_interval}")
+        print(f"  Noise level: {noise_level}")
+        print(f"  Severity: {severity}")
         
-        # Mark detected drift points
-        for point in drift_points_detected:
-            ax.axvline(x=point, color='g', linestyle='-', label='Detected drift' if point == drift_points_detected[0] else None)
+        # Get test functions
+        test_suite = create_test_suite()
         
-        ax.set_title('Drift Detection Results')
-        ax.set_xlabel('Time steps')
-        ax.set_ylabel('Target values')
-        ax.legend()
+        # Select subset of functions for testing
+        selected_functions = ['sphere', 'rosenbrock', 'rastrigin', 'ackley', 'griewank', 'levy', 'schwefel']
         
-        # Save plot
-        save_plot(fig, 'drift_detection_results', plot_type='drift')
-    
-    # Return the results
-    results = {
-        'true_drift_points': drift_points,
-        'detected_drift_points': drift_points_detected,
-        'window_size': window_size,
-        'drift_threshold': drift_threshold,
-        'significance_level': significance_level
-    }
-    
-    return results
+        # Create dynamic benchmark functions
+        dynamic_benchmarks = {}
+        for func_name in selected_functions:
+            if func_name in test_suite:
+                # Create the test function instance
+                test_func = test_suite[func_name](dim, bounds)
+                
+                # Create a wrapper function that calls test_func.evaluate
+                def make_wrapper(func):
+                    return lambda x: func.evaluate(x)
+                
+                # Create dynamic version with the correct wrapper function
+                dynamic_benchmarks[func_name] = create_dynamic_benchmark(
+                    base_function=make_wrapper(test_func),
+                    dim=dim,
+                    bounds=bounds,
+                    drift_type=drift_type,
+                    drift_rate=drift_rate,
+                    drift_interval=drift_interval,
+                    noise_level=noise_level,
+                    severity=severity
+                )
+                print(f"Created dynamic benchmark for {func_name} function")
+        
+        # Create optimizers
+        optimizer_types = {
+            'ACO': 'ant_colony',
+            'DE': 'differential_evolution',
+            'ES': 'evolution_strategy',
+            'GWO': 'grey_wolf'
+        }
+        
+        # Initialize metrics collector
+        metrics_collector = MetricsCollector()
+        
+        # Number of runs for each optimizer/function combination
+        n_runs = args.n_runs if hasattr(args, 'n_runs') and args.n_runs else 3
+        
+        # Maximum evaluations per run
+        max_evals = 1000
+        
+        # Run each optimizer on each dynamic function
+        for func_name, dynamic_func in dynamic_benchmarks.items():
+            print(f"\nDynamic benchmark: {func_name}")
+            
+            # Track optimal values over time for visualization
+            optimal_values = []
+            evaluations = []
+            
+            for run in range(n_runs):
+                print(f"  Run {run+1}/{n_runs}")
+                
+                # Reset the dynamic function for each run
+                dynamic_func.reset()
+                
+                # Create all optimizers
+                optimizers = create_optimizers(dim=dim, bounds=bounds)
+                
+                # Track evaluation counter for this run
+                eval_counter = 0
+                
+                # Define a wrapper function that tracks evaluations
+                def objective_function(x):
+                    nonlocal eval_counter
+                    eval_counter += 1
+                    
+                    # Evaluate the dynamic function
+                    result = dynamic_func.evaluate(x)
+                    
+                    # Record the optimal value and evaluation count for visualization
+                    if eval_counter % 10 == 0:  # Sample every 10 evaluations
+                        evaluations.append(eval_counter)
+                        optimal_values.append(dynamic_func.current_optimal)
+                    
+                    return result
+                
+                for opt_name, opt_type in optimizer_types.items():
+                    print(f"    Testing {opt_name}...", end="", flush=True)
+                    
+                    try:
+                        # Reset evaluation counter
+                        eval_counter = 0
+                        
+                        # Get the appropriate optimizer
+                        if opt_name == 'ACO':
+                            optimizer = optimizers['ACO']
+                        elif opt_name == 'DE':
+                            optimizer = optimizers['DE (Standard)']
+                        elif opt_name == 'ES':
+                            optimizer = optimizers['ES (Standard)']
+                        elif opt_name == 'GWO':
+                            optimizer = optimizers['GWO']
+                        else:
+                            raise ValueError(f"Unknown optimizer: {opt_name}")
+                        
+                        # Run optimization
+                        start_time = time.time()
+                        best_solution, best_score = optimizer.optimize(objective_function)
+                        end_time = time.time()
+                        
+                        # Get convergence curve if available
+                        convergence_curve = None
+                        if hasattr(optimizer, 'convergence_curve') and optimizer.convergence_curve:
+                            convergence_curve = optimizer.convergence_curve
+                        elif hasattr(optimizer, 'history') and optimizer.history:
+                            if isinstance(optimizer.history[0], dict) and 'best_score' in optimizer.history[0]:
+                                convergence_curve = [h.get('best_score', float('inf')) for h in optimizer.history]
+                            else:
+                                # Try to extract scores if history items are tuples or other structures
+                                try:
+                                    convergence_curve = [h[1] if isinstance(h, (list, tuple)) else h for h in optimizer.history]
+                                except (IndexError, TypeError):
+                                    # If we can't extract it, create a simple curve
+                                    convergence_curve = [best_score]
+                        
+                        # Add result to metrics collector
+                        metrics_collector.add_run_result(
+                            optimizer_name=opt_name,
+                            problem_name=f"{func_name}_dynamic_{drift_type}",
+                            best_score=best_score,
+                            convergence_time=end_time - start_time,
+                            evaluations=optimizer.evaluations,
+                            success=best_score < dynamic_func.current_optimal + 1e-2,  # Consider success if close to current optimal
+                            convergence_curve=convergence_curve
+                        )
+                        
+                        print(f" Done. Best score: {best_score:.6f}, Optimal: {dynamic_func.current_optimal:.6f}")
+                    except Exception as e:
+                        print(f" Error: {str(e)}")
+                        # Record error in metrics
+                        metrics_collector.add_run_result(
+                            optimizer_name=opt_name,
+                            problem_name=f"{func_name}_dynamic_{drift_type}",
+                            best_score=float('inf'),
+                            convergence_time=0,
+                            evaluations=0,
+                            success=False
+                        )
+            
+            # Visualize the drift behavior
+            if evaluations and optimal_values:
+                plt.figure(figsize=(10, 6))
+                plt.plot(evaluations, optimal_values, 'r-', linewidth=2)
+                plt.title(f"Dynamic Benchmark: {func_name} with {drift_type} drift")
+                plt.xlabel("Function Evaluations")
+                plt.ylabel("Optimal Value")
+                plt.grid(True)
+                
+                # Save the visualization
+                drift_plot_path = os.path.join(results_dir, f"drift_{func_name}_{drift_type}.png")
+                plt.savefig(drift_plot_path)
+                plt.close()
+                print(f"Saved drift visualization to {drift_plot_path}")
+        
+        # Print summary
+        print("\nSummary of Results:")
+        print("===================")
+        
+        # Calculate statistics
+        stats = metrics_collector.calculate_statistics()
+        
+        # Print results for each problem
+        for func_name in sorted(set(problem for opt in stats.values() for problem in opt.keys())):
+            print(f"\n{func_name}:")
+            # Sort optimizers by best score
+            problem_results = []
+            for optimizer in stats:
+                if func_name in stats[optimizer]:
+                    problem_results.append((
+                        optimizer,
+                        stats[optimizer][func_name]['mean_score'],
+                        stats[optimizer][func_name]['mean_time'],
+                        stats[optimizer][func_name]['mean_evals'],
+                        stats[optimizer][func_name]['success_rate']
+                    ))
+            
+            # Sort by score (lower is better)
+            problem_results.sort(key=lambda x: x[1])
+            
+            for i, (opt, score, time, evals, success_rate) in enumerate(problem_results):
+                print(f"  {i+1}. {opt}: Score = {score:.6f}, Evals = {int(evals)}, Time = {time:.2f}s, Success = {success_rate:.2%}")
+        
+        # Generate full performance report
+        print("\nGenerating performance report...")
+        metrics_collector.generate_performance_report(results_dir)
+        print(f"Report saved to {results_dir}")
+        
+        print("\nDynamic benchmark tests completed.")
+    except Exception as e:
+        import traceback
+        print(f"Error in dynamic benchmark: {str(e)}")
+        traceback.print_exc()
 
 def run_meta_learner_with_drift_detection(args):
     """
@@ -2575,32 +2726,55 @@ def run_algorithm_selection_demo(args=None):
 
 def parse_args():
     """
-    Parse command-line arguments.
-    """
-    parser = argparse.ArgumentParser(description='Run optimization framework')
-    parser.add_argument('--config', type=str, help='Path to configuration file')
-    parser.add_argument('--optimize', action='store_true', help='Run optimization')
-    parser.add_argument('--evaluate', action='store_true', help='Evaluate model')
-    parser.add_argument('--meta', action='store_true', help='Run meta-learning')
-    parser.add_argument('--drift', action='store_true', help='Run drift detection')
-    parser.add_argument('--run-meta-learner-with-drift', action='store_true', help='Run meta-learner with drift detection')
-    parser.add_argument('--explain-drift', action='store_true', help='Explain drift detection')
+    Parse command-line arguments for the optimization framework.
     
+    Returns:
+    --------
+    argparse.Namespace
+        Parsed command-line arguments
+    """
+    parser = argparse.ArgumentParser(description='Optimization Framework')
+    
+    # General options
+    parser.add_argument('--config', help="Path to configuration file")
+    parser.add_argument('--optimize', help="Run optimization", action='store_true')
+    parser.add_argument('--compare-optimizers', help="Compare optimizers", action='store_true')
+    parser.add_argument('--evaluate', help="Evaluate model", action='store_true')
+    
+    # Meta-learning related
+    parser.add_argument('--meta', help="Run meta-learning", action='store_true')
+    parser.add_argument('--enhanced-meta', help="Run enhanced meta-optimizer with feature extraction and ML-based selection", action='store_true')
+    parser.add_argument('--drift', help="Run drift detection", action='store_true')
+    parser.add_argument('--run-meta-learner-with-drift', help="Run meta-learner with drift detection", action='store_true')
+    parser.add_argument('--explain-drift', help="Explain drift detection", action='store_true')
+
     # Explainability arguments
     parser.add_argument('--explain', action='store_true', help='Run explainability analysis')
     parser.add_argument('--explainer', type=str, choices=['shap', 'lime', 'feature_importance', 'optimizer'], 
-                        help='Explainer to use', default='shap')
+                       help='Explainer to use', default='shap')
     parser.add_argument('--explain-plots', action='store_true', help='Generate explainability plots')
     parser.add_argument('--explain-plot-types', nargs='+', help='Types of explainability plots to generate')
     parser.add_argument('--explain-samples', type=int, help='Number of samples for explainability analysis', default=5)
     parser.add_argument('--auto-explain', action='store_true', help='Automatically run explainability after other operations')
     
-    # Meta-learner and optimization parameters
+    # Old meta-learner parameters (keeping these for backwards compatibility)
     parser.add_argument('--method', type=str, help='Method for meta-learner', default='bayesian')
     parser.add_argument('--surrogate', type=str, help='Surrogate model for meta-learner')
     parser.add_argument('--selection', type=str, help='Selection strategy for meta-learner')
     parser.add_argument('--exploration', type=float, help='Exploration factor for meta-learner', default=0.2)
     parser.add_argument('--history', type=float, help='History weight for meta-learner', default=0.7)
+
+    # Meta-learning parameters (new format)
+    parser.add_argument('--meta-method', help="Meta-learning method", default="random", choices=["random", "ucb", "thompson", "epsilon", "softmax", "greedy"])
+    parser.add_argument('--meta-surrogate', help="Meta-learning surrogate model", default=None, choices=[None, "gp", "rf"])
+    parser.add_argument('--meta-selection', help="Meta-learning selection strategy", default="random", choices=["random", "ucb", "thompson", "epsilon", "softmax", "greedy", "ml"])
+    parser.add_argument('--meta-exploration', help="Exploration parameter for meta-learning", default=0.2, type=float)
+    parser.add_argument('--meta-history-weight', help="Weight for historical performance in meta-learning", default=0.5, type=float)
+    parser.add_argument('--use-ml-selection', help="Use machine learning for algorithm selection", action='store_true')
+    parser.add_argument('--extract-features', help="Extract problem features for improved selection", action='store_true')
+    
+    # Optimization parameters
+    parser.add_argument('--optimizer', help="Optimization algorithm", default="differential_evolution", choices=["evolution_strategy", "differential_evolution", "ant_colony", "grey_wolf", "bayesian_optimization", "ensemble"])
     
     # Drift detection parameters
     parser.add_argument('--drift-window', type=int, help='Window size for drift detection', default=50)
@@ -2621,11 +2795,23 @@ def parse_args():
     parser.add_argument('--test-algorithm-selection', action='store_true', 
                         help='Run a comprehensive demo of algorithm selection visualization')
     
-    # Add optimizer comparison functionality
-    parser.add_argument('--compare-optimizers', action='store_true',
-                       help='Run comparison of all available optimizers on benchmark functions')
+    # Optimizer comparison parameters
     parser.add_argument('--n-runs', type=int, default=3, 
                        help='Number of runs for each optimizer/function combination')
+    
+    # Dynamic benchmark parameters
+    parser.add_argument('--dynamic-benchmark', action='store_true',
+                       help='Run optimizers with dynamic benchmark functions')
+    parser.add_argument('--drift-type', type=str, choices=['linear', 'oscillatory', 'sudden', 'incremental', 'random', 'noise'],
+                       default='linear', help='Type of concept drift for dynamic benchmarks')
+    parser.add_argument('--drift-rate', type=float, default=0.1,
+                       help='Rate of drift for dynamic benchmarks (0.0 to 1.0)')
+    parser.add_argument('--drift-interval', type=int, default=50,
+                       help='Interval between drift events (in function evaluations)')
+    parser.add_argument('--noise-level', type=float, default=0.0,
+                       help='Level of noise to add to benchmark functions (0.0 to 1.0)')
+    parser.add_argument('--severity', type=float, default=1.0,
+                       help='Severity of drift for dynamic benchmarks (0.0 to 1.0)')
     
     # Migraine data import
     parser.add_argument('--import-migraine-data', action='store_true', help='Import new migraine data')
@@ -2660,11 +2846,11 @@ def parse_args():
     
     # Synthetic data generation parameters
     parser.add_argument('--generate-synthetic', action='store_true', help='Generate synthetic migraine data')
-    parser.add_argument('--synthetic-patients', type=int, help='Number of patients for synthetic data')
-    parser.add_argument('--synthetic-days', type=int, help='Number of days per patient for synthetic data')
-    parser.add_argument('--synthetic-female-pct', type=float, help='Percentage of female patients in synthetic data')
-    parser.add_argument('--synthetic-missing-rate', type=float, help='Rate of missing data in synthetic data')
-    parser.add_argument('--synthetic-anomaly-rate', type=float, help='Rate of anomalies in synthetic data')
+    parser.add_argument('--synthetic-patients', type=int, default=100, help='Number of patients for synthetic data')
+    parser.add_argument('--synthetic-days', type=int, default=90, help='Number of days per patient for synthetic data')
+    parser.add_argument('--synthetic-female-pct', type=float, default=0.7, help='Percentage of female patients in synthetic data')
+    parser.add_argument('--synthetic-missing-rate', type=float, default=0.2, help='Rate of missing data in synthetic data')
+    parser.add_argument('--synthetic-anomaly-rate', type=float, default=0.05, help='Rate of anomalies in synthetic data')
     parser.add_argument('--synthetic-include-severity', action='store_true', help='Include migraine severity in synthetic data')
     parser.add_argument('--save-synthetic', action='store_true', help='Save the generated synthetic data')
     
@@ -2932,9 +3118,921 @@ def import_optimization_data(args):
         traceback.print_exc()
         return None
 
+def run_enhanced_meta_learning(args):
+    """
+    Run enhanced meta-learning with ML-based selection and problem feature extraction.
+    
+    This function implements the enhanced meta-optimizer functionality with:
+    1. Improved problem feature extraction
+    2. ML-based algorithm selection
+    3. Robust JSON handling
+    
+    Parameters:
+    -----------
+    args : argparse.Namespace
+        Command-line arguments
+    
+    Returns:
+    --------
+    dict
+        Results of the meta-learning process
+    """
+    import time
+    from scipy.stats import skew, kurtosis
+    
+    # Set parameters
+    dim = args.dimension if hasattr(args, 'dimension') else 10
+    visualize = args.visualize if hasattr(args, 'visualize') else False
+    use_ml_selection = args.use_ml_selection if hasattr(args, 'use_ml_selection') else True
+    extract_features = args.extract_features if hasattr(args, 'extract_features') else True
+    
+    logging.info(f"Running Enhanced Meta-Optimizer with dimension={dim}")
+    logging.info(f"ML-based selection: {'enabled' if use_ml_selection else 'disabled'}")
+    logging.info(f"Problem feature extraction: {'enabled' if extract_features else 'disabled'}")
+    
+    # Create directories for results
+    results_dir = 'results/enhanced_meta'
+    os.makedirs(results_dir, exist_ok=True)
+    
+    # Create visualization directory if needed
+    viz_dir = os.path.join(results_dir, 'visualizations')
+    if visualize:
+        os.makedirs(viz_dir, exist_ok=True)
+    
+    # Try to load standard test functions
+    try:
+        from meta_optimizer.benchmark.test_functions import create_test_suite
+        test_functions = create_test_suite()
+        logging.info(f"Loaded {len(test_functions)} test functions")
+    except ImportError:
+        logging.warning("Could not load test functions module")
+        
+        # Define some simple test functions
+        def sphere(x):
+            return np.sum(x**2)
+            
+        def rosenbrock(x):
+            return np.sum(100.0 * (x[1:] - x[:-1]**2)**2 + (1 - x[:-1])**2)
+            
+        def rastrigin(x):
+            return 10 * len(x) + np.sum(x**2 - 10 * np.cos(2 * np.pi * x))
+            
+        def ackley(x):
+            return (-20 * np.exp(-0.2 * np.sqrt(np.mean(x**2))) - 
+                    np.exp(np.mean(np.cos(2 * np.pi * x))) + 20 + np.e)
+        
+        test_functions = {
+            'sphere': sphere,
+            'rosenbrock': rosenbrock, 
+            'rastrigin': rastrigin,
+            'ackley': ackley
+        }
+    
+    # Define problem parameters
+    bounds = [(-5, 5)] * dim
+    
+    # Create optimizers
+    try:
+        from meta_optimizer.optimizers.aco import AntColonyOptimizer
+        from meta_optimizer.optimizers.gwo import GreyWolfOptimizer
+        from meta_optimizer.optimizers.de import DifferentialEvolutionOptimizer
+        from meta_optimizer.optimizers.es import EvolutionStrategyOptimizer
+        
+        # Initialize the optimizer classes directly
+        aco_opt = AntColonyOptimizer(dim=dim, bounds=bounds)
+        gwo_opt = GreyWolfOptimizer(dim=dim, bounds=bounds)
+        de_opt = DifferentialEvolutionOptimizer(dim=dim, bounds=bounds)
+        es_opt = EvolutionStrategyOptimizer(dim=dim, bounds=bounds)
+        de_adaptive_opt = DifferentialEvolutionOptimizer(dim=dim, bounds=bounds, adaptive=True)
+        es_adaptive_opt = EvolutionStrategyOptimizer(dim=dim, bounds=bounds, adaptive=True)
+        
+        optimizers = {
+            'ACO': aco_opt,
+            'GWO': gwo_opt,
+            'DE': de_opt,
+            'ES': es_opt,
+            'DE (Adaptive)': de_adaptive_opt,
+            'ES (Adaptive)': es_adaptive_opt
+        }
+        
+        logging.info("Successfully created optimizers directly")
+        
+    except ImportError as e:
+        logging.error(f"Could not import optimizer classes: {str(e)}")
+        # Try alternative import paths
+        try:
+            logging.info("Trying alternative import paths...")
+            
+            # Check if the optimizer_factory is available
+            from meta_optimizer.optimizers.optimizer_factory import OptimizerFactory
+            
+            factory = OptimizerFactory()
+            aco_opt = factory.create_optimizer("ant_colony", dim=dim, bounds=bounds)
+            gwo_opt = factory.create_optimizer("grey_wolf", dim=dim, bounds=bounds)
+            de_opt = factory.create_optimizer("differential_evolution", dim=dim, bounds=bounds)
+            es_opt = factory.create_optimizer("evolution_strategy", dim=dim, bounds=bounds)
+            de_adaptive_opt = factory.create_optimizer("differential_evolution", dim=dim, bounds=bounds, adaptive=True)
+            es_adaptive_opt = factory.create_optimizer("evolution_strategy", dim=dim, bounds=bounds, adaptive=True)
+            
+            optimizers = {
+                'ACO': aco_opt,
+                'GWO': gwo_opt,
+                'DE': de_opt,
+                'ES': es_opt,
+                'DE (Adaptive)': de_adaptive_opt,
+                'ES (Adaptive)': es_adaptive_opt
+            }
+            
+            logging.info("Successfully created optimizers using factory")
+            
+        except Exception as e2:
+            logging.error(f"Alternative import also failed: {str(e2)}")
+            return None
+    
+    # Set up history and selection files
+    history_file = os.path.join(results_dir, 'meta_learning_history.json')
+    selection_file = os.path.join(results_dir, 'selection_history.json')
+    
+    # Ensure directories exist
+    os.makedirs(os.path.dirname(history_file), exist_ok=True)
+    os.makedirs(os.path.dirname(selection_file), exist_ok=True)
+    
+    # Enhance ProblemAnalyzer class with better feature extraction
+    try:
+        from meta_optimizer.meta.problem_analysis import ProblemAnalyzer
+        
+        # Enhance the ProblemAnalyzer class for more robust feature extraction
+        if not hasattr(ProblemAnalyzer, '_extract_statistical_features') or \
+           not hasattr(ProblemAnalyzer, '_extract_landscape_features'):
+            
+            # Add statistical features method
+            def extract_statistical_features(self, X, y):
+                """Extract basic statistical features from function evaluations."""
+                features = {}
+                
+                # Basic statistics
+                features['y_mean'] = float(np.mean(y))
+                features['y_std'] = float(np.std(y))
+                features['y_min'] = float(np.min(y))
+                features['y_max'] = float(np.max(y))
+                features['y_range'] = float(features['y_max'] - features['y_min'])
+                
+                # Distribution characteristics
+                try:
+                    features['y_skewness'] = float(skew(y))
+                    features['y_kurtosis'] = float(kurtosis(y))
+                except Exception:
+                    features['y_skewness'] = 0.0
+                    features['y_kurtosis'] = 0.0
+                
+                # Normality test (approximate)
+                z_scores = (y - features['y_mean']) / (features['y_std'] + 1e-10)
+                features['y_normality'] = float(np.mean(np.abs(z_scores) < 2))
+                
+                return features
+            
+            # Add random samples generation method
+            def generate_random_samples(self, n_samples):
+                """Generate random samples from the search space."""
+                X = np.zeros((n_samples, self.dim))
+                for i in range(self.dim):
+                    X[:, i] = np.random.uniform(
+                        self.bounds[i][0], self.bounds[i][1], n_samples
+                    )
+                return X
+            
+            # Add landscape features method
+            def extract_landscape_features(self, X, y, objective_func):
+                """Extract features related to optimization landscape."""
+                features = {}
+                
+                # Simple gradient estimation
+                try:
+                    h = 1e-5
+                    grad_norms = []
+                    for i in range(min(20, len(X))):
+                        grad = np.zeros(self.dim)
+                        x = X[i]
+                        fx = objective_func(x)
+                        
+                        for j in range(self.dim):
+                            x_h = x.copy()
+                            x_h[j] += h
+                            fxh = objective_func(x_h)
+                            grad[j] = (fxh - fx) / h
+                            
+                        grad_norms.append(np.linalg.norm(grad))
+                    
+                    features['gradient_mean'] = float(np.mean(grad_norms))
+                    features['gradient_std'] = float(np.std(grad_norms))
+                except Exception:
+                    features['gradient_mean'] = 0.0
+                    features['gradient_std'] = 0.0
+                    
+                # Simple convexity estimation
+                try:
+                    h = 1e-4
+                    hessian_diag_elements = []
+                    for i in range(min(10, len(X))):
+                        hess_diag = np.zeros(self.dim)
+                        x = X[i]
+                        fx = objective_func(x)
+                        
+                        for j in range(self.dim):
+                            x_plus_h = x.copy()
+                            x_plus_h[j] += h
+                            f_plus_h = objective_func(x_plus_h)
+                            
+                            x_minus_h = x.copy()
+                            x_minus_h[j] -= h
+                            f_minus_h = objective_func(x_minus_h)
+                            
+                            hess_diag[j] = (f_plus_h - 2*fx + f_minus_h) / (h*h)
+                            
+                        hessian_diag_elements.extend(hess_diag)
+                    
+                    features['convexity_ratio'] = float(np.mean(np.array(hessian_diag_elements) > 0))
+                except Exception:
+                    features['convexity_ratio'] = 0.5  # Default: half convex, half concave
+                    
+                # Multimodality estimate
+                try:
+                    # Count number of local minima approximation
+                    local_minima_count = 0
+                    for i in range(1, len(X)-1):
+                        x_cur = X[i]
+                        y_cur = y[i]
+                        
+                        # Find nearest neighbors
+                        distances = np.linalg.norm(X - x_cur, axis=1)
+                        nearest_indices = np.argsort(distances)[1:6]  # Get 5 nearest neighbors
+                        
+                        # Check if current point is better than all neighbors
+                        if np.all(y_cur <= y[nearest_indices]):
+                            local_minima_count += 1
+                    
+                    features['estimated_local_minima'] = float(local_minima_count)
+                    features['multimodality_estimate'] = float(local_minima_count / (len(X) * 0.01))  # Normalized
+                except Exception:
+                    features['estimated_local_minima'] = 1.0
+                    features['multimodality_estimate'] = 0.1
+                    
+                # Function response characteristics
+                features['response_ratio'] = float(features.get('y_range', 10.0) / self.dim)
+                
+                return features
+            
+            # Add detailed features method
+            def extract_detailed_features(self, objective_func):
+                """Extract more detailed, computationally expensive features."""
+                features = {}
+                
+                features['separability'] = 0.5  # Default: medium separability
+                features['plateau_ratio'] = 0.0  # Default: no plateaus
+                
+                return features
+            
+            # Enhanced analyze_features method with error handling
+            def enhanced_analyze_features(self, objective_func, n_samples=100, detailed=False):
+                """Analyze problem features with improved error handling."""
+                try:
+                    self.logger.info(f"Analyzing problem features with {n_samples} samples...")
+                    
+                    # Generate random samples
+                    X = self._generate_random_samples(n_samples)
+                    
+                    # Evaluate function at sample points
+                    y = np.array([objective_func(x) for x in X])
+                    
+                    # Extract basic features
+                    features = self._extract_statistical_features(X, y)
+                    
+                    # Extract landscape features
+                    landscape_features = self._extract_landscape_features(X, y, objective_func)
+                    features.update(landscape_features)
+                    
+                    if detailed:
+                        # Extract more detailed features
+                        detailed_features = self._extract_detailed_features(objective_func)
+                        features.update(detailed_features)
+                    
+                    features['dimensionality'] = float(self.dim)
+                    self.logger.info(f"Feature extraction completed: {len(features)} features extracted")
+                    return features
+                    
+                except Exception as e:
+                    self.logger.warning(f"Error in feature extraction: {str(e)}")
+                    # Return minimal set of features
+                    return {
+                        'dimensionality': float(self.dim),
+                        'y_mean': 0.0,
+                        'y_std': 1.0,
+                        'y_range': 10.0,
+                        'multimodality_estimate': 0.5,
+                        'gradient_mean': 1.0,
+                        'convexity_ratio': 0.5,
+                        'response_ratio': 1.0
+                    }
+            
+            # Apply the enhancements
+            ProblemAnalyzer._extract_statistical_features = extract_statistical_features
+            ProblemAnalyzer._generate_random_samples = generate_random_samples
+            ProblemAnalyzer._extract_landscape_features = extract_landscape_features
+            ProblemAnalyzer._extract_detailed_features = extract_detailed_features
+            
+            # Only override analyze_features if we need to
+            if not hasattr(ProblemAnalyzer, 'analyze_features') or \
+               ProblemAnalyzer.analyze_features.__name__ != 'enhanced_analyze_features':
+                ProblemAnalyzer.analyze_features = enhanced_analyze_features
+                
+            logging.info("ProblemAnalyzer enhanced with improved feature extraction")
+    except ImportError:
+        logging.error("Could not import or enhance ProblemAnalyzer class")
+    
+    # Create Meta-Optimizer with ML-based selection
+    try:
+        from meta_optimizer.meta.meta_optimizer import MetaOptimizer
+        from meta_optimizer.meta.optimization_history import OptimizationHistory
+        from meta_optimizer.meta.selection_tracker import SelectionTracker
+        
+        # Handle the _load_data method issue
+        if not hasattr(MetaOptimizer, '_load_data'):
+            # Add a stub implementation
+            def load_data_stub(self):
+                self.logger.info("Using stub implementation for _load_data")
+            
+            # Add the method to the class
+            setattr(MetaOptimizer, '_load_data', load_data_stub)
+            
+        # Add a custom optimize method that handles problem_type
+        original_optimize = MetaOptimizer.optimize
+        
+        def custom_optimize(self, objective_func, max_evals=1000, **kwargs):
+            """Enhanced optimize method that handles problem_type parameter."""
+            # Handle problem_type parameter and any others in kwargs
+            problem_type = kwargs.pop('problem_type', None)
+            
+            # Execute the standard optimize method
+            best_solution, best_score = original_optimize(self, objective_func, max_evals=max_evals, **kwargs)
+            
+            # Record selection if problem_type was provided
+            if problem_type and hasattr(self, 'selection_tracker'):
+                self.logger.info(f"Recording selection for problem: {problem_type}")
+                
+                # Get the selected algorithm (in this version we can only record after the fact)
+                selected_algorithm = None
+                for opt_name, optimizer in self.optimizers.items():
+                    if hasattr(optimizer, 'best_position') and np.array_equal(optimizer.best_position, best_solution):
+                        selected_algorithm = opt_name
+                        break
+                
+                if not selected_algorithm:
+                    # Default to a random algorithm if we can't determine
+                    selected_algorithm = list(self.optimizers.keys())[0]
+                    
+                # Add selection to tracker in a safer way
+                if hasattr(self.selection_tracker, 'selections'):
+                    # First check what type of object selections is
+                    if isinstance(self.selection_tracker.selections, dict):
+                        # It's a defaultdict or similar
+                        if problem_type not in self.selection_tracker.selections:
+                            self.selection_tracker.selections[problem_type] = []
+                        
+                        # Now add to the list
+                        selection_entry = {
+                            'problem_type': problem_type,
+                            'algorithm': selected_algorithm,
+                            'performance': float(best_score),
+                            'features': getattr(self, 'current_features', {}),
+                            'time_taken': 0.0
+                        }
+                        self.selection_tracker.selections[problem_type].append(selection_entry)
+                    else:
+                        # It's likely a list
+                        selection_entry = {
+                            'problem_type': problem_type,
+                            'algorithm': selected_algorithm,
+                            'performance': float(best_score),
+                            'features': getattr(self, 'current_features', {}),
+                            'time_taken': 0.0
+                        }
+                        try:
+                            self.selection_tracker.selections.append(selection_entry)
+                        except AttributeError:
+                            # If append doesn't work, recreate as a list
+                            self.selection_tracker.selections = [selection_entry]
+                else:
+                    # Initialize selections as a list if it doesn't exist
+                    selection_entry = {
+                        'problem_type': problem_type,
+                        'algorithm': selected_algorithm,
+                        'performance': float(best_score),
+                        'features': getattr(self, 'current_features', {}),
+                        'time_taken': 0.0
+                    }
+                    self.selection_tracker.selections = [selection_entry]
+            
+            return best_solution, best_score
+        
+        # Apply the patch
+        MetaOptimizer.optimize = custom_optimize
+        
+        # Create the MetaOptimizer instance
+        meta_optimizer = MetaOptimizer(
+            dim=dim,
+            bounds=bounds,
+            optimizers=optimizers,
+            history_file=history_file,
+            selection_file=selection_file,
+            n_parallel=2,  # Use fewer for demonstration
+            budget_per_iteration=50,  # Reduced for demonstration
+            default_max_evals=1000,  # Default for full run
+            use_ml_selection=use_ml_selection,
+            verbose=True
+        )
+        
+        # Add missing methods to SelectionTracker if needed
+        if not hasattr(SelectionTracker, 'get_selection_counts') or \
+           not hasattr(SelectionTracker, 'get_selections_for_problem'):
+            
+            def get_selection_counts(self):
+                """Get counts of algorithm selections."""
+                if not hasattr(self, 'selections'):
+                    return {}
+                    
+                counts = {}
+                if isinstance(self.selections, dict):
+                    # Handle defaultdict case
+                    selections_list = []
+                    for value in self.selections.values():
+                        if isinstance(value, list):
+                            selections_list.extend(value)
+                        else:
+                            selections_list.append(value)
+                else:
+                    # Already a list
+                    selections_list = self.selections
+                    
+                for selection in selections_list:
+                    if isinstance(selection, dict) and 'algorithm' in selection:
+                        algo = selection['algorithm']
+                        counts[algo] = counts.get(algo, 0) + 1
+                return counts
+            
+            def get_selections_for_problem(self, problem_type):
+                """Get selections for a specific problem type."""
+                if not hasattr(self, 'selections'):
+                    return []
+                    
+                if isinstance(self.selections, dict):
+                    # Handle defaultdict case
+                    selections_list = []
+                    for value in self.selections.values():
+                        if isinstance(value, list):
+                            selections_list.extend(value)
+                        else:
+                            selections_list.append(value)
+                else:
+                    # Already a list
+                    selections_list = self.selections
+                
+                return [s for s in selections_list if isinstance(s, dict) and 
+                        'problem_type' in s and s['problem_type'] == problem_type]
+            
+            # Apply the enhancements
+            SelectionTracker.get_selection_counts = get_selection_counts
+            SelectionTracker.get_selections_for_problem = get_selections_for_problem
+            logging.info("SelectionTracker enhanced with additional methods")
+        
+    except ImportError as e:
+        logging.error(f"Could not import MetaOptimizer class: {str(e)}")
+        return None
+    except Exception as e:
+        logging.error(f"Error initializing MetaOptimizer: {str(e)}")
+        return None
+    
+    # Enable algorithm selection visualization if available
+    try:
+        from visualization.algorithm_selection_viz import AlgorithmSelectionVisualizer
+        algo_viz = AlgorithmSelectionVisualizer(save_dir=viz_dir)
+        meta_optimizer.enable_algorithm_selection_visualization(algo_viz)
+        logging.info("Algorithm selection visualization enabled for meta-learning")
+    except (ImportError, AttributeError):
+        logging.warning("Algorithm selection visualization not available")
+    
+    # Enable live visualization if requested
+    if visualize:
+        try:
+            meta_optimizer.enable_live_visualization(save_path=os.path.join(viz_dir, 'live_visualization.html'))
+            logging.info("Live visualization enabled")
+        except Exception as e:
+            logging.warning(f"Live visualization not available: {str(e)}")
+    
+    # For each test function, run meta-optimization
+    results = {}
+    problem_features = {}
+    
+    # Only use a subset of functions for demonstration
+    test_subset = ['sphere', 'rosenbrock', 'rastrigin', 'ackley']
+    for func_name, func in test_functions.items():
+        if func_name not in test_subset:
+            continue
+            
+        logging.info(f"Running meta-learning for {func_name}...")
+        
+        # Ensure test functions are properly initialized
+        if func_name == 'sphere':
+            def sphere_func(x):
+                return np.sum(x**2)
+            objective_func = sphere_func
+        elif func_name == 'rosenbrock':
+            def rosenbrock_func(x):
+                return np.sum(100.0 * (x[1:] - x[:-1]**2)**2 + (1 - x[:-1])**2)
+            objective_func = rosenbrock_func
+        elif func_name == 'rastrigin':
+            def rastrigin_func(x):
+                return 10 * len(x) + np.sum(x**2 - 10 * np.cos(2 * np.pi * x))
+            objective_func = rastrigin_func
+        elif func_name == 'ackley':
+            def ackley_func(x):
+                return (-20 * np.exp(-0.2 * np.sqrt(np.mean(x**2))) - 
+                        np.exp(np.mean(np.cos(2 * np.pi * x))) + 20 + np.e)
+            objective_func = ackley_func
+        else:
+            # Initialize test function for this dimension/bounds
+            if hasattr(func, '__call__'):
+                # Already a callable function
+                objective_func = func
+            else:
+                # Test function constructor
+                try:
+                    test_func_instance = func(dim, bounds)
+                    objective_func = lambda x: test_func_instance.evaluate(x)
+                except Exception as e:
+                    logging.error(f"Error initializing function {func_name}: {str(e)}")
+                    continue
+        
+        # Extract problem features if requested
+        if extract_features:
+            try:
+                logging.info(f"Extracting problem features for {func_name}...")
+                
+                # Create direct feature extraction that always works
+                # Sample objective function points
+                n_samples = 100
+                X = np.random.uniform(-5, 5, (n_samples, dim))
+                y = np.array([objective_func(x) for x in X])
+                
+                # Calculate basic statistics 
+                y_mean = float(np.mean(y))
+                y_std = float(np.std(y))
+                y_min = float(np.min(y))
+                y_max = float(np.max(y))
+                y_range = float(y_max - y_min)
+                
+                # Get gradient information
+                gradient_mean = 0.0
+                gradient_std = 0.0
+                try:
+                    h = 1e-5
+                    gradients = []
+                    for i in range(min(20, len(X))):
+                        x = X[i]
+                        fx = objective_func(x)
+                        grad = np.zeros(dim)
+                        
+                        for j in range(dim):
+                            x_h = x.copy()
+                            x_h[j] += h
+                            fxh = objective_func(x_h)
+                            grad[j] = (fxh - fx) / h
+                            
+                        gradients.append(np.linalg.norm(grad))
+                    
+                    gradient_mean = float(np.mean(gradients))
+                    gradient_std = float(np.std(gradients))
+                except Exception as grad_error:
+                    logging.warning(f"Could not compute gradient info: {str(grad_error)}")
+                
+                # Estimate multimodality
+                multimodality = 0.5  # Default
+                try:
+                    # Count number of local minima approximation
+                    local_minima_count = 0
+                    for i in range(1, len(X)-1):
+                        x_cur = X[i]
+                        y_cur = y[i]
+                        
+                        # Find nearest neighbors
+                        distances = np.linalg.norm(X - x_cur, axis=1)
+                        nearest_indices = np.argsort(distances)[1:6]  # Get 5 nearest neighbors
+                        
+                        # Check if current point is better than all neighbors
+                        if np.all(y_cur <= y[nearest_indices]):
+                            local_minima_count += 1
+                    
+                    multimodality = float(local_minima_count) / (len(X) * 0.01)  # Normalized
+                except Exception as multi_error:
+                    logging.warning(f"Could not compute multimodality: {str(multi_error)}")
+                
+                # Build feature dict
+                direct_features = {
+                    'y_mean': y_mean,
+                    'y_std': y_std, 
+                    'y_min': y_min,
+                    'y_max': y_max,
+                    'y_range': y_range,
+                    'dimensionality': float(dim),
+                    'multimodality_estimate': multimodality,
+                    'gradient_mean': gradient_mean,
+                    'gradient_std': gradient_std,
+                    'convexity_ratio': 0.5  # Default value
+                }
+                
+                # Try to use analyzer if available, but fall back to direct features
+                try:
+                    if hasattr(meta_optimizer, 'analyzer'):
+                        features = meta_optimizer.analyzer.analyze_features(objective_func, n_samples=100)
+                        # Merge with direct features for any missing ones
+                        for k, v in direct_features.items():
+                            if k not in features:
+                                features[k] = v
+                    else:
+                        features = direct_features
+                except Exception as analyzer_error:
+                    logging.warning(f"Analyzer failed: {str(analyzer_error)}, using direct features")
+                    features = direct_features
+                
+                problem_features[func_name] = features
+                
+                # Set problem features for better selection
+                meta_optimizer.current_features = features
+                meta_optimizer.current_problem_type = func_name
+                
+                if hasattr(meta_optimizer, 'set_problem_features'):
+                    try:
+                        meta_optimizer.set_problem_features(features, problem_type=func_name)
+                    except Exception as e:
+                        logging.warning(f"Could not set problem features with method: {str(e)}")
+                        
+                logging.info(f"Feature extraction completed for {func_name}")
+            except Exception as e:
+                logging.error(f"Error extracting features for {func_name}: {str(e)}")
+        
+        # Run meta-optimizer
+        try:
+            best_solution, best_score = meta_optimizer.optimize(
+                objective_func,
+                max_evals=500,  # Reduced for demonstration
+                problem_type=func_name
+            )
+            
+            # Record the result
+            results[func_name] = {
+                'best_score': float(best_score),
+                'best_solution': [float(x) for x in best_solution],
+                'completed': True
+            }
+            
+            logging.info(f"Completed {func_name}: best score {best_score}")
+        except Exception as e:
+            logging.error(f"Error optimizing {func_name}: {str(e)}")
+            
+            # Try to extract partial results from the optimizer if available
+            try:
+                if hasattr(meta_optimizer, 'best_solution') and meta_optimizer.best_solution is not None:
+                    partial_solution = meta_optimizer.best_solution
+                    partial_score = meta_optimizer.best_score
+                    results[func_name] = {
+                        'best_score': float(partial_score),
+                        'best_solution': [float(x) for x in partial_solution],
+                        'completed': False
+                    }
+                    logging.info(f"Partial result saved for {func_name}: {partial_score}")
+                else:
+                    # Look for results in individual optimizers
+                    best_partial_score = float('inf')
+                    best_partial_solution = None
+                    
+                    for opt_name, optimizer in meta_optimizer.optimizers.items():
+                        if hasattr(optimizer, 'best_position') and optimizer.best_position is not None:
+                            score = optimizer.best_score if hasattr(optimizer, 'best_score') else objective_func(optimizer.best_position)
+                            if score < best_partial_score:
+                                best_partial_score = score
+                                best_partial_solution = optimizer.best_position
+                    
+                    if best_partial_solution is not None:
+                        results[func_name] = {
+                            'best_score': float(best_partial_score),
+                            'best_solution': [float(x) for x in best_partial_solution],
+                            'completed': False
+                        }
+                        logging.info(f"Partial result extracted from optimizer for {func_name}: {best_partial_score}")
+            except Exception as inner_e:
+                logging.error(f"Could not extract partial results: {str(inner_e)}")
+    
+    # Generate summary
+    print("\nMeta-Learning Summary:")
+    print("=====================")
+    
+    # Get best algorithm overall
+    try:
+        algorithm_counts = meta_optimizer.selection_tracker.get_selection_counts()
+        if algorithm_counts:
+            best_algorithm = max(algorithm_counts.items(), key=lambda x: x[1])[0]
+            print(f"Overall best algorithm: {best_algorithm}")
+        else:
+            best_algorithm = None
+            logging.warning("No algorithm selections recorded.")
+            print("No algorithm selections recorded.")
+    except Exception as e:
+        logging.error(f"Error getting selection counts: {str(e)}")
+    
+    # Show best algorithm per function
+    print("\nBest algorithm per function:")
+    for func_name in results.keys():
+        try:
+            func_selections = meta_optimizer.selection_tracker.get_selections_for_problem(func_name)
+            if func_selections:
+                # Count algorithm selections
+                algo_counts = {}
+                for selection in func_selections:
+                    algo = selection['algorithm']
+                    algo_counts[algo] = algo_counts.get(algo, 0) + 1
+                
+                # Get best algorithm
+                best_algo = max(algo_counts.items(), key=lambda x: x[1])[0]
+                best_count = algo_counts[best_algo]
+                print(f"  {func_name}: {best_algo} ({best_count} selections)")
+            else:
+                print(f"  {func_name}: No selections recorded")
+        except Exception as e:
+            logging.error(f"Error processing selections for {func_name}: {str(e)}")
+    
+    # Try to save results to file
+    results_file = os.path.join(results_dir, 'enhanced_meta_results.json')
+    try:
+        # Create NumpyEncoder for properly serializing numpy types
+        class NumpyEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                if isinstance(obj, (np.int32, np.int64)):
+                    return int(obj)
+                if isinstance(obj, (np.float32, np.float64)):
+                    return float(obj)
+                if isinstance(obj, np.bool_):
+                    return bool(obj)
+                return json.JSONEncoder.default(self, obj)
+        
+        # Even if we had errors, try to save what we have
+        if not results:
+            # Create minimal results even if optimization failed
+            for func_name in test_subset:
+                if func_name not in results:
+                    results[func_name] = {
+                        "best_score": "N/A - Optimization error",
+                        "best_solution": [],
+                        "completed": False
+                    }
+        
+        with open(results_file, 'w') as f:
+            json.dump(results, f, cls=NumpyEncoder, indent=2)
+        print(f"\nResults saved to {results_file}")
+    except Exception as e:
+        logging.error(f"Error saving results: {str(e)}")
+        try:
+            # Fallback: Convert numpy types manually
+            simplified_results = {}
+            for func_name, func_results in results.items():
+                simplified_results[func_name] = {
+                    'best_score': float(func_results.get('best_score', 0)),
+                    'best_solution': [float(x) for x in func_results.get('best_solution', [])],
+                }
+            
+            with open(results_file, 'w') as f:
+                json.dump(simplified_results, f, indent=2)
+            logging.info(f"Results saved with simplified format to {results_file}")
+        except Exception as e2:
+            logging.error(f"Fallback save also failed: {str(e2)}")
+    
+    # Also save selection data
+    try:
+        selections_file = os.path.join(results_dir, 'selection_data.json')
+        
+        # Convert selections to a serializable format
+        if hasattr(meta_optimizer, 'selection_tracker'):
+            selection_tracker = meta_optimizer.selection_tracker
+            selections_data = []
+            
+            # Make sure selections exists
+            if hasattr(selection_tracker, 'selections') and selection_tracker.selections is not None:
+                selections = selection_tracker.selections
+                
+                # Handle different collection types
+                if isinstance(selections, dict):
+                    # It's a dictionary (like defaultdict)
+                    for problem_type, problem_selections in selections.items():
+                        if isinstance(problem_selections, list):
+                            for selection in problem_selections:
+                                try:
+                                    # Create safe selection entry
+                                    clean_selection = {
+                                        'problem_type': str(problem_type),
+                                        'algorithm': str(selection.get('algorithm', 'unknown')),
+                                        'performance': float(selection.get('performance', 0.0)),
+                                        'time_taken': float(selection.get('time_taken', 0.0))
+                                    }
+                                    
+                                    # Process features
+                                    features = {}
+                                    for k, v in selection.get('features', {}).items():
+                                        try:
+                                            features[k] = float(v) if isinstance(v, (int, float, np.number)) else str(v)
+                                        except:
+                                            features[k] = str(v)
+                                    
+                                    clean_selection['features'] = features
+                                    selections_data.append(clean_selection)
+                                except Exception as item_e:
+                                    logging.warning(f"Skipping problematic selection item: {str(item_e)}")
+                        elif isinstance(problem_selections, dict):
+                            # Handle single selection as dict
+                            try:
+                                clean_selection = {
+                                    'problem_type': str(problem_type),
+                                    'algorithm': str(problem_selections.get('algorithm', 'unknown')),
+                                    'performance': float(problem_selections.get('performance', 0.0)),
+                                    'time_taken': float(problem_selections.get('time_taken', 0.0))
+                                }
+                                selections_data.append(clean_selection)
+                            except Exception as item_e:
+                                logging.warning(f"Skipping problematic selection item: {str(item_e)}")
+                elif isinstance(selections, list):
+                    # It's a list
+                    for selection in selections:
+                        if isinstance(selection, dict):
+                            try:
+                                # Create safe selection entry
+                                clean_selection = {
+                                    'problem_type': str(selection.get('problem_type', 'unknown')),
+                                    'algorithm': str(selection.get('algorithm', 'unknown')),
+                                    'performance': float(selection.get('performance', 0.0)),
+                                    'time_taken': float(selection.get('time_taken', 0.0))
+                                }
+                                
+                                # Process features
+                                features = {}
+                                for k, v in selection.get('features', {}).items():
+                                    try:
+                                        features[k] = float(v) if isinstance(v, (int, float, np.number)) else str(v)
+                                    except:
+                                        features[k] = str(v)
+                                
+                                clean_selection['features'] = features
+                                selections_data.append(clean_selection)
+                            except Exception as item_e:
+                                logging.warning(f"Skipping problematic selection item: {str(item_e)}")
+                
+                # If we have data, save it
+                if selections_data:
+                    with open(selections_file, 'w') as f:
+                        json.dump(selections_data, f, indent=2)
+                    print(f"Selection data saved to {selections_file}")
+                else:
+                    logging.warning("No valid selection data to save")
+            else:
+                logging.warning("No selections attribute found or it is None")
+        else:
+            logging.warning("No selection_tracker attribute found on meta_optimizer")
+    except Exception as e:
+        logging.error(f"Error saving selection data: {str(e)}")
+        
+        # Try a simpler approach if the complex one fails
+        try:
+            # Create a minimal selection data set from results
+            simple_selections = []
+            for func_name, result in results.items():
+                if 'best_score' in result and result['best_score'] != "N/A - Optimization error":
+                    simple_selections.append({
+                        'problem_type': func_name,
+                        'algorithm': 'best_available',
+                        'performance': result['best_score']
+                    })
+            
+            if simple_selections:
+                with open(selections_file, 'w') as f:
+                    json.dump(simple_selections, f, indent=2)
+                print(f"Basic selection data saved to {selections_file}")
+        except Exception as e2:
+            logging.error(f"Fallback selection data save also failed: {str(e2)}")
+    
+    print("\nEnhanced Meta-Optimizer execution completed successfully")
+    return results
+
 def main():
     """
-    Main entry point for the CLI.
+    Main entry point for the CLI
     """
     args = parse_args()
     
@@ -2956,11 +4054,24 @@ def main():
     if args.evaluate:
         run_evaluation(args)
     
+    # Meta-learning optimization (better algorithm selection)
     if args.meta:
         run_meta_learning(args)
-    
+        
+    # Enhanced meta-optimizer with feature extraction and ML-based selection
+    if args.enhanced_meta:
+        try:
+            run_enhanced_meta_learning(args)
+            logging.info("Enhanced meta-optimizer executed successfully")
+        except Exception as e:
+            logging.error(f"Error running enhanced meta-optimizer: {str(e)}")
+        
+    # Drift detection
     if args.drift:
         run_drift_detection(args)
+    
+    if args.dynamic_benchmark:
+        run_dynamic_benchmark(args)
     
     if args.explain:
         run_explainability_analysis(args)

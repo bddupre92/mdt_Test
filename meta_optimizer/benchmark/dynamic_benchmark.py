@@ -69,12 +69,32 @@ class DynamicFunction:
         self.drift_magnitude = 0.0
         self.drift_history = []
         
+        # Initialize the current optimal value
+        self.current_optimal = 0.0
+        self._estimate_current_optimal()
+        
+    def _estimate_current_optimal(self):
+        """Estimate the current optimal value by sampling points."""
+        best_value = float('inf')
+        n_samples = 100
+        
+        # Sample random points to find an approximate optimum
+        for _ in range(n_samples):
+            x = np.array([np.random.uniform(low, high) for low, high in self.bounds])
+            drifted_x = self._apply_drift(x)
+            value = self.base_function(drifted_x)
+            if value < best_value:
+                best_value = value
+        
+        self.current_optimal = best_value
+        
     def reset(self) -> None:
         """Reset the function's state to initial conditions."""
         self.evaluations = 0
         self.time_step = 0
         self.drift_magnitude = 0.0
         self.drift_history = []
+        self._estimate_current_optimal()
     
     def evaluate(self, x: np.ndarray) -> float:
         """
@@ -111,6 +131,8 @@ class DynamicFunction:
         # Update time step for time-dependent dynamics
         if self.evaluations % self.drift_interval == 0:
             self.time_step += 1
+            # Re-estimate the optimal value when the function changes
+            self._estimate_current_optimal()
             
         return result
     

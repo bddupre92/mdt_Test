@@ -52,6 +52,7 @@ class MetaOptimizer:
                  n_parallel: int = 2,
                  budget_per_iteration: int = 100,
                  default_max_evals: int = 1000,
+                 use_ml_selection: bool = True,
                  verbose: bool = False):
         self.dim = dim
         self.bounds = bounds
@@ -66,6 +67,7 @@ class MetaOptimizer:
         self.budget_per_iteration = budget_per_iteration
         self.default_max_evals = default_max_evals
         self.verbose = verbose
+        self.use_ml_selection = use_ml_selection
         self.logger = logging.getLogger('MetaOptimizer')
         if not self.logger.handlers:  
             handler = logging.StreamHandler()
@@ -98,6 +100,15 @@ class MetaOptimizer:
         self.end_time = 0
         self.convergence_curve = []
         self.optimization_history = []
+        
+        # Load optimization history and selection data
+        self._load_data()
+        
+        # Initialize ML model for selections
+        self.ml_model = None
+        self.feature_scaler = None
+        if self.use_ml_selection:
+            self.train_selection_model()
         
         # Problem features
         self.current_features = None
@@ -132,9 +143,6 @@ class MetaOptimizer:
         self.current_features = None
         self.current_problem_type = None
         self._eval_lock = Lock()
-        
-        # Results tracking
-        self.convergence_curve = []
         
         # Learning parameters
         self.min_exploration_rate = 0.1
@@ -187,24 +195,355 @@ class MetaOptimizer:
         Returns:
             List of selected optimizer names
         """
-        # For this demo, let's ensure we always select optimizers
-        # rather than waiting for the full learning algorithm
-        selected_optimizers = []
+        # If no features available, use random selection
+        if self.current_features is None:
+            self.logger.info("No problem features available, using random selection")
+            return list(np.random.choice(
+                list(self.optimizers.keys()),
+                size=min(self.n_parallel, len(self.optimizers)),
+                replace=False
+            ))
         
-        # Get available optimizers
-        available_optimizers = list(self.optimizers.keys())
+        # Calculate exploration rate (decreases over time)
+        exploration_rate = self.min_exploration_rate + (1.0 - self.min_exploration_rate) * (
+            self.exploration_decay ** self._current_iteration
+        )
         
-        # For demonstration purposes, randomly select 1-3 optimizers
-        if len(available_optimizers) > 1:
-            # Randomly select 1-3 optimizers for demonstration purposes
-            n_select = np.random.randint(1, min(4, len(available_optimizers)))
-            selected_optimizers = list(np.random.choice(available_optimizers, size=n_select, replace=False))
-            self.logger.info(f"Randomly selected {n_select} optimizers for demonstration: {selected_optimizers}")
-        else:
-            # If there's only one optimizer, select it
-            selected_optimizers = available_optimizers
+        # Number of optimizers to select
+        n_select = min(self.n_parallel, len(self.optimizers))
+        n_exploit = max(1, int(n_select * (1.0 - exploration_rate)))
+        n_explore = n_select - n_exploit
+        
+        self.logger.info(f"Selecting {n_exploit} optimizers to exploit and {n_explore} to explore")
+        
+        # Track candidates with their scores
+        candidates = {opt_name: 0.0 for opt_name in self.optimizers.keys()}
+        
+        # 1. Feature-based heuristic selection
+        self._update_feature_based_scores(candidates)
+        
+        # 2. History-based selection (if we have historical data)
+        if hasattr(self, 'history') and self.history and len(self.history.records) > 0:
+            self._update_history_based_scores(candidates)
             
+        # 3. Selection tracker-based selection (if available)
+        if (hasattr(self, 'selection_tracker') and self.selection_tracker and 
+            self.current_problem_type):
+            self._update_tracker_based_scores(candidates)
+        
+        # Select top-scoring optimizers for exploitation
+        sorted_candidates = sorted(candidates.items(), key=lambda x: x[1], reverse=True)
+        exploited_optimizers = [name for name, _ in sorted_candidates[:n_exploit]]
+        
+        # Select remaining optimizers randomly for exploration
+        remaining_optimizers = [name for name in self.optimizers.keys() 
+                               if name not in exploited_optimizers]
+        
+        explored_optimizers = []
+        if remaining_optimizers and n_explore > 0:
+            explored_optimizers = list(np.random.choice(
+                remaining_optimizers,
+                size=min(n_explore, len(remaining_optimizers)),
+                replace=False
+            ))
+        
+        # Combine and return selected optimizers
+        selected_optimizers = exploited_optimizers + explored_optimizers
+        self.logger.info(f"Selected optimizers: {selected_optimizers}")
+        
         return selected_optimizers
+    
+    def _update_feature_based_scores(self, candidates: Dict[str, float]) -> None:
+        """
+        Update candidate scores based on problem features.
+        
+        Args:
+            candidates: Dictionary of optimizer names to scores to update
+        """
+        # Try ML-based selection first if we have enough data
+        if hasattr(self, 'ml_model') and self.ml_model is not None:
+            try:
+                ml_scores = self._get_ml_model_scores()
+                if ml_scores:
+                    for opt_name, score in ml_scores.items():
+                        if opt_name in candidates:
+                            # Blend with existing score (70% ML, 30% existing)
+                            candidates[opt_name] = 0.7 * score + 0.3 * candidates.get(opt_name, 0.0)
+                    return  # ML model scores applied successfully
+            except Exception as e:
+                self.logger.warning(f"Error applying ML model for selection: {e}")
+        
+        # Feature-specific heuristics based on optimizer strengths
+        features = self.current_features
+        
+        # Extract key features
+        modality = features.get('modality', 1)
+        ruggedness = features.get('ruggedness', 0)
+        convexity = features.get('convexity', 0)
+        dimension = features.get('dimension', 2)
+        gradient_variance = features.get('gradient_variance', 0)
+        basin_ratio = features.get('basin_ratio', 0)
+        separability = features.get('separability', 0)
+        
+        # New features if available
+        noise = features.get('noise_estimation', 0)
+        periodicity = features.get('periodicity', 0)
+        neutral_regions = features.get('neutral_regions', 0)
+        evolvability = features.get('evolvability', 0.5)
+        curvature = features.get('curvature', 0)
+        pca_ratio = features.get('pca_variance_ratio', 0.5)
+        
+        # Apply heuristics for each optimizer type
+        for opt_name in candidates.keys():
+            score = 0.0
+            
+            # Evolutionary Strategy works well for:
+            # - High dimensionality
+            # - Moderate to high ruggedness
+            # - Low to moderate modality
+            if 'ES' in opt_name:
+                score += 0.5 * min(1.0, dimension / 10)  # Higher score for higher dimensions
+                score += 0.3 * ruggedness  # Better for rugged landscapes
+                score += 0.2 * (1 - modality / 10)  # Better for fewer local optima
+                score += 0.2 * basin_ratio  # Does well with distinct basins
+                # New feature relationships
+                score += 0.2 * noise  # Good at handling noise
+                score += 0.1 * (1 - neutral_regions)  # Better with clear gradient information
+                
+            # Differential Evolution works well for:
+            # - Moderate dimensionality
+            # - High modality problems
+            # - Good separability
+            elif 'DE' in opt_name:
+                score += 0.3 * min(1.0, dimension / 5)  # Good up to moderate dimensions
+                score += 0.4 * (modality / 10)  # Better for multimodal problems
+                score += 0.3 * separability  # Good for separable problems
+                score += 0.2 * convexity  # Does well with convex problems
+                # New feature relationships
+                score += 0.3 * pca_ratio  # Good when problem has principal component structure
+                score += 0.2 * evolvability  # Performs well when incremental improvements help
+                
+            # Grey Wolf works well for:
+            # - Low to moderate dimensionality
+            # - Moderate ruggedness
+            # - Good gradient information
+            elif 'GWO' in opt_name:
+                score += 0.5 * max(0, 1 - dimension / 10)  # Better for lower dimensions
+                score += 0.3 * (1 - gradient_variance)  # Better with consistent gradients
+                score += 0.2 * (1 - ruggedness)  # Better for smoother landscapes
+                # New feature relationships
+                score += 0.3 * evolvability  # Good when local improvements help
+                score += 0.2 * (1 - noise)  # Less effective with high noise
+                
+            # Ant Colony works well for:
+            # - Discrete-like problems
+            # - High ruggedness
+            # - Many local optima
+            elif 'ACO' in opt_name:
+                score += 0.5 * ruggedness  # Great for rugged landscapes
+                score += 0.3 * (modality / 10)  # Good for many local optima
+                score += 0.2 * (1 - separability)  # Better for non-separable problems
+                # New feature relationships
+                score += 0.4 * periodicity  # Excellent for problems with periodic patterns
+                score += 0.2 * neutral_regions  # Good at navigating neutral regions
+                
+            # Add score component for adaptive algorithms
+            if 'Adaptive' in opt_name:
+                score += 0.1  # Small bonus for adaptive variants
+                
+            candidates[opt_name] += score
+    
+    def _get_ml_model_scores(self) -> Dict[str, float]:
+        """
+        Get algorithm scores from trained ML model.
+        
+        Returns:
+            Dictionary mapping optimizer names to predicted scores
+        """
+        if not hasattr(self, 'ml_model') or self.ml_model is None:
+            return {}
+            
+        if not self.current_features:
+            return {}
+            
+        try:
+            # Prepare feature vector
+            feature_vector = self._prepare_feature_vector()
+            if feature_vector is None:
+                return {}
+                
+            # Get model predictions
+            scores = self.ml_model.predict_proba(feature_vector.reshape(1, -1))[0]
+            
+            # Map scores to optimizer names
+            result = {}
+            for i, opt_name in enumerate(self.ml_model.classes_):
+                if opt_name in self.optimizers:
+                    result[opt_name] = float(scores[i])
+            
+            return result
+        except Exception as e:
+            self.logger.warning(f"Error getting ML model scores: {e}")
+            return {}
+    
+    def _prepare_feature_vector(self) -> np.ndarray:
+        """
+        Prepare feature vector for ML model.
+        
+        Returns:
+            Numpy array with scaled features
+        """
+        if not self.current_features:
+            return None
+            
+        # Define standard feature set (must match what model was trained on)
+        standard_features = [
+            'dimension', 'modality', 'ruggedness', 'convexity', 
+            'gradient_variance', 'separability', 'basin_ratio',
+            'noise_estimation', 'periodicity', 'evolvability', 
+            'neutral_regions', 'curvature', 'pca_variance_ratio'
+        ]
+        
+        # Extract features
+        feature_values = []
+        for feature in standard_features:
+            if feature in self.current_features:
+                feature_values.append(self.current_features[feature])
+            else:
+                # Use sensible defaults for missing features
+                if feature == 'dimension':
+                    feature_values.append(float(self.dim))
+                else:
+                    feature_values.append(0.5)  # Default middle value
+        
+        return np.array(feature_values)
+    
+    def train_selection_model(self) -> None:
+        """
+        Train ML model for algorithm selection using historical data.
+        
+        This builds a simple classifier to predict which optimizer is most likely
+        to succeed based on problem features.
+        """
+        # Check if we have enough historical data
+        if not hasattr(self, 'history') or not self.history or len(self.history.records) < 10:
+            self.logger.warning("Not enough history data to train selection model")
+            return
+            
+        try:
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.preprocessing import StandardScaler
+            
+            # Prepare training data
+            X = []  # Features
+            y = []  # Optimizer labels
+            
+            for record in self.history.records:
+                if 'features' not in record or 'optimizer' not in record:
+                    continue
+                    
+                # Prepare feature vector
+                features = record['features']
+                if not features:
+                    continue
+                    
+                feature_vector = []
+                for feature in ['dimension', 'modality', 'ruggedness', 'convexity', 
+                              'gradient_variance', 'separability', 'basin_ratio']:
+                    feature_vector.append(features.get(feature, 0.5))
+                    
+                # Add newer features if available
+                for feature in ['noise_estimation', 'periodicity', 'evolvability', 
+                              'neutral_regions', 'curvature', 'pca_variance_ratio']:
+                    feature_vector.append(features.get(feature, 0.5))
+                
+                X.append(feature_vector)
+                y.append(record['optimizer'])
+            
+            if len(X) < 10 or len(set(y)) < 2:
+                self.logger.warning("Insufficient diverse data to train selection model")
+                return
+                
+            # Scale features
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            # Train model
+            model = RandomForestClassifier(n_estimators=50, random_state=42)
+            model.fit(X_scaled, y)
+            
+            # Save model and scaler
+            self.ml_model = model
+            self.feature_scaler = scaler
+            
+            self.logger.info(f"Trained selection model with {len(X)} samples")
+            
+            # Evaluate feature importance
+            if hasattr(model, 'feature_importances_'):
+                importances = model.feature_importances_
+                feature_names = ['dimension', 'modality', 'ruggedness', 'convexity', 
+                              'gradient_variance', 'separability', 'basin_ratio',
+                              'noise_estimation', 'periodicity', 'evolvability', 
+                              'neutral_regions', 'curvature', 'pca_variance_ratio']
+                
+                self.logger.debug("Feature importances:")
+                for name, importance in zip(feature_names, importances):
+                    self.logger.debug(f"  {name}: {importance:.4f}")
+        
+        except Exception as e:
+            self.logger.error(f"Error training selection model: {e}")
+            self.ml_model = None
+
+    def _update_history_based_scores(self, candidates: Dict[str, float]) -> None:
+        """
+        Update candidate scores based on optimization history.
+        
+        Args:
+            candidates: Dictionary of optimizer names to scores to update
+        """
+        # Find similar problems in history
+        similar_problems = self.history.find_similar_problems(
+            self.current_features, 
+            k=min(10, len(self.history.records))
+        )
+        
+        if not similar_problems:
+            return
+            
+        # Weight by similarity score
+        for similarity, record in similar_problems:
+            optimizer = record['optimizer']
+            if optimizer in candidates:
+                # Apply weights for performance and similarity
+                performance_weight = 1.0 if record['success'] else 0.5
+                candidates[optimizer] += similarity * performance_weight
+    
+    def _update_tracker_based_scores(self, candidates: Dict[str, float]) -> None:
+        """
+        Update candidate scores based on selection tracker data.
+        
+        Args:
+            candidates: Dictionary of optimizer names to scores to update
+        """
+        # Get feature correlations for this problem type
+        correlations = self.selection_tracker.get_feature_correlations(self.current_problem_type)
+        
+        if not correlations:
+            return
+            
+        # Calculate feature-weighted scores for each optimizer
+        for opt_name, feat_corrs in correlations.items():
+            if opt_name not in candidates:
+                continue
+                
+            score = 0.0
+            for feat, corr in feat_corrs.items():
+                if feat in self.current_features:
+                    # Weight the feature by its correlation with success
+                    feature_value = self.current_features[feat]
+                    score += feature_value * corr
+                    
+            candidates[opt_name] += score
 
     def _run_single_optimizer(self, optimizer_name: str, objective_func: Callable, max_evals: int) -> OptimizationResult:
         """Run a single optimizer and return its result."""
@@ -458,6 +797,18 @@ class MetaOptimizer:
             self.live_viz_monitor.flush()
             if self.save_viz_path:
                 self.live_viz_monitor.save(self.save_viz_path)
+        
+        # After optimization completes, update the ML selection model
+        if self.use_ml_selection and self.optimization_history:
+            try:
+                # Only train if we have new data
+                if len(self.history.records) > 0:
+                    last_record_time = self.history.records[-1].get('timestamp', 0)
+                    if time.time() - last_record_time < 60 * 60:  # Only if data newer than 1 hour
+                        self.train_selection_model()
+                        self.logger.info("Updated algorithm selection model after optimization")
+            except Exception as e:
+                self.logger.warning(f"Error updating selection model: {e}")
         
         # Return best solution
         return self.best_solution
@@ -852,7 +1203,7 @@ class MetaOptimizer:
 
     def _process_optimizer_result(self, result: OptimizationResult) -> None:
         """Process result from an optimizer."""
-        if not result or not result.solution:
+        if not result or result.solution is None:
             return
             
         # Update best solution if better
@@ -861,15 +1212,39 @@ class MetaOptimizer:
             self.best_solution = result.solution.copy()
             self.logger.info(f"New best solution from {result.optimizer_name}: {self.best_score}")
             
-        # Record selection
-        if self.selection_tracker and self.current_features:
-            self.selection_tracker.record_selection(
-                problem_type=self.current_problem_type,
-                optimizer=result.optimizer_name,
-                features=self.current_features,
-                success=result.success,
-                score=result.score
-            )
+        try:
+            # Record selection in selection tracker
+            if self.selection_tracker and self.current_features:
+                self.selection_tracker.record_selection(
+                    problem_type=self.current_problem_type,
+                    optimizer=result.optimizer_name,
+                    features=self.current_features,
+                    success=bool(result.success),  # Convert to standard Python bool
+                    score=float(result.score)      # Convert to standard Python float
+                )
+                
+            # Record selection in algorithm selection visualizer
+            if hasattr(self, 'enable_algo_viz') and self.enable_algo_viz and hasattr(self, 'algo_selection_viz') and self.algo_selection_viz:
+                # Prepare context with additional information
+                context = {
+                    'function_name': self.current_problem_type,
+                    'phase': 'optimization',
+                    'features': {k: float(v) if isinstance(v, np.generic) else v 
+                               for k, v in self.current_features.items()} if self.current_features else {},
+                    'success': bool(result.success),
+                    'evaluations': int(result.n_evals)
+                }
+                
+                self.algo_selection_viz.record_selection(
+                    iteration=self._current_iteration,
+                    optimizer=result.optimizer_name,
+                    problem_type=self.current_problem_type or "unknown",
+                    score=float(result.score),
+                    context=context
+                )
+                self.logger.info(f"Recorded selection of optimizer {result.optimizer_name} for iteration {self._current_iteration}")
+        except Exception as e:
+            self.logger.error(f"Error recording selection result from {result.optimizer_name}: {str(e)}")
 
     def export_data(self, 
                    filename: str, 

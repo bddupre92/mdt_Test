@@ -518,6 +518,21 @@ class AlgorithmSelectionVisualizer:
         # Check if there's any data to plot
         if not self.selection_history:
             self.logger.warning("No selection history to visualize in dashboard")
+            
+            # Create an empty plot with a message
+            plt.figure(figsize=(10, 6))
+            plt.text(0.5, 0.5, "No algorithm selection data available for dashboard", 
+                    horizontalalignment='center', verticalalignment='center',
+                    transform=plt.gca().transAxes, fontsize=14)
+            plt.title(title)
+            
+            if save and self.save_dir:
+                save_path = Path(self.save_dir) / filename
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                plt.savefig(save_path, dpi=300, bbox_inches='tight')
+                print(f"Saved empty dashboard to {filename}")
+            
+            plt.close()
             return None
         
         # Create a larger figure
@@ -921,7 +936,7 @@ class AlgorithmSelectionVisualizer:
             # Create empty plot with message
             fig = go.Figure()
             fig.add_annotation(
-                text="No optimizer selections recorded",
+                text="No algorithm selection data available for dashboard",
                 xref="paper", yref="paper",
                 x=0.5, y=0.5,
                 showarrow=False,
@@ -934,9 +949,13 @@ class AlgorithmSelectionVisualizer:
             )
             
             if save and self.save_dir:
-                filepath = os.path.join(self.save_dir, filename)
-                fig.write_html(filepath)
-                self.logger.info(f"Empty dashboard saved to {filepath}")
+                try:
+                    filepath = os.path.join(self.save_dir, filename)
+                    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                    fig.write_html(filepath)
+                    self.logger.info(f"Empty dashboard saved to {filepath}")
+                except Exception as e:
+                    self.logger.error(f"Error saving empty dashboard: {e}")
             return
             
         # Create grid of plots

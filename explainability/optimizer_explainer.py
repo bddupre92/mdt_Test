@@ -13,6 +13,14 @@ from pathlib import Path
 import json
 from .base_explainer import BaseExplainer
 from optimizers.base_optimizer import BaseOptimizer, OptimizerState
+import os
+import logging
+import argparse
+import time
+import warnings
+
+from utils.json_utils import save_json
+from utils.plotting import save_plot, setup_plot_style
 
 
 class OptimizerExplainer(BaseExplainer):
@@ -407,3 +415,33 @@ class OptimizerExplainer(BaseExplainer):
         
         plt.tight_layout()
         return fig
+
+def run_optimizer_explainability(optimizer, plot_types=None, generate_plots=True, **kwargs):
+    """
+    Run explainability analysis on an optimizer
+    
+    Parameters:
+    -----------
+    optimizer : object
+        Optimizer instance to explain
+    plot_types : List[str], optional
+        List of plot types to generate
+    generate_plots : bool, optional
+        Whether to generate plots
+    **kwargs : dict
+        Additional parameters for the explainer
+        
+    Returns:
+    --------
+    Dict[str, Any]
+        Dictionary containing explanation data and plot paths
+    """
+    logging.info("Running optimizer explainability analysis")
+    
+    # Placeholder implementation
+    # Will be replaced with full implementation
+    
+    return {
+        "message": "Optimizer explainability placeholder",
+        "optimizer_type": type(optimizer).__name__
+    }

@@ -144,10 +144,27 @@ class OptimizationHistory:
         """Load history from file."""
         if not self.history_file or not os.path.exists(self.history_file):
             return
-            
-        with open(self.history_file, 'r') as f:
-            data = json.load(f)
-            self.from_dict(data)
+        
+        try:
+            with open(self.history_file, 'r') as f:
+                file_content = f.read().strip()
+                if file_content:  # Check if file is not empty
+                    try:
+                        data = json.loads(file_content)
+                        self.from_dict(data)
+                    except json.JSONDecodeError as e:
+                        import logging
+                        logging.warning(f"Error decoding JSON from {self.history_file}: {e}")
+                        logging.warning("Creating new empty optimization history.")
+                        self.records = []
+                else:
+                    # File is empty, initialize with empty records list
+                    self.records = []
+        except Exception as e:
+            import logging
+            logging.warning(f"Error loading optimization history from {self.history_file}: {e}")
+            logging.warning("Creating new empty optimization history.")
+            self.records = []
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert history to dictionary for JSON serialization."""
@@ -199,3 +216,21 @@ class OptimizationHistory:
         
         # Convert distance to similarity score
         return 1.0 / (1.0 + distance)
+        
+    @classmethod
+    def load(cls, file_path: str) -> 'OptimizationHistory':
+        """
+        Load optimization history from a file.
+        
+        Args:
+            file_path: Path to history file
+            
+        Returns:
+            OptimizationHistory instance with loaded data
+        """
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"History file not found: {file_path}")
+            
+        history = cls(history_file=file_path)
+        # This will trigger loading in the __init__ method
+        return history

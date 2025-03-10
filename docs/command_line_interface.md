@@ -33,6 +33,23 @@ The framework supports several operation modes, each activated by a specific fla
 | `--explain-drift` | Explain drift when detected |
 | `--test-algorithm-selection` | Run a demo of algorithm selection visualization |
 | `--compare-optimizers` | Run comparison of all available optimizers on benchmark functions |
+| `--dynamic-optimization` | Run dynamic optimization visualization |
+| `--enhanced-meta` | Run enhanced meta-learning |
+
+## Modular Command Framework
+
+The framework also supports a more modular command structure using subcommands:
+
+```bash
+python main_v2.py [SUBCOMMAND] [OPTIONS]
+```
+
+### Available Subcommands
+
+- `baseline_comparison`: Run baseline comparison between SATzilla and Meta Optimizer
+- `train_satzilla`: Train the SATzilla-inspired algorithm selector
+- `meta`: Run meta-learning
+- `dynamic_optimization`: Run dynamic optimization visualization
 
 ## Optimization Options
 
@@ -61,13 +78,37 @@ The framework supports several operation modes, each activated by a specific fla
 | `--drift-threshold DRIFT_THRESHOLD` | Threshold for drift detection | `0.5` |
 | `--drift-significance DRIFT_SIGNIFICANCE` | Significance level for drift detection | `0.05` |
 
+## Dynamic Optimization Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--function` | Test function to use ('ackley', 'rastrigin', etc.) | Required |
+| `--drift-type` | Type of drift ('sudden', 'oscillatory', 'linear', etc.) | Required |
+| `--dim` | Problem dimensionality | `10` |
+| `--drift-rate` | Rate of drift (0.0 to 1.0) | `0.1` |
+| `--drift-interval` | Interval between drift events | `20` |
+| `--severity` | Severity of drift (0.0 to 1.0) | `1.0` |
+| `--max-iterations` | Maximum number of iterations | `500` |
+| `--reoptimize-interval` | Re-optimize after this many evaluations | `50` |
+| `--show-plot` | Show plot in addition to saving it | `False` |
+
 ## Algorithm Selection Visualization
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--visualize-algorithm-selection` | Visualize algorithm selection process | False |
-| `--algo-viz-dir ALGO_VIZ_DIR` | Directory to save algorithm selection visualizations | None |
+| `--algo-viz-dir ALGO_VIZ_DIR` | Directory to save algorithm selection visualizations | `results/algorithm_selection_demo` |
 | `--algo-viz-plots` | Algorithm selection plot types to generate | None |
+| `--interactive` | Generate interactive HTML dashboards | False |
+
+## Performance Visualization Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--boxplot` | Generate performance boxplots | False |
+| `--show-significance` | Show standard deviation bands on convergence plots | False |
+| `--dynamic` | Compare optimizers on dynamic problems with radar charts | False |
+| `--visualize-drift` | Generate drift visualization plots | False |
 
 ## Explainability Options
 
@@ -102,6 +143,33 @@ Default optimizer plot types:
 - `exploration_exploitation`
 - `gradient_estimation`
 - `performance_comparison`
+
+## Baseline Comparison Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--dimensions -d` | Number of dimensions for benchmark functions | `2` |
+| `--max-evaluations -e` | Maximum number of function evaluations per algorithm | `1000` |
+| `--num-trials -t` | Number of trials to run for statistical significance | `3` |
+| `--functions -f` | Benchmark functions to use | `['sphere', 'rosenbrock']` |
+| `--all-functions` | Use all available benchmark functions | False |
+| `--output-dir -o` | Output directory for results | `results/baseline_comparison` |
+| `--timestamp-dir` | Create a timestamped subdirectory for results | True |
+| `--no-visualizations` | Disable visualization generation | False |
+
+## SATzilla Training Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--dimensions -d` | Number of dimensions for benchmark functions | `2` |
+| `--max-evaluations -e` | Maximum number of function evaluations per algorithm | `1000` |
+| `--num-problems -p` | Number of training problems to generate | `20` |
+| `--functions -f` | Benchmark functions to use for training | `['sphere', 'rosenbrock', 'rastrigin', 'ackley', 'griewank']` |
+| `--all-functions` | Use all available benchmark functions | False |
+| `--output-dir -o` | Output directory for training results | `results/satzilla_training` |
+| `--timestamp-dir` | Create a timestamped subdirectory for results | True |
+| `--seed -s` | Random seed for reproducibility | `42` |
+| `--visualize-features` | Generate feature importance visualizations | False |
 
 ## Migraine Data Processing
 
@@ -154,6 +222,14 @@ Default optimizer plot types:
 | `--synthetic-include-severity` | Include migraine severity in synthetic data | False |
 | `--save-synthetic` | Save the generated synthetic data | False |
 
+## Enhanced Meta-Learning Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--enhanced-meta` | Run enhanced meta-learning | False |
+| `--export-dir` | Directory for saving results and visualizations | `results/enhanced_meta_main` |
+| `--visualize` | Enable visualization | False |
+
 ## Examples
 
 ### Running Optimization
@@ -204,6 +280,36 @@ python main.py --explain --explainer shap --explain-plots --explain-plot-types s
 python main.py --drift --drift-window 20 --drift-threshold 0.02 --drift-significance 0.95 --verbose
 ```
 
+### Running Dynamic Optimization
+
+```bash
+python main_v2.py --dynamic-optimization --function=ackley --drift-type=sudden --dim=5 --verbose
+```
+
+### Running Baseline Comparison
+
+```bash
+python main_v2.py baseline_comparison --dimensions 2 --max-evaluations 1000 --num-trials 5 --functions sphere rosenbrock ackley
+```
+
+### Training SATzilla Selector
+
+```bash
+python main_v2.py train_satzilla --dimensions 2 --num-problems 30 --functions sphere rosenbrock ackley rastrigin --visualize-features
+```
+
+### Running Extended Comparison Analysis
+
+```bash
+./scripts/run_extended_comparison.sh
+```
+
+### Analyzing Existing Benchmark Results
+
+```bash
+./scripts/run_extended_comparison.sh --skip-benchmarks results/baseline_comparison/full_benchmark_YYYYMMDD
+```
+
 ### Importing Migraine Data
 
 ```bash
@@ -220,4 +326,40 @@ python main.py --predict-migraine --prediction-data patient_data.csv --verbose
 
 ```bash
 python main.py --generate-synthetic --synthetic-patients 5 --verbose
+```
+
+### Running Algorithm Selection Demo with Interactive Visualizations
+
+```bash
+python main.py --test-algorithm-selection --interactive --algo-viz-dir results/algorithm_selection_demo --verbose
+```
+
+### Comparing Optimizers with Performance Boxplots and Significance Bands
+
+```bash
+python main.py --compare-optimizers --boxplot --show-significance --dimension 3 --verbose
+```
+
+### Evaluating a Model with Visualization
+
+```bash
+python main.py --evaluate --visualize --export-dir results --verbose
+```
+
+### Visualizing Drift for Specific Functions and Drift Types
+
+```bash
+python main.py --drift --visualize-drift --function ackley --drift-type linear --verbose
+```
+
+### Running Enhanced Meta-Learning with Visualizations
+
+```bash
+python main.py --enhanced-meta --visualize --export-dir results/enhanced_meta_main --verbose
+```
+
+### Comparing Optimizers on Dynamic Problems
+
+```bash
+python main.py --compare-optimizers --dynamic --function ackley --drift-type linear --verbose
 ```
