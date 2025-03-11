@@ -158,3 +158,18 @@ def pytest_sessionfinish(session, exitstatus):
     """Clean up progress bar."""
     if sys.stdout.isatty():
         test_progress.finish()
+
+"""Test configuration for pattern recognition tests."""
+
+import os
+import sys
+
+# Add the project root directory to the Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(project_root)
+
+@pytest.fixture
+def random_seed():
+    """Set random seed for reproducibility."""
+    np.random.seed(42)
+    return 42

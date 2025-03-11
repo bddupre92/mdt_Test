@@ -967,7 +967,7 @@ def main():
         
         f.write("\n## Raw Data\n\n")
         f.write("- [Performance Metrics](performance_metrics.csv)\n")
-        
+    
         print(f"Generated index file at {output_dir}/index.md")
 
 if __name__ == "__main__":
