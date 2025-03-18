@@ -77,8 +77,17 @@ wheels/
 # Results and output
 results/
 plots/
+
+# Image files
 *.png
+**/*.png
 *.jpg
+**/*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.ico
 *.pdf
 
 # HTML files
