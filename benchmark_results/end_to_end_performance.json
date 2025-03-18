@@ -1,0 +1,18 @@
+{
+  "efficiency_metrics": {
+    "mean_execution_time": 0.4683345136678933,
+    "std_execution_time": 0.002798609963570452,
+    "min_execution_time": 0.46444920799694955,
+    "max_execution_time": 0.47093033300188836,
+    "throughput": 2.1352259353431355,
+    "coefficient_variation": 0.0059756645771253366,
+    "runs": 3
+  },
+  "memory_metrics": {
+    "memory_before_mb": 282.828125,
+    "memory_after_mb": 282.828125,
+    "memory_used_mb": 0.0,
+    "memory_efficiency": Infinity,
+    "execution_time": 0.47096462501212955
+  }
+}

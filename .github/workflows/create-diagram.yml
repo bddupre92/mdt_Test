@@ -1,0 +1,32 @@
+name: Create repository visualization
+
+on:
+  # run on push to main branch
+  push:
+    branches:
+      - main
+      - master
+  # allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  create_diagram:
+    runs-on: ubuntu-latest
+    name: Create repository visualization
+    steps:
+      # checkout code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # run the visualization action
+      - name: Visualize repository
+        uses: githubocto/repo-visualizer@v1
+        with:
+          # Use the output path where the diagram should be created
+          output_file: "diagram.svg"
+          # Skip certain files or directories that don't need to be visualized
+          excluded_paths: "node_modules,dist,build,.git,.github,.*,package-lock.json,yarn.lock"
+          # Skip specific file patterns
+          excluded_globs: "**/*.pyc,**/__pycache__/**,**/.DS_Store,**/*.egg-info/**"
+          # Allow the action to commit the generated diagram back to the repository
+          should_push: true

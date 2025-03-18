@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MigrineDT Codebase Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+        }
+        #container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2 {
+            color: #24292e;
+        }
+        .visualization {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+            margin-bottom: 20px;
+            padding: 20px;
+            overflow: hidden;
+        }
+        #tree-container {
+            width: 100%;
+            height: 800px;
+            overflow: auto;
+        }
+        .node circle {
+            fill: #555;
+            stroke: #fff;
+            stroke-width: 2px;
+        }
+        .node text {
+            font: 12px sans-serif;
+        }
+        .link {
+            fill: none;
+            stroke: #ccc;
+            stroke-width: 1.5px;
+        }
+        .module-explainability { fill: #2ecc71; }
+        .module-core { fill: #3498db; }
+        .module-migraine { fill: #9b59b6; }
+        .module-cli { fill: #e74c3c; }
+        .module-api { fill: #f39c12; }
+        .module-utils { fill: #1abc9c; }
+        .module-visualization { fill: #34495e; }
+        .module-default { fill: #95a5a6; }
+        
+        .filters {
+            margin-bottom: 20px;
+        }
+        .filter-button {
+            background-color: #f1f1f1;
+            border: none;
+            color: #333;
+            padding: 8px 12px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+        .filter-button:hover {
+            background-color: #ddd;
+        }
+        .filter-button.active {
+            background-color: #0366d6;
+            color: white;
+        }
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-right: 20px;
+            margin-bottom: 10px;
+        }
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <h1>MigrineDT Codebase Visualization</h1>
+        
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color module-explainability"></div>
+                <span>Explainability</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color module-core"></div>
+                <span>Core</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color module-migraine"></div>
+                <span>Migraine</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color module-cli"></div>
+                <span>CLI</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color module-api"></div>
+                <span>API</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color module-utils"></div>
+                <span>Utils</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color module-visualization"></div>
+                <span>Visualization</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color module-default"></div>
+                <span>Other</span>
+            </div>
+        </div>
+        
+        <div class="filters">
+            <button class="filter-button active" data-filter="all">All</button>
+            <button class="filter-button" data-filter="explainability">Explainability</button>
+            <button class="filter-button" data-filter="migraine">Migraine</button>
+            <button class="filter-button" data-filter="core">Core</button>
+            <button class="filter-button" data-filter="api">API</button>
+            <button class="filter-button" data-filter="cli">CLI</button>
+        </div>
+        
+        <div class="visualization">
+            <div id="tree-container"></div>
+        </div>
+        
+        <h2>How to Use This Visualization</h2>
+        <p>
+            This interactive visualization shows the structure of the MigrineDT codebase. 
+            You can:
+        </p>
+        <ul>
+            <li>Click on nodes to expand/collapse branches</li>
+            <li>Use the filter buttons to focus on specific modules</li>
+            <li>Zoom and pan with mouse wheel and drag</li>
+        </ul>
+        
+        <h2>Module Descriptions</h2>
+        <div class="visualization">
+            <h3>Explainability Module</h3>
+            <p>
+                The explainability module provides tools for understanding model decisions and optimizer behavior.
+                Key components include:
+            </p>
+            <ul>
+                <li><strong>ShapExplainer:</strong> Uses SHAP for global and local explanations</li>
+                <li><strong>LimeExplainer:</strong> Uses LIME for local explanations</li>
+                <li><strong>FeatureImportanceExplainer:</strong> Simple feature importance using model attributes or permutation</li>
+                <li><strong>OptimizerExplainer:</strong> Provides insights into optimizer behavior and decision-making</li>
+                <li><strong>ExplainerFactory:</strong> Factory class for creating explainer instances</li>
+            </ul>
+            
+            <h3>Core Module</h3>
+            <p>
+                The core module contains the fundamental optimization and evaluation functionality.
+                Key components include:
+            </p>
+            <ul>
+                <li><strong>Optimization:</strong> Core optimization functions</li>
+                <li><strong>Evaluation:</strong> Model evaluation functions</li>
+                <li><strong>Meta-learning:</strong> Meta-learning functionality</li>
+                <li><strong>Drift Detection:</strong> Drift detection functionality</li>
+            </ul>
+            
+            <h3>Migraine Module</h3>
+            <p>
+                The migraine module provides domain-specific functionality for migraine prediction.
+                Key components include:
+            </p>
+            <ul>
+                <li><strong>Data Import:</strong> Migraine data import functionality</li>
+                <li><strong>Prediction:</strong> Migraine prediction functionality</li>
+                <li><strong>Explainability:</strong> Migraine-specific explainability</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Simplified project structure data - will be generated dynamically
+        // This is just a placeholder based on the directory structure we saw
+        const projectData = {
+            name: "migrineDT",
+            type: "dir",
+            module: "root",
+            children: [
+                {
+                    name: "explainability",
+                    type: "dir",
+                    module: "explainability",
+                    children: [
+                        { name: "model_explainer.py", type: "file", module: "explainability" },
+                        { name: "optimizer_explainer.py", type: "file", module: "explainability" },
+                        { name: "drift_explainer.py", type: "file", module: "explainability" },
+                        { name: "explainer_factory.py", type: "file", module: "explainability" },
+                        { name: "__init__.py", type: "file", module: "explainability" }
+                    ]
+                },
+                {
+                    name: "core",
+                    type: "dir",
+                    module: "core",
+                    children: [
+                        { name: "optimization.py", type: "file", module: "core" },
+                        { name: "evaluation.py", type: "file", module: "core" },
+                        { name: "meta_learning.py", type: "file", module: "core" },
+                        { name: "drift_detection.py", type: "file", module: "core" },
+                        { name: "__init__.py", type: "file", module: "core" }
+                    ]
+                },
+                {
+                    name: "migraine",
+                    type: "dir",
+                    module: "migraine",
+                    children: [
+                        { name: "data_import.py", type: "file", module: "migraine" },
+                        { name: "prediction.py", type: "file", module: "migraine" },
+                        { name: "explainability.py", type: "file", module: "migraine" },
+                        { name: "__init__.py", type: "file", module: "migraine" }
+                    ]
+                },
+                {
+                    name: "cli",
+                    type: "dir",
+                    module: "cli",
+                    children: [
+                        { name: "argument_parser.py", type: "file", module: "cli" },
+                        { name: "commands.py", type: "file", module: "cli" },
+                        { name: "main.py", type: "file", module: "cli" },
+                        { name: "__init__.py", type: "file", module: "cli" }
+                    ]
+                },
+                {
+                    name: "visualization",
+                    type: "dir",
+                    module: "visualization",
+                    children: [
+                        { name: "plots.py", type: "file", module: "visualization" },
+                        { name: "__init__.py", type: "file", module: "visualization" }
+                    ]
+                },
+                {
+                    name: "utils",
+                    type: "dir",
+                    module: "utils",
+                    children: [
+                        { name: "environment.py", type: "file", module: "utils" },
+                        { name: "logging_config.py", type: "file", module: "utils" },
+                        { name: "plotting.py", type: "file", module: "utils" },
+                        { name: "__init__.py", type: "file", module: "utils" }
+                    ]
+                },
+                {
+                    name: "api",
+                    type: "dir",
+                    module: "api",
+                    children: [
+                        { name: "main.py", type: "file", module: "api" },
+                        { 
+                            name: "routers", 
+                            type: "dir", 
+                            module: "api",
+                            children: [
+                                { name: "__init__.py", type: "file", module: "api" },
+                                { name: "benchmarks.py", type: "file", module: "api" },
+                                { name: "optimization.py", type: "file", module: "api" },
+                                { name: "prediction.py", type: "file", module: "api" },
+                                { name: "visualization.py", type: "file", module: "api" }
+                            ]
+                        }
+                    ]
+                },
+                { name: "main.py", type: "file", module: "default" }
+            ]
+        };
+
+        // Set up the D3.js visualization
+        const width = document.getElementById('tree-container').clientWidth;
+        const height = document.getElementById('tree-container').clientHeight;
+
+        // Create a tree layout
+        const tree = d3.tree().size([height - 40, width - 160]);
+
+        // Convert data to D3 hierarchy
+        const root = d3.hierarchy(projectData);
+        
+        // Initial layout
+        tree(root);
+
+        // Create SVG element
+        const svg = d3.select('#tree-container')
+            .append('svg')
+            .attr('width', width)
+            .attr('height', height)
+            .append('g')
+            .attr('transform', 'translate(100, 20)');
+
+        // Links between nodes
+        const link = svg.selectAll('.link')
+            .data(root.descendants().slice(1))
+            .enter().append('path')
+            .attr('class', 'link')
+            .attr('d', d => {
+                return `M${d.y},${d.x}C${(d.y + d.parent.y) / 2},${d.x} ${(d.y + d.parent.y) / 2},${d.parent.x} ${d.parent.y},${d.parent.x}`;
+            });
+
+        // Create nodes
+        const node = svg.selectAll('.node')
+            .data(root.descendants())
+            .enter().append('g')
+            .attr('class', d => `node ${d.children ? 'node--internal' : 'node--leaf'}`)
+            .attr('transform', d => `translate(${d.y},${d.x})`)
+            .attr('data-module', d => d.data.module);
+
+        // Add circles to nodes
+        node.append('circle')
+            .attr('r', 5)
+            .attr('class', d => `module-${d.data.module}`);
+
+        // Add text labels
+        node.append('text')
+            .attr('dy', '.35em')
+            .attr('x', d => d.children ? -10 : 10)
+            .attr('text-anchor', d => d.children ? 'end' : 'start')
+            .text(d => d.data.name);
+
+        // Add zoom behavior
+        const zoom = d3.zoom()
+            .scaleExtent([0.5, 3])
+            .on('zoom', (event) => {
+                svg.attr('transform', event.transform);
+            });
+
+        d3.select('#tree-container svg').call(zoom);
+
+        // Filter functionality
+        document.querySelectorAll('.filter-button').forEach(button => {
+            button.addEventListener('click', function() {
+                const filter = this.getAttribute('data-filter');
+                
+                // Update active state
+                document.querySelectorAll('.filter-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                this.classList.add('active');
+                
+                // Apply filter
+                if (filter === 'all') {
+                    node.style('opacity', 1);
+                    link.style('opacity', 1);
+                } else {
+                    // First hide all
+                    node.style('opacity', 0.2);
+                    link.style('opacity', 0.2);
+                    
+                    // Then show matching nodes and their paths
+                    const matchingNodes = node.filter(d => d.data.module === filter);
+                    matchingNodes.style('opacity', 1);
+                    
+                    // Highlight paths to root
+                    matchingNodes.each(function(d) {
+                        let current = d;
+                        while (current.parent) {
+                            // Find the link between this node and its parent
+                            link.filter(l => l === current).style('opacity', 1);
+                            // Find the parent node
+                            node.filter(n => n === current.parent).style('opacity', 1);
+                            current = current.parent;
+                        }
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

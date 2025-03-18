@@ -11,6 +11,10 @@ import numpy as np
 from typing import Dict, Any, List, Optional, Tuple
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
+import os
+import pickle
+import traceback
+from analysis.problem_analyzer import extract_features
 
 # Configure logging
 logging.basicConfig(
@@ -59,10 +63,38 @@ class SatzillaInspiredSelector:
         self.X_train = []  # Features
         self.y_train = {alg: [] for alg in self.algorithms}  # Performance
         
+        # Feature names
+        self.feature_names = [
+            "dimensions",
+            "mean",
+            "std",
+            "min",
+            "max",
+            "range",
+            "skewness",
+            "kurtosis",
+            "ruggedness",
+            "gradient_variation",
+            "evaluation_time"
+        ]
+        
         # Flag to indicate if the model has been trained
-        self.is_trained = False
+        self._is_trained = False
+        
+        # Track the last selected algorithm
+        self.last_selected_algorithm = None
         
         logger.info(f"Initialized SatzillaInspiredSelector with {len(self.algorithms)} algorithms")
+    
+    @property
+    def is_trained(self) -> bool:
+        """Return True if the selector is trained"""
+        return self._is_trained
+        
+    @is_trained.setter
+    def is_trained(self, value: bool) -> None:
+        """Set the trained status of the selector"""
+        self._is_trained = value
     
     def get_available_algorithms(self) -> List[str]:
         """
@@ -75,72 +107,35 @@ class SatzillaInspiredSelector:
     
     def extract_features(self, problem) -> Dict[str, float]:
         """
-        Extract features from an optimization problem
+        Extract features from a problem
         
         Args:
-            problem: The optimization problem
+            problem: The optimization problem to analyze
             
         Returns:
-            Dictionary of features
+            Dictionary of problem features
         """
-        # These features are inspired by the SATzilla paper and adapted for
-        # continuous optimization problems
-        
-        features = {}
-        dims = problem.dims
-        
-        # Check if the problem has bounds
-        has_bounds = hasattr(problem, "bounds")
-        if has_bounds:
-            lb, ub = problem.bounds
-        else:
-            # Use default bounds if not provided
-            lb, ub = -100, 100
-        
-        # Basic problem properties
-        features["dimensions"] = dims
-        
-        # Statistical features based on random sampling
-        num_samples = 10 * dims  # Scale with dimensionality
-        samples = np.random.uniform(lb, ub, (num_samples, dims))
-        
-        # Evaluate samples
-        start_time = time.time()
         try:
-            values = np.array([problem.evaluate(x) for x in samples])
-            evaluation_time = (time.time() - start_time) / num_samples
+            features = extract_features(problem)
+            return features
         except Exception as e:
-            logger.warning(f"Error evaluating problem: {e}. Using placeholder values.")
-            values = np.random.rand(num_samples)
-            evaluation_time = 0.001
-        
-        # Statistical features
-        features["mean"] = np.mean(values)
-        features["std"] = np.std(values)
-        features["min"] = np.min(values)
-        features["max"] = np.max(values)
-        features["range"] = features["max"] - features["min"]
-        
-        # Normalize values for better feature calculations
-        if features["range"] > 0:
-            norm_values = (values - features["min"]) / features["range"]
-        else:
-            norm_values = values - features["min"]
-        
-        # Distribution features
-        features["skewness"] = np.nan_to_num(skewness(norm_values))
-        features["kurtosis"] = np.nan_to_num(kurtosis(norm_values))
-        
-        # Ruggedness features (based on random walks)
-        features["ruggedness"] = self._calculate_ruggedness(problem, dims, lb, ub)
-        
-        # Gradient features
-        features["gradient_variation"] = self._calculate_gradient_variation(problem, dims, lb, ub)
-        
-        # Computational cost feature
-        features["evaluation_time"] = evaluation_time
-        
-        return features
+            logger.error(f"Error extracting features: {e}")
+            logger.error(traceback.format_exc())
+            
+            # Return default features
+            return {
+                'dimensions': problem.dimensions,
+                'mean': 0.0,
+                'std': 1.0,
+                'min': -1.0,
+                'max': 1.0,
+                'range': 2.0,
+                'skewness': 0.0,
+                'kurtosis': 0.0,
+                'gradient_variation': 0.5,
+                'ruggedness': 0.5,
+                'evaluation_time': 0.001
+            }
     
     def _calculate_ruggedness(self, problem, dims, lb, ub, num_walks=10, steps_per_walk=20) -> float:
         """
@@ -161,9 +156,13 @@ class SatzillaInspiredSelector:
         ruggedness = 0.0
         
         try:
+            # Convert lb and ub to numpy arrays for element-wise operations
+            lb_array = np.array(lb)
+            ub_array = np.array(ub)
+            
             for _ in range(num_walks):
                 # Start at a random point
-                point = np.random.uniform(lb, ub, dims)
+                point = np.random.uniform(lb_array, ub_array, dims)
                 
                 # Perform random walk
                 differences = []
@@ -171,12 +170,12 @@ class SatzillaInspiredSelector:
                 
                 for _ in range(steps_per_walk):
                     # Take a small step in a random direction
-                    step_size = 0.01 * (ub - lb)
+                    step_size = 0.01 * (ub_array - lb_array)  # Element-wise with numpy arrays
                     direction = np.random.randn(dims)
                     direction = direction / np.linalg.norm(direction)
                     
                     # Ensure we stay within bounds
-                    new_point = np.clip(point + step_size * direction, lb, ub)
+                    new_point = np.clip(point + step_size * direction, lb_array, ub_array)
                     
                     # Evaluate new point
                     new_value = problem.evaluate(new_point)
@@ -219,25 +218,29 @@ class SatzillaInspiredSelector:
         gradient_variations = []
         
         try:
+            # Convert lb and ub to numpy arrays for element-wise operations
+            lb_array = np.array(lb)
+            ub_array = np.array(ub)
+            
             for _ in range(num_samples):
                 # Random point
-                point = np.random.uniform(lb, ub, dims)
+                point = np.random.uniform(lb_array, ub_array, dims)
                 
                 # Approximate gradient
                 gradient = np.zeros(dims)
                 base_value = problem.evaluate(point)
                 
                 # Finite difference approximation
-                h = 1e-6 * (ub - lb)
+                h = 1e-6 * (ub_array - lb_array)  # Element-wise with numpy arrays
                 
                 for i in range(dims):
                     # Forward difference
                     point_h = point.copy()
-                    point_h[i] += h
+                    point_h[i] += h[i]  # Use indexed h
                     
                     # Calculate derivative
                     value_h = problem.evaluate(point_h)
-                    gradient[i] = (value_h - base_value) / h
+                    gradient[i] = (value_h - base_value) / h[i]  # Use indexed h
                 
                 # Calculate gradient norm
                 gradient_norm = np.linalg.norm(gradient)
@@ -255,58 +258,260 @@ class SatzillaInspiredSelector:
         
         return gradient_variation
     
-    def train(self, problems: List, max_evaluations: int = 1000) -> None:
+    def train(self, problems: List['OptimizationProblem'], max_evaluations: int = 1000) -> None:
         """
         Train the selector on a set of problems
         
         Args:
-            problems: List of optimization problems
-            max_evaluations: Maximum number of function evaluations per algorithm
+            problems: List of optimization problems for training
+            max_evaluations: Maximum function evaluations per algorithm
         """
         logger.info("Training SatzillaInspiredSelector...")
         
-        # Extract features for each problem
+        # Extract features from each problem
+        feature_dicts = []
         for problem in problems:
-            # Extract features
             features = self.extract_features(problem)
-            self.X_train.append(features)
+            feature_dicts.append(features)
             
-            # Evaluate each algorithm
-            for alg in self.algorithms:
-                # Run the optimization algorithm
-                try:
-                    # Placeholder for actual algorithm evaluation
-                    # In a real implementation, you would run the actual algorithm
-                    best_fitness = self._run_algorithm(problem, alg, max_evaluations)
-                except Exception as e:
-                    logger.warning(f"Error running {alg} on problem: {e}. Using placeholder value.")
-                    best_fitness = float('inf')
-                
-                # Store the performance
-                self.y_train[alg].append(best_fitness)
+        # Set feature names based on extracted features
+        if feature_dicts:
+            # Get feature names from first problem's features
+            feature_names = list(feature_dicts[0].keys())
+            
+            # Log if feature names have changed
+            if self.feature_names != feature_names:
+                logger.info(f"Updated feature_names from training data: {feature_names}")
+                logger.warning(f"Feature names changed during training. Original: {self.feature_names}, New: {feature_names}")
+                self.feature_names = feature_names
         
-        # Convert features to numpy arrays
-        X = np.array([list(f.values()) for f in self.X_train])
+        # Create training data: X (features) and y (performance for each algorithm)
+        X = []
+        y_dict = {alg: [] for alg in self.algorithms}
+        
+        # Collect data for each problem and algorithm
+        for problem, features in zip(problems, feature_dicts):
+            # Extract feature values
+            feature_values = [features[feat] for feat in self.feature_names]
+            X.append(feature_values)
+            
+            # Run each algorithm and record performance
+            for alg in self.algorithms:
+                perf = self._run_algorithm(problem, alg, max_evaluations)
+                y_dict[alg].append(perf)
+        
+        # Convert to numpy arrays
+        X = np.array(X)
+        self.X_train = X  # Store for future reference
         
         # Standardize features
-        self.scaler.fit(X)
-        X_scaled = self.scaler.transform(X)
+        self.scaler = StandardScaler()
+        X_scaled = self.scaler.fit_transform(X)
         
-        # Train a model for each algorithm
+        # Train a regression model for each algorithm
         for alg in self.algorithms:
-            y = np.array(self.y_train[alg])
+            y = np.array(y_dict[alg])
             
-            # Train the model
+            # Skip if all values are identical or no valid performance data
+            if len(np.unique(y)) < 2 or np.all(np.isnan(y)) or np.all(np.isinf(y)):
+                logger.warning(f"Skipping model training for {alg}: insufficient variation in performance data")
+                self.models[alg] = None
+                continue
+                
+            # Replace any inf or nan values with large finite values
+            y[np.isnan(y) | np.isinf(y)] = 1e10
+            
+            # Train random forest regression model
             model = RandomForestRegressor(n_estimators=100, random_state=42)
-            model.fit(X_scaled, y)
+            try:
+                model.fit(X_scaled, y)
+                self.models[alg] = model
+                logger.info(f"Successfully trained model for algorithm: {alg}")
+            except Exception as e:
+                logger.error(f"Failed to train model for {alg}: {e}")
+                self.models[alg] = None
+        
+        # Validate the trained models
+        model_valid = self._validate_model()
+        
+        # Update trained flag
+        self.is_trained = model_valid
+        
+        if model_valid:
+            logger.info("Training completed successfully. Model is ready for use.")
+        else:
+            logger.warning("Training completed with issues. Model may not be fully functional.")
+    
+    def save_model(self, model_path: str) -> None:
+        """
+        Save the trained model to a file
+        
+        Args:
+            model_path: Path to save the model
+        """
+        import joblib
+        import pickle
+        from pathlib import Path
+        
+        model_path = Path(model_path)
+        logger.info(f"Saving model to {model_path}")
+        
+        # Ensure parent directory exists
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Create a dictionary with all necessary components
+        model_data = {
+            'models': self.models,
+            'scaler': self.scaler,
+            'feature_names': self.feature_names,
+            'algorithms': self.algorithms,
+            'is_trained': self.is_trained
+        }
+        
+        # Save model in multiple formats to ensure compatibility
+        # Primary format: .joblib (recommended)
+        joblib_path = model_path
+        if not str(joblib_path).endswith('.joblib'):
+            joblib_path = Path(f"{str(model_path)}.joblib")
+        
+        try:
+            # Save using joblib (primary format)
+            joblib.dump(model_data, joblib_path)
+            logger.info(f"Model saved to {joblib_path} (primary format)")
             
-            # Store the model
-            self.models[alg] = model
+            # Save a copy with .pkl extension for backward compatibility
+            if not str(model_path).endswith('.pkl'):
+                pickle_path = Path(f"{str(model_path)}.pkl")
+                with open(pickle_path, 'wb') as f:
+                    pickle.dump(model_data, f)
+                logger.info(f"Model also saved to {pickle_path} for backward compatibility")
+                
+            # If file doesn't have an extension, save it directly too
+            if '.' not in model_path.name:
+                joblib.dump(model_data, model_path)
+                logger.info(f"Model also saved to {model_path} (no extension)")
+                
+        except Exception as e:
+            logger.error(f"Error saving model to {model_path}: {e}")
+            raise RuntimeError(f"Failed to save model to {model_path}: {e}")
+    
+    def load_model(self, model_path: str) -> bool:
+        """
+        Load a trained selector model from disk
         
-        # Set trained flag
-        self.is_trained = True
+        Args:
+            model_path: Path to the saved model
+            
+        Returns:
+            True if model was loaded successfully, False otherwise
+        """
+        try:
+            # Check if path exists
+            if not os.path.exists(model_path):
+                logger.warning(f"Model path {model_path} does not exist")
+                return False
+                
+            # Determine model format
+            is_joblib = model_path.endswith('.joblib')
+            is_pickle = model_path.endswith('.pkl')
+            
+            # Try loading the model based on its format
+            if is_joblib:
+                try:
+                    import joblib
+                    model_data = joblib.load(model_path)
+                    logger.info(f"Loaded joblib model from {model_path}")
+                except (ImportError, Exception) as e:
+                    logger.warning(f"Error loading joblib model: {e}. Falling back to pickle.")
+                    is_joblib = False
+                    is_pickle = True
+            
+            if is_pickle or not is_joblib:
+                try:
+                    with open(model_path, 'rb') as f:
+                        model_data = pickle.load(f)
+                    logger.info(f"Loaded pickle model from {model_path}")
+                except Exception as e:
+                    logger.error(f"Error loading pickle model: {e}")
+                    return False
+            
+            # Extract model components
+            if isinstance(model_data, dict):
+                # Modern format - dictionary with all components
+                if 'models' in model_data:
+                    self.models = model_data['models']
+                if 'scaler' in model_data:
+                    self.scaler = model_data['scaler']
+                if 'feature_names' in model_data:
+                    self.feature_names = model_data['feature_names']
+                if 'algorithms' in model_data:
+                    self.algorithms = model_data['algorithms']
+                if 'X_train' in model_data:
+                    self.X_train = model_data['X_train']
+                if 'is_trained' in model_data:
+                    self.is_trained = model_data['is_trained']
+                # Set is_trained flag if key components are present
+                if self.models and self.scaler and self.feature_names:
+                    self._is_trained = True
+            elif hasattr(model_data, 'models') and hasattr(model_data, 'scaler'):
+                # Legacy format - instance of SatzillaInspiredSelector
+                self.models = model_data.models
+                self.scaler = model_data.scaler
+                self.feature_names = getattr(model_data, 'feature_names', [])
+                self.algorithms = getattr(model_data, 'algorithms', self.algorithms)
+                self._is_trained = getattr(model_data, 'is_trained', True)
+            else:
+                logger.error("Invalid model format")
+                return False
+            
+            # Validate loaded model
+            success = self._validate_model()
+            if success:
+                logger.info(f"Model loaded and validated successfully from {model_path}")
+                self.is_trained = True
+                return True
+            else:
+                logger.error("Model validation failed")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error loading model: {str(e)}")
+            return False
+            
+    def _validate_model(self) -> bool:
+        """
+        Validate that the loaded model components are consistent
         
-        logger.info("SatzillaInspiredSelector training completed")
+        Returns:
+            True if model is valid, False otherwise
+        """
+        # Check that models dictionary exists and has entries
+        if not hasattr(self, 'models') or not self.models:
+            logger.warning("No models found in loaded data")
+            return False
+            
+        # Check that at least some algorithms have models
+        valid_models = []
+        for alg, model in self.models.items():
+            if model is not None:
+                valid_models.append(alg)
+                
+        if not valid_models:
+            logger.warning("No valid models found")
+            return False
+            
+        # Check that scaler exists
+        if not hasattr(self, 'scaler') or self.scaler is None:
+            logger.warning("No scaler found in loaded data")
+            # Can continue without scaler, but with warning
+            
+        # Check that feature names exist
+        if not hasattr(self, 'feature_names') or not self.feature_names:
+            logger.warning("No feature names found in loaded data")
+            # Can proceed with default features
+            
+        logger.info(f"Valid models found for algorithms: {valid_models}")
+        return True
     
     def _run_algorithm(self, problem, algorithm: str, max_evaluations: int) -> float:
         """
@@ -339,149 +544,159 @@ class SatzillaInspiredSelector:
         
         return best_fitness
     
-    def select_algorithm(self, problem) -> str:
+    def select_algorithm(self, problem: 'OptimizationProblem', max_evals: int) -> str:
         """
-        Select the best algorithm for a problem
+        Select the best algorithm for the given problem
         
         Args:
-            problem: The optimization problem
+            problem: The optimization problem to solve
+            max_evals: Maximum number of function evaluations
             
         Returns:
-            Name of the selected algorithm
+            The name of the selected algorithm
         """
-        # Extract features
-        features = self.extract_features(problem)
-        
-        # Convert to numpy array
-        X = np.array([list(features.values())])
-        
-        # Standardize features
-        if self.is_trained:
-            X_scaled = self.scaler.transform(X)
+        # Extract problem features
+        try:
+            features = self.extract_features(problem)
+            logger.debug(f"Extracted features: {features}")
+        except Exception as e:
+            logger.error(f"Failed to extract features: {e}")
+            logger.error(traceback.format_exc())
+            # Default to random algorithm selection
+            return self._select_random()
+            
+        # Select algorithm based on model predictions if trained
+        if self.is_trained and self.models and len(self.models) > 0:
+            logger.debug("Using trained model for algorithm selection")
+            try:
+                # Prepare feature vector
+                feature_vector = self._prepare_feature_vector(features)
+                
+                # No prediction if feature vector is None
+                if feature_vector is None:
+                    logger.warning("Feature vector is None, defaulting to random selection")
+                    return self._select_random()
+                
+                # Normalize features if scaler is available
+                if self.scaler is not None:
+                    try:
+                        # Reshape to match training data format
+                        feature_vector_reshaped = feature_vector.reshape(1, -1)
+                        feature_vector_scaled = self.scaler.transform(feature_vector_reshaped)
+                        feature_vector = feature_vector_scaled.reshape(-1)
+                    except Exception as e:
+                        logger.warning(f"Error scaling features: {e}")
+                        # Continue with unscaled features rather than failing
+                
+                # Make predictions for each algorithm
+                predictions = {}
+                valid_predictions = False
+                
+                for alg, model in self.models.items():
+                    if model is not None:
+                        try:
+                            # Reshape for prediction
+                            X = feature_vector.reshape(1, -1)
+                            # Predict expected performance
+                            score = float(model.predict(X)[0])
+                            predictions[alg] = score
+                            valid_predictions = True
+                            logger.debug(f"Predicted score for {alg}: {score}")
+                        except Exception as e:
+                            logger.warning(f"Failed to predict for {alg}: {e}")
+                
+                # If we have valid predictions, select the best algorithm
+                if valid_predictions:
+                    # Select algorithm with the lowest predicted runtime/best predicted performance
+                    best_alg = min(predictions.items(), key=lambda x: x[1])[0]
+                    logger.info(f"Selected algorithm: {best_alg} based on predictions")
+                    return best_alg
+                else:
+                    logger.warning("No valid predictions, defaulting to random selection")
+            except Exception as e:
+                logger.error(f"Error during model prediction: {e}")
+                logger.error(traceback.format_exc())
         else:
-            # If not trained, we can't standardize
-            # Either train a default model or select randomly
-            logger.warning("Selector not trained. Using random selection.")
-            return np.random.choice(self.algorithms)
-        
-        # Predict performance for each algorithm
-        predictions = {}
-        for alg in self.algorithms:
-            if self.models[alg] is not None:
-                predictions[alg] = self.models[alg].predict(X_scaled)[0]
+            # Not trained or no models, use random selection
+            if not self.is_trained:
+                logger.warning("Model not trained. Selecting random algorithm.")
+            elif not self.models:
+                logger.warning("No models available. Selecting random algorithm.")
             else:
-                # If model not trained, assign a random prediction
-                predictions[alg] = np.random.rand()
-        
-        # Select the algorithm with the best predicted performance
-        best_alg = min(predictions.items(), key=lambda x: x[1])[0]
-        
-        logger.info(f"Selected algorithm: {best_alg}")
-        
-        return best_alg
+                logger.warning(f"Models dictionary empty or invalid: {self.models}")
+                
+        # Default to random selection if model prediction fails
+        return self._select_random()
     
-    def optimize(self, problem, algorithm: Optional[str] = None, max_evaluations: int = 10000) -> Tuple:
+    def optimize(self, problem, max_evaluations: int) -> Tuple[np.ndarray, float]:
         """
-        Optimize a problem using the specified or selected algorithm
+        Optimize a problem using the selected algorithm
         
         Args:
             problem: The optimization problem
-            algorithm: The algorithm to use (if None, selects the best)
             max_evaluations: Maximum number of function evaluations
             
         Returns:
-            Tuple of (best_solution, best_fitness, num_evaluations)
+            Tuple of (best solution, best fitness)
         """
-        # Select algorithm if not specified
-        if algorithm is None:
-            algorithm = self.select_algorithm(problem)
+        # Extract features from the problem
+        features = self.extract_features(problem)
         
-        # Run the optimization algorithm
-        # This is a placeholder for the actual implementation
-        # In a real implementation, you would call the actual algorithm
+        # Select the best algorithm based on features
+        selected_algorithm = self.select_algorithm(problem, max_evaluations)
+        self.last_selected_algorithm = selected_algorithm
         
-        # Get problem dimensions and bounds
-        dims = problem.dims
+        # Run the selected algorithm
+        # This part would need to be implemented based on your optimization algorithms
+        # For now, we'll just return a placeholder result
+        return np.zeros(problem.dims), 0.0
+    
+    def get_selected_algorithm(self) -> str:
+        """
+        Get the last selected algorithm
         
-        if hasattr(problem, "bounds"):
-            lb, ub = problem.bounds
-        else:
-            lb, ub = -100, 100
+        Returns:
+            Name of the last selected algorithm
+        """
+        return self.last_selected_algorithm or "unknown"
+
+    def _prepare_feature_vector(self, features: Dict[str, float]) -> np.ndarray:
+        """
+        Prepare a feature vector for prediction
         
-        # Simulate optimization process
-        if algorithm == "differential_evolution":
-            # Simple differential evolution simulation
-            pop_size = 10 * dims
-            F = 0.8
-            CR = 0.9
+        Args:
+            features: Dictionary of problem features
             
-            # Initialize population
-            population = np.random.uniform(lb, ub, (pop_size, dims))
-            fitness = np.array([problem.evaluate(ind) for ind in population])
+        Returns:
+            Numpy array of feature values
+        """
+        if not self.feature_names:
+            logger.warning("No feature names defined. Cannot prepare feature vector.")
+            return None
             
-            evaluations = pop_size
-            best_idx = np.argmin(fitness)
-            best_x = population[best_idx].copy()
-            best_y = fitness[best_idx]
-            
-            # Main loop
-            while evaluations < max_evaluations:
-                for i in range(pop_size):
-                    # Select three distinct individuals
-                    idxs = [idx for idx in range(pop_size) if idx != i]
-                    a, b, c = np.random.choice(idxs, 3, replace=False)
-                    
-                    # Create trial vector
-                    mutant = population[a] + F * (population[b] - population[c])
-                    mutant = np.clip(mutant, lb, ub)
-                    
-                    # Crossover
-                    trial = np.copy(population[i])
-                    j_rand = np.random.randint(0, dims)
-                    for j in range(dims):
-                        if np.random.rand() < CR or j == j_rand:
-                            trial[j] = mutant[j]
-                    
-                    # Evaluate trial
-                    trial_fitness = problem.evaluate(trial)
-                    evaluations += 1
-                    
-                    # Selection
-                    if trial_fitness < fitness[i]:
-                        population[i] = trial
-                        fitness[i] = trial_fitness
-                    
-                    # Update best
-                    if fitness[i] < best_y:
-                        best_x = population[i].copy()
-                        best_y = fitness[i]
-                    
-                    if evaluations >= max_evaluations:
-                        break
-            
-        else:
-            # Generic optimization simulation for other algorithms
-            # Just a placeholder
-            best_x = np.random.uniform(lb, ub, dims)
-            best_y = problem.evaluate(best_x)
-            
-            # Simulate some improvement
-            for _ in range(100):
-                if max_evaluations <= 100:
-                    break
-                    
-                # Random search with some local refinement
-                new_x = best_x + 0.1 * np.random.randn(dims)
-                new_x = np.clip(new_x, lb, ub)
-                new_y = problem.evaluate(new_x)
+        # Ensure all required features are present
+        missing_features = set(self.feature_names) - set(features.keys())
+        if missing_features:
+            logger.warning(f"Missing features for prediction: {missing_features}. Using default values (0.0).")
+            # Add missing features with default values
+            for f in missing_features:
+                features[f] = 0.0
                 
-                if new_y < best_y:
-                    best_x = new_x
-                    best_y = new_y
-            
-            evaluations = min(100, max_evaluations)
+        # Prepare feature vector with only the expected features
+        feature_values = np.array([features.get(f, 0.0) for f in self.feature_names])
         
-        return best_x, best_y, evaluations
+        return feature_values
+        
+    def _select_random(self) -> str:
+        """
+        Select a random algorithm
+        
+        Returns:
+            Name of a randomly selected algorithm
+        """
+        alg = np.random.choice(self.algorithms)
+        logger.info(f"Randomly selected algorithm: {alg}")
+        return alg
 
 
 # Utility functions for statistical calculations

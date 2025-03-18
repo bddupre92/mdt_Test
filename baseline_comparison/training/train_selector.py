@@ -10,6 +10,7 @@ import logging
 import numpy as np
 import pandas as pd
 import pickle
+import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import List, Dict, Any, Optional, Tuple
@@ -244,25 +245,64 @@ def export_training_data(selector, export_dir: Path) -> None:
     data_dir = export_dir / "data"
     data_dir.mkdir(exist_ok=True, parents=True)
     
-    # Export features as CSV
-    feature_names = list(selector.X_train[0].keys())
-    features_df = pd.DataFrame([list(f.values()) for f in selector.X_train], 
-                               columns=feature_names)
-    features_df.to_csv(data_dir / "problem_features.csv", index=False)
+    # Check what format X_train is in
+    if hasattr(selector, 'X_train'):
+        if isinstance(selector.X_train, np.ndarray):
+            # Get feature names from the selector
+            if hasattr(selector, 'feature_names') and selector.feature_names:
+                feature_names = selector.feature_names
+                # Create DataFrame from numpy array
+                features_df = pd.DataFrame(selector.X_train, columns=feature_names)
+                features_df.to_csv(data_dir / "problem_features.csv", index=False)
+            else:
+                logger.warning("No feature names found in selector. Using generic column names.")
+                # Create DataFrame with generic column names
+                features_df = pd.DataFrame(selector.X_train)
+                features_df.to_csv(data_dir / "problem_features.csv", index=False)
+        elif isinstance(selector.X_train, list) and len(selector.X_train) > 0:
+            # Check if elements are dictionaries
+            if isinstance(selector.X_train[0], dict):
+                # Old format - list of dictionaries
+                feature_names = list(selector.X_train[0].keys())
+                features_df = pd.DataFrame([list(f.values()) for f in selector.X_train], 
+                                        columns=feature_names)
+                features_df.to_csv(data_dir / "problem_features.csv", index=False)
+            else:
+                # List of arrays or other format
+                logger.warning("Unexpected X_train format. Using generic export.")
+                features_df = pd.DataFrame(np.array(selector.X_train))
+                features_df.to_csv(data_dir / "problem_features.csv", index=False)
+        else:
+            logger.warning(f"Unexpected X_train type: {type(selector.X_train)}. Skipping feature export.")
+            features_df = None
+    else:
+        logger.warning("No X_train attribute found in selector. Skipping feature export.")
+        features_df = None
     
     # Export performance data for each algorithm
-    performance_data = {}
-    for alg in selector.algorithms:
-        performance_data[alg] = selector.y_train[alg]
-    
-    # Convert to DataFrame
-    performance_df = pd.DataFrame(performance_data)
-    performance_df.to_csv(data_dir / "algorithm_performance.csv", index=False)
+    if hasattr(selector, 'y_train') and isinstance(selector.y_train, dict):
+        performance_data = {}
+        for alg in selector.algorithms:
+            if alg in selector.y_train:
+                performance_data[alg] = selector.y_train[alg]
+        
+        # Convert to DataFrame
+        if performance_data:
+            performance_df = pd.DataFrame(performance_data)
+            performance_df.to_csv(data_dir / "algorithm_performance.csv", index=False)
+        else:
+            logger.warning("No performance data found. Skipping performance export.")
+    else:
+        logger.warning("No y_train dictionary found in selector. Skipping performance export.")
     
     # Export model evaluation metrics
-    model_metrics = evaluate_selector_models(selector)
-    with open(data_dir / "model_metrics.json", "w") as f:
-        json.dump(model_metrics, f, indent=2)
+    try:
+        model_metrics = evaluate_selector_models(selector)
+        with open(data_dir / "model_metrics.json", "w") as f:
+            json.dump(model_metrics, f, indent=2)
+        logger.info(f"Model metrics exported to {data_dir / 'model_metrics.json'}")
+    except Exception as e:
+        logger.warning(f"Error exporting model metrics: {e}")
     
     logger.info(f"Training data exported to {data_dir}")
 
@@ -388,9 +428,16 @@ def save_trained_selector(selector, file_path: Path) -> None:
     # Create directory if it doesn't exist
     file_path.parent.mkdir(exist_ok=True, parents=True)
     
-    # Save the selector
-    with open(file_path, 'wb') as f:
-        pickle.dump(selector, f)
+    # Ensure the file has .joblib extension
+    if not str(file_path).endswith('.joblib'):
+        file_path = Path(f"{str(file_path)}.joblib")
+    
+    # Save using the selector's save_model method for consistency with BaselineComparisonCommand
+    if hasattr(selector, 'save_model'):
+        selector.save_model(str(file_path))
+    else:
+        # Fallback to direct joblib dump if save_model not available
+        joblib.dump(selector, file_path)
     
     logger.info(f"Selector saved to {file_path}")
 
@@ -406,9 +453,30 @@ def load_trained_selector(file_path: Path):
     """
     logger.info(f"Loading trained selector from {file_path}")
     
-    # Load the selector
-    with open(file_path, 'rb') as f:
-        selector = pickle.load(f)
+    # Handle different file extensions
+    if not file_path.exists() and not str(file_path).endswith('.joblib'):
+        # Try with .joblib extension
+        joblib_path = Path(f"{str(file_path)}.joblib")
+        if joblib_path.exists():
+            file_path = joblib_path
+            logger.info(f"Using file with .joblib extension: {file_path}")
+    
+    try:
+        # First try to load with joblib
+        selector = joblib.load(file_path)
+        
+        # If we loaded model data (dictionary) instead of a selector instance
+        if isinstance(selector, dict) and 'models' in selector and 'is_trained' in selector:
+            # Create a new selector and load the model data
+            from baseline_comparison.baseline_algorithms.satzilla_inspired import SatzillaInspiredSelector
+            new_selector = SatzillaInspiredSelector()
+            new_selector.load_model(str(file_path))
+            selector = new_selector
+    except Exception as e:
+        logger.warning(f"Failed to load with joblib: {e}. Trying pickle as fallback.")
+        # Fallback to pickle for backward compatibility
+        with open(file_path, 'rb') as f:
+            selector = pickle.load(f)
     
     logger.info(f"Selector loaded from {file_path}")
     

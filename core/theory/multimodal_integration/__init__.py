@@ -19,6 +19,43 @@ __version__ = '0.1.0'
 
 # ----- Base Classes -----
 
+class DataFusionMethod(ABC):
+    """Abstract base class for data fusion methods.
+    
+    This class defines the interface for implementing various data fusion approaches
+    for combining information from multiple modalities.
+    """
+    
+    @abstractmethod
+    def fuse(self, *data_sources: Union[np.ndarray, 'ModalityData'],
+             weights: Optional[Dict[str, float]] = None,
+             **kwargs) -> Union[np.ndarray, Dict[str, Any]]:
+        """Fuse multiple data sources into a unified representation.
+        
+        Args:
+            *data_sources: Variable number of data sources to fuse
+            weights: Optional dictionary of weights for each modality
+            **kwargs: Additional keyword arguments for specific fusion methods
+            
+        Returns:
+            Fused data representation
+        """
+        pass
+    
+    @abstractmethod
+    def assess_fusion_quality(self, fused_data: Union[np.ndarray, Dict[str, Any]],
+                            *original_sources: Union[np.ndarray, 'ModalityData']) -> float:
+        """Assess the quality of the fusion result.
+        
+        Args:
+            fused_data: The result of the fusion operation
+            *original_sources: Original data sources used in fusion
+            
+        Returns:
+            Quality score between 0 and 1
+        """
+        pass
+
 class ModalityData:
     """Container for data from a specific modality."""
     
@@ -48,18 +85,23 @@ class ModalityData:
         return f"ModalityData(type={self.modality_type}, shape={self.data.shape})"
 
 class FeatureInteractionAnalyzer(ABC):
-    """Abstract base class for analyzing interactions between features from different modalities."""
+    """Abstract base class for analyzing feature interactions."""
     
     @abstractmethod
     def analyze_interactions(self, *data_sources: Union[np.ndarray, ModalityData], **kwargs) -> Dict[str, Any]:
         """Analyze interactions between features from multiple data sources.
         
         Args:
-            *data_sources: Data sources to analyze
-            **kwargs: Additional parameters for analysis
+            *data_sources: Variable number of data sources to analyze
+            **kwargs: Additional arguments for specific analysis methods
             
         Returns:
-            Dictionary containing interaction analysis results
+            Dictionary containing:
+            - interaction_matrix: Matrix of interaction strengths
+            - p_values: Statistical significance of interactions
+            - significant_pairs: List of significant feature pairs
+            - graph: Network representation of interactions
+            - clusters: Identified feature clusters
         """
         pass
     
@@ -69,56 +111,60 @@ class FeatureInteractionAnalyzer(ABC):
         
         Args:
             interaction_results: Results from analyze_interactions
-            **kwargs: Additional parameters for visualization
+            **kwargs: Additional arguments for visualization
             
         Returns:
-            Visualization output (implementation-dependent)
+            Visualization object(s)
         """
         pass
 
-class MissingDataHandler(ABC):
+class MultimodalMissingDataHandler(ABC):
     """Abstract base class for handling missing data in multimodal datasets."""
     
     @abstractmethod
     def detect_missing_patterns(self, *data_sources: Union[np.ndarray, ModalityData]) -> Dict[str, Any]:
-        """Detect patterns of missing data across multiple sources.
+        """Detect patterns in missing data across modalities.
         
         Args:
-            *data_sources: Data sources to analyze
+            *data_sources: Variable number of data sources to analyze
             
         Returns:
-            Dictionary containing missing data patterns
+            Dictionary containing:
+            - patterns: Identified missing data patterns
+            - frequencies: Pattern occurrence frequencies
+            - modality_stats: Missing data statistics per modality
+            - temporal_stats: Temporal distribution of missing data
         """
         pass
     
     @abstractmethod
     def impute(self, *data_sources: Union[np.ndarray, ModalityData], **kwargs) -> Tuple[List[np.ndarray], np.ndarray]:
-        """Impute missing values in multiple data sources.
+        """Impute missing values in multimodal data.
         
         Args:
-            *data_sources: Data sources with missing values
-            **kwargs: Additional parameters for imputation
+            *data_sources: Variable number of data sources with missing values
+            **kwargs: Additional arguments for specific imputation methods
             
         Returns:
             Tuple containing:
-                - List of imputed data sources
-                - Uncertainty estimates for imputed values
+            - List of imputed data arrays
+            - Array of imputation uncertainty estimates
         """
         pass
 
-class ReliabilityModel(ABC):
-    """Abstract base class for modeling reliability of different data sources."""
+class MultimodalReliabilityModel(ABC):
+    """Abstract base class for modeling reliability of multimodal data sources."""
     
     @abstractmethod
     def assess_reliability(self, *data_sources: Union[np.ndarray, ModalityData], **kwargs) -> Dict[str, float]:
-        """Assess reliability of multiple data sources.
+        """Assess reliability of each data source.
         
         Args:
-            *data_sources: Data sources to assess
-            **kwargs: Additional parameters for assessment
+            *data_sources: Variable number of data sources to assess
+            **kwargs: Additional arguments for specific reliability methods
             
         Returns:
-            Dictionary mapping source identifiers to reliability scores (0-1)
+            Dictionary mapping modality names to reliability scores (0-1)
         """
         pass
     
@@ -129,29 +175,21 @@ class ReliabilityModel(ABC):
         
         Args:
             reliability_scores: Current reliability scores
-            new_evidence: New evidence to consider
-            
+            new_evidence: Dictionary containing:
+                - prediction_errors: Prediction performance metrics
+                - conflict_indicators: Detected conflicts between modalities
+                - quality_updates: Signal quality metrics
+                
         Returns:
             Updated reliability scores
         """
         pass
 
-# ----- Import Implementation Classes -----
-# These imports must come after the base class definitions to avoid circular imports
-
-from .feature_interaction import CrossModalInteractionAnalyzer
-from .missing_data import MultimodalMissingDataHandler
-from .reliability_modeling import MultimodalReliabilityModel
-
+# Make classes available at package level
 __all__ = [
-    # Base classes
+    'DataFusionMethod',
     'ModalityData',
     'FeatureInteractionAnalyzer',
-    'MissingDataHandler',
-    'ReliabilityModel',
-    
-    # Implementation classes
-    'CrossModalInteractionAnalyzer',
     'MultimodalMissingDataHandler',
     'MultimodalReliabilityModel'
 ] 

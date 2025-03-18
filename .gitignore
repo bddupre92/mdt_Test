@@ -26,11 +26,16 @@ venv_migraine/
 ENV/
 env/
 .env
+.env.*
 .venv/
 .venv_minimal/
 env.bak/
 venv.bak/
 .python-version
+pyvenv.cfg
+pip-log.txt
+pip-delete-this-directory.txt
+pipenv-*.log
 
 # IDE
 .idea/
@@ -75,9 +80,13 @@ plots/
 *.png
 *.jpg
 *.pdf
-# Allow HTML files in templates directory
+
+# HTML files
+*.html
+# Allow specific HTML files and directories that should be tracked
 !app/templates/**/*.html
-# *.html  # Commented out to allow working with HTML files
+!blast_radius_analysis/*.html
+!docs/**/*.html
 
 # OS specific
 .DS_Store
@@ -99,5 +108,17 @@ Thumbs.db
 # Cache directories
 .cache/
 .mypy_cache/
+.dmypy_cache/
 .dmypy.json
 dmypy.json
+
+# Explainability artifacts
+explainability/temp/
+*.shap
+*.lime
+
+# Visualization artifacts
+diagram.svg
+diagram-*.svg
+*.dot
+graph_cache/

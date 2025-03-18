@@ -1,0 +1,45 @@
+{
+  "timestamp": "2025-03-14T22:42:55.974151",
+  "results": {
+    "DifferentialEvolutionAdapter": {
+      "num_runs": 1,
+      "successful_runs": 1,
+      "mean_fitness": 9.43436124638855e-05,
+      "std_fitness": 0.0,
+      "mean_evaluations": 1000.0,
+      "mean_runtime": 0.020941972732543945
+    },
+    "EvolutionStrategyAdapter": {
+      "num_runs": 1,
+      "successful_runs": 1,
+      "mean_fitness": 1.571938220992905e-05,
+      "std_fitness": 0.0,
+      "mean_evaluations": 1010.0,
+      "mean_runtime": 0.004695892333984375
+    },
+    "AntColonyAdapter": {
+      "num_runs": 1,
+      "successful_runs": 1,
+      "mean_fitness": 0.6925207756232693,
+      "std_fitness": 0.0,
+      "mean_evaluations": 1000.0,
+      "mean_runtime": 0.01517486572265625
+    },
+    "GreyWolfAdapter": {
+      "num_runs": 1,
+      "successful_runs": 1,
+      "mean_fitness": 2.2855576362827772e-26,
+      "std_fitness": 0.0,
+      "mean_evaluations": 1000.0,
+      "mean_runtime": 0.011487245559692383
+    },
+    "MetaOptimizerAdapter": {
+      "num_runs": 1,
+      "successful_runs": 1,
+      "mean_fitness": 1.0361916943041865e-08,
+      "std_fitness": 0.0,
+      "mean_evaluations": 1000.0,
+      "mean_runtime": 0.010092973709106445
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "input_sizes": [
+    10,
+    50,
+    100,
+    200
+  ],
+  "execution_times": [
+    0.004030916505143978,
+    0.03819120849220781,
+    0.10279795850510709,
+    0.2856497920001857
+  ],
+  "memory_usages_mb": [
+    0.0,
+    0.015625,
+    0.0,
+    0.15625
+  ],
+  "time_scaling_factor": 1.5433739911486712,
+  "memory_scaling_factor": 0.2333333333333333,
+  "estimated_time_complexity": 1.4190289375067742,
+  "scaling_characteristics": "quadratic"
+}

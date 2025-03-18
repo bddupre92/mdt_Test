@@ -209,6 +209,8 @@ def add_benchmark_args(parser: argparse.ArgumentParser) -> None:
                      help="Record optimization trajectory during benchmarking")
     parser.add_argument('--benchmark-optimizers', 
                      help="Comma-separated list of optimizers to benchmark")
+    parser.add_argument('--model-path', type=str,
+                     help="Path to trained SatzillaInspiredSelector model")
     
     # Dynamic optimization visualization
     parser.add_argument('--dynamic-optimization', action='store_true',
@@ -332,6 +334,11 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
     )
     
     baseline_parser.add_argument(
+        "--selector-path", "-s",
+        help="Path to a trained SATzilla-inspired algorithm selector"
+    )
+    
+    baseline_parser.add_argument(
         "--timestamp-dir",
         action="store_true",
         default=True,
@@ -344,10 +351,10 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
         help="Disable visualization generation"
     )
     
-    # Define SATzilla training command
+    # Define a SATzilla training command
     satzilla_train_parser = subparsers.add_parser(
         "train_satzilla",
-        help="Train the SATzilla-inspired algorithm selector"
+        help="Train a SATzilla-inspired algorithm selector"
     )
     
     # Add SATzilla training arguments
@@ -366,52 +373,23 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
     )
     
     satzilla_train_parser.add_argument(
-        "--num-problems", "-p",
-        type=int,
-        default=20,
-        help="Number of training problems to generate"
-    )
-    
-    satzilla_train_parser.add_argument(
         "--functions", "-f",
         nargs="+",
-        default=["sphere", "rosenbrock", "rastrigin", "ackley", "griewank"],
+        default=["sphere", "rosenbrock"],
         help="Benchmark functions to use for training"
     )
     
     satzilla_train_parser.add_argument(
         "--all-functions",
         action="store_true",
-        help="Use all available benchmark functions"
+        help="Use all available benchmark functions for training"
     )
     
     satzilla_train_parser.add_argument(
-        "--output-dir", "-o",
-        default="results/satzilla_training",
-        help="Output directory for training results"
+        "--output-file", "-o",
+        required=True,
+        help="Output file path to save the trained selector"
     )
-    
-    satzilla_train_parser.add_argument(
-        "--timestamp-dir",
-        action="store_true",
-        default=True,
-        help="Create a timestamped subdirectory for results"
-    )
-    
-    satzilla_train_parser.add_argument(
-        "--seed", "-s",
-        type=int,
-        default=42,
-        help="Random seed for reproducibility"
-    )
-    
-    satzilla_train_parser.add_argument(
-        "--visualize-features",
-        action="store_true",
-        help="Generate feature importance visualizations"
-    )
-    
-    # Define other commands as needed
     
     # Add meta-learning command
     meta_parser = subparsers.add_parser(

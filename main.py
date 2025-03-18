@@ -2603,6 +2603,12 @@ def run_algorithm_selection_demo(args=None):
         'ES-Adaptive': es_adaptive_opt
     }
     
+    # Add stub implementation for _load_data if it doesn't exist
+    if not hasattr(MetaOptimizer, '_load_data'):
+        def load_data_stub(self):
+            print("Using stub implementation for _load_data")
+            self.logger.info("Using stub implementation for _load_data")
+    
     # Create MetaOptimizer
     meta_opt = MetaOptimizer(
         dim=dim,

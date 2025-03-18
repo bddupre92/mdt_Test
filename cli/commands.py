@@ -5,6 +5,20 @@ from typing import Dict, Any, Optional
 import os
 import sys
 from pathlib import Path
+import traceback
+from baseline_comparison.comparison_runner import BaselineComparison
+from baseline_comparison.baseline_algorithms.satzilla_inspired import SatzillaInspiredSelector
+from baseline_comparison.benchmark_utils import get_benchmark_function, get_all_benchmark_functions
+from baseline_comparison.visualization import ComparisonVisualizer
+from meta_optimizer import MetaOptimizer
+from meta_optimizer.optimizers import load_optimizers
+from meta_optimizer.benchmark_functions import BENCHMARK_FUNCTIONS
+import matplotlib.pyplot as plt
+import numpy as np
+import json
+import datetime
+import os
+from collections import Counter
 
 # Configure logging
 logging.basicConfig(
@@ -153,43 +167,188 @@ class BaselineComparisonCommand(Command):
             Exit code (0 for success, non-zero for failure)
         """
         try:
-            # Import required modules
-            from baseline_comparison.comparison_runner import BaselineComparison
-            from baseline_comparison.baseline_algorithms.satzilla_inspired import SatzillaInspiredSelector
-            from baseline_comparison.benchmark_utils import get_benchmark_function, get_all_benchmark_functions
-            import matplotlib.pyplot as plt
-            import numpy as np
-            import json
-            import datetime
-            from collections import Counter
+            # Get parameters from args
+            dimensions = self.args.dimensions
+            max_evaluations = self.args.max_evaluations
+            num_trials = self.args.num_trials
+            output_dir = self.args.output_dir
+            model_path = self.args.selector_path
             
-            # Try to import MetaOptimizer
+            # Validate model path if provided
+            if model_path:
+                model_path = Path(model_path)
+                if not model_path.exists():
+                    # Try adding .joblib extension if not already present
+                    if not str(model_path).endswith('.joblib'):
+                        joblib_path = Path(f"{str(model_path)}.joblib")
+                        if joblib_path.exists():
+                            model_path = joblib_path
+                            logger.info(f"Using model path with .joblib extension: {model_path}")
+                        else:
+                            # Try with .pkl extension as well
+                            pkl_path = Path(f"{str(model_path)}.pkl")
+                            if pkl_path.exists():
+                                model_path = pkl_path
+                                logger.info(f"Using model path with .pkl extension: {model_path}")
+                            else:
+                                logger.warning(f"Model file not found at: {model_path}, {joblib_path}, or {pkl_path}")
+                    else:
+                        logger.warning(f"Model file not found at: {model_path}")
+            
+            # Create timestamped output directory
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = os.path.join(output_dir, timestamp)
+            os.makedirs(output_dir, exist_ok=True)
+            logger.info(f"Output directory: {output_dir}")
+            
+            # Initialize meta optimizer
+            meta_optimizer = MetaOptimizer(
+                dimensions=dimensions,
+                max_evaluations=max_evaluations,
+                n_parallel=2,
+                visualize_selection=True
+            )
+            
+            # Load optimizer implementations
             try:
-                from meta_optimizer import MetaOptimizer
-                logger.info("Using real MetaOptimizer")
+                optimizers = load_optimizers()
+                meta_optimizer.register_optimizers(optimizers)
             except ImportError:
-                logger.warning("Could not import MetaOptimizer. Using mock instead.")
-                # Create a mock MetaOptimizer for testing
-                class MetaOptimizer:
-                    def __init__(self, *args, **kwargs):
-                        self.name = "MockMetaOptimizer"
-                        
-                    def optimize(self, problem, *args, **kwargs):
-                        # Simple random optimization for testing
-                        best_x = np.random.uniform(-5, 5, problem.dims)
-                        best_y = problem.evaluate(best_x)
-                        return best_x, best_y, 100
+                logger.warning("Could not import optimizer implementations, using empty optimizer dictionary")
             
+            # Get benchmark functions
+            if self.args.all_functions:
+                logger.info(f"Using all {len(BENCHMARK_FUNCTIONS)} benchmark functions")
+                benchmark_functions = BENCHMARK_FUNCTIONS
+            else:
+                benchmark_functions = [BENCHMARK_FUNCTIONS[0]]  # Just use first function
+            
+            # Initialize baseline selector
+            baseline_selector = SatzillaInspiredSelector()
+            logger.info(f"Initialized SatzillaInspiredSelector")
+            
+            # Convert model_path to string if it's a Path object
+            model_path_str = str(model_path) if model_path else None
+            
+            # Log the model path for debugging
+            if model_path_str:
+                logger.info(f"Using model file: {model_path_str}")
+                
+                # Check if file exists
+                if os.path.exists(model_path_str):
+                    logger.info(f"Verified model file exists: {model_path_str}")
+                    
+                    # Load model directly into the selector first
+                    try:
+                        logger.info(f"Loading model directly into selector: {model_path_str}")
+                        baseline_selector.load_model(model_path_str)
+                        if baseline_selector.is_trained:
+                            logger.info(f"Successfully loaded model, is_trained={baseline_selector.is_trained}")
+                        else:
+                            logger.warning(f"Model loaded but is_trained=False. The model may be invalid.")
+                    except Exception as e:
+                        logger.error(f"Failed to load model directly into selector: {e}")
+                        
+                    # Try to load and check the model directly 
+                    try:
+                        import joblib
+                        logger.info(f"Directly loading model to inspect it: {model_path_str}")
+                        model_data = joblib.load(model_path_str)
+                        
+                        if isinstance(model_data, dict):
+                            logger.info(f"Model data is a dictionary with keys: {list(model_data.keys())}")
+                            if 'is_trained' in model_data:
+                                logger.info(f"Model has is_trained flag set to: {model_data['is_trained']}")
+                            if 'models' in model_data:
+                                logger.info(f"Model has {len(model_data['models'])} trained models")
+                                for alg, model in model_data['models'].items():
+                                    logger.info(f"  - Model for algorithm {alg} is {'NOT None' if model is not None else 'None'}")
+                        else:
+                            logger.info(f"Model data is not a dictionary but a {type(model_data)}")
+                    except Exception as e:
+                        logger.warning(f"Failed to directly inspect model file: {e}")
+                else:
+                    logger.warning(f"Model file does not exist: {model_path_str}")
+            
+            # Create the comparison object
+            comparison = BaselineComparison(
+                baseline_selector,
+                meta_optimizer,
+                max_evaluations=max_evaluations,
+                num_trials=num_trials,
+                output_dir=output_dir,
+                verbose=True,
+                model_path=model_path_str
+            )
+            logger.info(f"Max evaluations: {max_evaluations}, Num trials: {num_trials}")
+            
+            # Check if model was loaded successfully
+            if hasattr(comparison, 'model_loaded'):
+                logger.info(f"Model loaded successfully: {comparison.model_loaded}")
+            
+            # Run comparison for each benchmark function
+            logger.info("Running baseline comparison...")
+            for func in benchmark_functions:
+                func_name = func.name if hasattr(func, "name") else str(func)
+                comparison.run_comparison(
+                    problem_name=func_name,
+                    problem_func=func,
+                    dimensions=dimensions,
+                    max_evaluations=max_evaluations,
+                    num_trials=num_trials
+                )
+            
+            # Generate visualizations
+            logger.info("Generating visualizations...")
+            visualizer = ComparisonVisualizer(comparison.results, export_dir=os.path.join(output_dir, "visualizations"))
+            visualizer.create_all_visualizations()
+            
+            # Save summary information
+            with open(os.path.join(output_dir, "comparison_summary.txt"), "w") as f:
+                f.write(f"Baseline Comparison Summary\n")
+                f.write(f"==========================\n")
+                f.write(f"Dimensions: {dimensions}\n")
+                f.write(f"Max Evaluations: {max_evaluations}\n")
+                f.write(f"Number of Trials: {num_trials}\n")
+                f.write(f"Model Path: {model_path_str}\n")
+                f.write(f"Model Loaded Successfully: {comparison.model_loaded}\n")
+                f.write(f"Benchmark Functions: {[func.name if hasattr(func, 'name') else str(func) for func in benchmark_functions]}\n")
+                f.write(f"Timestamp: {timestamp}\n")
+            
+            logger.info(f"Baseline comparison completed successfully. Results saved to: {output_dir}")
+            return 0
+            
+        except Exception as e:
+            logger.error(f"Error in baseline comparison: {str(e)}")
+            traceback.print_exc()
+            return 1
+
+class SatzillaTrainCommand(Command):
+    """Command for training a SATzilla-inspired algorithm selector"""
+    
+    def execute(self) -> int:
+        """
+        Execute the training of a SATzilla-inspired algorithm selector
+        
+        Returns:
+            Exit code (0 for success, non-zero for failure)
+        """
+        try:
             # Get parameters from args
             dimensions = self.args.get('dimensions', 2)
             max_evaluations = self.args.get('max_evaluations', 1000)
-            num_trials = self.args.get('num_trials', 3)
+            output_file = self.args.get('output_file')
+            
+            # Validate output_file
+            if not output_file:
+                print("Error: output_file is required")
+                return 1
             
             # Get the list of benchmark functions
             if self.args.get('all_functions', False):
                 # Use all available benchmark functions
                 benchmark_functions = get_all_benchmark_functions(dimensions)
-                logger.info(f"Using all {len(benchmark_functions)} benchmark functions")
+                print(f"Using all {len(benchmark_functions)} benchmark functions for training")
             else:
                 # Use specified functions or defaults
                 function_names = self.args.get('functions', ['sphere', 'rosenbrock'])
@@ -197,163 +356,30 @@ class BaselineComparisonCommand(Command):
                     get_benchmark_function(name, dimensions) 
                     for name in function_names
                 ]
-                logger.info(f"Using specified benchmark functions: {[func.name for func in benchmark_functions]}")
+                print(f"Using specified benchmark functions for training: {[func.name for func in benchmark_functions]}")
             
-            # Initialize components
+            # Initialize the selector
             selector = SatzillaInspiredSelector()
-            meta_optimizer = MetaOptimizer()
             
-            # Initialize comparison framework
-            comparison = BaselineComparison(
-                baseline_selector=selector,
-                meta_optimizer=meta_optimizer,
-                max_evaluations=max_evaluations,
-                num_trials=num_trials,
-                verbose=not self.args.get('quiet', False)
-            )
+            # Train the selector
+            print("Training SATzilla-inspired selector...")
+            selector.train(benchmark_functions, max_evaluations=max_evaluations)
             
-            # Run comparison
-            logger.info("Running baseline comparison...")
-            results = comparison.run_comparison(benchmark_functions)
+            # Save the trained model
+            output_path = Path(output_file)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Set up output directories
-            output_base_dir = Path(self.args.get('output_dir', 'results/baseline_comparison'))
-            if self.args.get('timestamp_dir', True):
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_dir = output_base_dir / timestamp
-            else:
-                output_dir = output_base_dir
-            
-            # Create subdirectories
-            data_dir = output_dir / "data"
-            viz_dir = output_dir / "visualizations"
-            
-            # Create directories
-            output_dir.mkdir(exist_ok=True, parents=True)
-            data_dir.mkdir(exist_ok=True)
-            viz_dir.mkdir(exist_ok=True)
-            
-            # Generate and save visualizations
-            if not self.args.get('no_visualizations', False):
-                logger.info("Generating visualizations...")
+            # Ensure the file has .joblib extension for clarity
+            if not str(output_path).endswith('.joblib'):
+                output_path = Path(f"{str(output_path)}.joblib")
                 
-                # Performance comparison
-                plt.figure(figsize=(10, 6))
-                comparison.plot_performance_comparison(results)
-                plt.savefig(viz_dir / "performance_comparison.png", dpi=300, bbox_inches='tight')
-                plt.close()
-                
-                # Algorithm selection frequency
-                plt.figure(figsize=(15, 6))
-                comparison.plot_algorithm_selection_frequency(results)
-                plt.savefig(viz_dir / "algorithm_selection.png", dpi=300, bbox_inches='tight')
-                plt.close()
-                
-                # If ComparisonVisualizer is available, use it for more visualizations
-                try:
-                    from baseline_comparison.visualization import ComparisonVisualizer
-                    
-                    # Use the visualizer to create all visualizations
-                    visualizer = ComparisonVisualizer(results, export_dir=str(viz_dir))
-                    visualizer.create_all_visualizations()
-                    
-                except ImportError:
-                    logger.warning("ComparisonVisualizer not available. Using basic visualizations only.")
+            selector.save_model(str(output_path))
+            print(f"Trained selector saved to: {output_path}")
             
-            # Save results as JSON
-            logger.info("Saving results...")
-            
-            # Convert numpy types to Python types for JSON serialization
-            def convert_for_json(obj):
-                if isinstance(obj, np.ndarray):
-                    return obj.tolist()
-                elif isinstance(obj, np.integer):
-                    return int(obj)
-                elif isinstance(obj, np.floating):
-                    return float(obj)
-                else:
-                    return obj
-            
-            json_results = {}
-            for func_name, func_results in results.items():
-                json_results[func_name] = {k: convert_for_json(v) for k, v in func_results.items()}
-            
-            with open(data_dir / "benchmark_results.json", "w") as f:
-                json.dump(json_results, f, indent=2)
-            
-            # Save a summary report as text
-            with open(data_dir / "benchmark_summary.txt", "w") as f:
-                f.write("Baseline Comparison Benchmark Summary\n")
-                f.write("===================================\n\n")
-                f.write(f"Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Dimensions: {dimensions}\n")
-                f.write(f"Max Evaluations: {max_evaluations}\n")
-                f.write(f"Number of Trials: {num_trials}\n\n")
-                
-                f.write("Results by Function:\n")
-                f.write("-----------------\n\n")
-                
-                for func_name, func_results in results.items():
-                    f.write(f"Function: {func_name}\n")
-                    f.write(f"  Baseline best fitness: {func_results['baseline_best_fitness_avg']:.6f} ± {func_results['baseline_best_fitness_std']:.6f}\n")
-                    f.write(f"  Meta Optimizer best fitness: {func_results['meta_best_fitness_avg']:.6f} ± {func_results['meta_best_fitness_std']:.6f}\n")
-                    improvement = (func_results['baseline_best_fitness_avg'] - func_results['meta_best_fitness_avg']) / abs(func_results['baseline_best_fitness_avg']) * 100
-                    f.write(f"  Improvement: {improvement:.2f}%\n")
-                    f.write(f"  Baseline algorithm selections: {dict(sorted(Counter(func_results['baseline_selected_algorithms']).items()))}\n")
-                    f.write(f"  Meta algorithm selections: {dict(sorted(Counter(func_results['meta_selected_algorithms']).items()))}\n\n")
-            
-            # Create an index.md file with links to all results
-            with open(output_dir / "index.md", "w") as f:
-                f.write("# Baseline Comparison Results\n\n")
-                f.write("## Overview\n\n")
-                f.write("This directory contains the results of comparing the Meta Optimizer against ")
-                f.write("the SATzilla-inspired baseline algorithm selector.\n\n")
-                
-                f.write("## Run Information\n\n")
-                f.write(f"- **Date**: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"- **Dimensions**: {dimensions}\n")
-                f.write(f"- **Max Evaluations**: {max_evaluations}\n")
-                f.write(f"- **Number of Trials**: {num_trials}\n")
-                f.write(f"- **Benchmark Functions**: {[func.name for func in benchmark_functions]}\n\n")
-                
-                f.write("## Results Summary\n\n")
-                f.write("| Function | Baseline | Meta Optimizer | Improvement |\n")
-                f.write("|----------|----------|----------------|------------|\n")
-                
-                for func_name, func_results in results.items():
-                    baseline = func_results['baseline_best_fitness_avg']
-                    meta = func_results['meta_best_fitness_avg']
-                    improvement = (baseline - meta) / abs(baseline) * 100
-                    f.write(f"| {func_name} | {baseline:.6f} | {meta:.6f} | {improvement:.2f}% |\n")
-                
-                f.write("\n## Available Files\n\n")
-                f.write("### Data\n\n")
-                for file in data_dir.glob("*"):
-                    f.write(f"- [{file.name}](data/{file.name})\n")
-                
-                f.write("\n### Visualizations\n\n")
-                for file in viz_dir.glob("*"):
-                    f.write(f"- [{file.name}](visualizations/{file.name})\n")
-            
-            # Print a summary to the console
-            print("\nBaseline Comparison Results Summary:")
-            print("===================================")
-            for func_name, func_results in results.items():
-                print(f"\nFunction: {func_name}")
-                print(f"  Baseline best fitness: {func_results['baseline_best_fitness_avg']:.6f}")
-                print(f"  Meta Optimizer best fitness: {func_results['meta_best_fitness_avg']:.6f}")
-                improvement = (func_results['baseline_best_fitness_avg'] - func_results['meta_best_fitness_avg']) / abs(func_results['baseline_best_fitness_avg']) * 100
-                print(f"  Improvement: {improvement:.2f}%")
-            
-            print(f"\nResults saved to: {output_dir}")
-            print(f"Summary: {output_dir}/index.md")
-            
-            logger.info("Baseline comparison completed successfully!")
             return 0
             
         except Exception as e:
-            logger.error(f"Error in baseline comparison: {e}")
-            import traceback
+            print(f"Error training SATzilla-inspired selector: {e}")
             traceback.print_exc()
             return 1
 
@@ -393,5 +419,7 @@ def get_command(args: argparse.Namespace) -> Optional[Command]:
         return MigrainePredictionCommand(args)
     elif args.baseline_comparison:
         return BaselineComparisonCommand(args)
+    elif args.train_satzilla:
+        return SatzillaTrainCommand(args)
     else:
         return None

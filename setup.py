@@ -61,6 +61,4 @@ setup(
         ],
     },
     keywords="optimization, meta-learning, explainability, drift-detection, hyperparameter-tuning",
-    long_description=open("Readme.md").read(),
-    long_description_content_type="text/markdown",
 )

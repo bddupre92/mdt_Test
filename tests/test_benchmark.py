@@ -98,15 +98,19 @@ def run_test_benchmark():
         output_dir.mkdir(exist_ok=True, parents=True)
         
         # Save the plots
-        plt.figure()
-        comparison.plot_performance_comparison(results)
-        plt.savefig(output_dir / "performance_comparison.png")
-        plt.close()
+        try:
+            plt.figure()
+            comparison.plot_performance_comparison(results)
+            plt.savefig(output_dir / "performance_comparison.png")
+        finally:
+            plt.close('all')
         
-        plt.figure()
-        comparison.plot_algorithm_selection_frequency(results)
-        plt.savefig(output_dir / "algorithm_selection.png")
-        plt.close()
+        try:
+            plt.figure()
+            comparison.plot_algorithm_selection_frequency(results)
+            plt.savefig(output_dir / "algorithm_selection.png")
+        finally:
+            plt.close('all')
         
         # Save results as JSON
         # Convert numpy types to Python types for JSON serialization

@@ -20,22 +20,24 @@ def test_convergence_plot():
     }
     df = pd.DataFrame(data)
     
-    # Create plot
-    plt.figure(figsize=(10, 6))
-    for optimizer in df['optimizer'].unique():
-        subset = df[df['optimizer'] == optimizer]
-        plt.plot(subset['iteration'], subset['score'], label=optimizer)
-    
-    plt.title('Convergence Plot')
-    plt.xlabel('Iteration')
-    plt.ylabel('Score')
-    plt.legend()
-    plt.grid(True)
-    
-    # Save plot using save_plot
-    fig = plt.gcf()
-    save_plot(fig, 'test_convergence.png', plot_type='benchmarks')
-    plt.close()
+    try:
+        # Create plot
+        plt.figure(figsize=(10, 6))
+        for optimizer in df['optimizer'].unique():
+            subset = df[df['optimizer'] == optimizer]
+            plt.plot(subset['iteration'], subset['score'], label=optimizer)
+        
+        plt.title('Convergence Plot')
+        plt.xlabel('Iteration')
+        plt.ylabel('Score')
+        plt.legend()
+        plt.grid(True)
+        
+        # Save plot using save_plot
+        fig = plt.gcf()
+        save_plot(fig, 'test_convergence.png', plot_type='benchmarks')
+    finally:
+        plt.close('all')
 
 def test_boxplot():
     """Test boxplot saving"""
@@ -47,18 +49,20 @@ def test_boxplot():
     }
     df = pd.DataFrame(data)
     
-    # Create plot
-    plt.figure(figsize=(10, 6))
-    sns.boxplot(x='optimizer', y='score', data=df)
-    plt.title('Performance Comparison')
-    plt.xlabel('Optimizer')
-    plt.ylabel('Score')
-    plt.grid(True)
-    
-    # Save plot using save_plot
-    fig = plt.gcf()
-    save_plot(fig, 'test_boxplot.png', plot_type='benchmarks')
-    plt.close()
+    try:
+        # Create plot
+        plt.figure(figsize=(10, 6))
+        sns.boxplot(x='optimizer', y='score', data=df)
+        plt.title('Performance Comparison')
+        plt.xlabel('Optimizer')
+        plt.ylabel('Score')
+        plt.grid(True)
+        
+        # Save plot using save_plot
+        fig = plt.gcf()
+        save_plot(fig, 'test_boxplot.png', plot_type='benchmarks')
+    finally:
+        plt.close('all')
 
 def main():
     """Run all tests"""

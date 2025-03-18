@@ -22,11 +22,10 @@ import pandas as pd
 from scipy.interpolate import interp1d
 from scipy.special import softmax
 
-from core.theory.multimodal_integration import MissingDataHandler, ModalityData
-from .. import base
+from core.theory.multimodal_integration import MultimodalMissingDataHandler, ModalityData
 
-class MultimodalMissingDataHandler(MissingDataHandler):
-    """Handler for missing data in multimodal time series."""
+class MissingDataHandlerImpl(MultimodalMissingDataHandler):
+    """Implementation of missing data handling for multimodal time series."""
     
     def __init__(self,
                  imputation_method: str = 'auto',

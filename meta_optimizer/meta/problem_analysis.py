@@ -72,26 +72,65 @@ class ProblemAnalyzer:
         """
         self.logger.info(f"Analyzing problem features with {n_samples} samples...")
         
-        # Generate random samples from the search space
-        X = self._generate_random_samples(n_samples)
-        
-        # Evaluate objective function at sample points
-        y = np.array([objective_func(x) for x in X])
-        
-        # Extract basic statistical features
-        features = self._extract_statistical_features(X, y)
-        
-        # Extract landscape features
-        landscape_features = self._extract_landscape_features(X, y, objective_func)
-        features.update(landscape_features)
-        
-        if detailed:
-            # Extract more detailed features (may be computationally expensive)
-            detailed_features = self._extract_detailed_features(objective_func)
-            features.update(detailed_features)
-        
-        self.logger.info(f"Feature extraction completed: {len(features)} features extracted")
-        return features
+        try:
+            # Generate random samples from the search space
+            X = self._generate_random_samples(n_samples)
+            
+            # Evaluate objective function at sample points
+            y = np.array([objective_func(x) for x in X])
+            
+            # Handle NaN or infinite values
+            if np.any(np.isnan(y)) or np.any(np.isinf(y)):
+                self.logger.warning("NaN or infinite values detected in function evaluations. Using filtered values.")
+                valid_mask = ~(np.isnan(y) | np.isinf(y))
+                if np.sum(valid_mask) < 10:  # Need at least 10 valid points
+                    self.logger.error("Too few valid function evaluations. Using default values.")
+                    return self._get_default_features()
+                y = y[valid_mask]
+                X = X[valid_mask]
+            
+            # Extract basic statistical features
+            features = self._extract_statistical_features(X, y)
+            
+            # Extract landscape features with y_range
+            landscape_features = self._extract_landscape_features(X, y, objective_func, y_range=features['y_range'])
+            features.update(landscape_features)
+            
+            if detailed:
+                # Extract more detailed features (may be computationally expensive)
+                detailed_features = self._extract_detailed_features(objective_func)
+                features.update(detailed_features)
+            
+            self.logger.info(f"Feature extraction completed: {len(features)} features extracted")
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error during feature extraction: {str(e)}")
+            return self._get_default_features()
+    
+    def _get_default_features(self):
+        """Return default feature values when extraction fails."""
+        return {
+            'dimension': self.dim,
+            'y_mean': 0.0,
+            'y_std': 1.0,
+            'y_min': -5.0,
+            'y_max': 5.0,
+            'y_range': 10.0,
+            'y_skewness': 0.0,
+            'y_kurtosis': 0.0,
+            'y_normality': 0.5,
+            'grad_mean_magnitude': 1.0,
+            'grad_std_magnitude': 0.5,
+            'hessian_mean': 0.0,
+            'convexity_ratio': 0.5,
+            'estimated_local_minima': 1,
+            'multimodality_estimate': 0.5,
+            'ruggedness': 0.5,
+            'response_ratio': 1.0,
+            'separability': 0.5,
+            'plateau_ratio': 0.0
+        }
     
     def _generate_random_samples(self, n_samples):
         """Generate random samples from the search space."""
@@ -106,24 +145,77 @@ class ProblemAnalyzer:
         """Extract basic statistical features from function evaluations."""
         features = {}
         
-        # Basic statistics
-        features['y_mean'] = np.mean(y)
-        features['y_std'] = np.std(y)
-        features['y_min'] = np.min(y)
-        features['y_max'] = np.max(y)
-        features['y_range'] = features['y_max'] - features['y_min']
-        
-        # Distribution characteristics
-        features['y_skewness'] = skew(y)
-        features['y_kurtosis'] = kurtosis(y)
-        
-        # Normality test (approximate)
-        z_scores = (y - features['y_mean']) / (features['y_std'] + 1e-10)
-        features['y_normality'] = np.mean(np.abs(z_scores) < 2)
+        try:
+            # Add dimension as a feature
+            features['dimension'] = self.dim
+            
+            # Filter out non-finite values first
+            valid_mask = np.isfinite(y)
+            y_valid = y[valid_mask]
+            
+            if len(y_valid) < 10:
+                self.logger.warning("Too few valid values for feature extraction. Using defaults.")
+                return self._get_default_features()
+            
+            # Basic statistics with error handling
+            try:
+                features['y_mean'] = float(np.mean(y_valid))
+                features['y_std'] = float(np.std(y_valid))
+            except Exception as e:
+                self.logger.warning(f"Error calculating basic statistics: {str(e)}")
+                features['y_mean'] = 0.0
+                features['y_std'] = 1.0
+            
+            # Handle min/max/range calculation
+            try:
+                y_min = float(np.min(y_valid))
+                y_max = float(np.max(y_valid))
+                
+                if np.isfinite(y_min) and np.isfinite(y_max):
+                    features['y_min'] = y_min
+                    features['y_max'] = y_max
+                    features['y_range'] = y_max - y_min
+                    
+                    # Additional validation for y_range
+                    if not np.isfinite(features['y_range']):
+                        self.logger.warning("Non-finite y_range computed. Using default.")
+                        features['y_range'] = 10.0
+                else:
+                    self.logger.warning("Non-finite min/max values. Using defaults.")
+                    features['y_min'] = -5.0
+                    features['y_max'] = 5.0
+                    features['y_range'] = 10.0
+            except Exception as e:
+                self.logger.warning(f"Error calculating min/max/range: {str(e)}")
+                features['y_min'] = -5.0
+                features['y_max'] = 5.0
+                features['y_range'] = 10.0
+            
+            # Distribution characteristics
+            try:
+                features['y_skewness'] = float(skew(y_valid))
+            except:
+                features['y_skewness'] = 0.0
+                
+            try:
+                features['y_kurtosis'] = float(kurtosis(y_valid))
+            except:
+                features['y_kurtosis'] = 0.0
+            
+            # Normality test (approximate)
+            try:
+                z_scores = (y_valid - features['y_mean']) / (features['y_std'] + 1e-10)
+                features['y_normality'] = float(np.mean(np.abs(z_scores) < 2))
+            except:
+                features['y_normality'] = 0.5
+                
+        except Exception as e:
+            self.logger.warning(f"Error extracting statistical features: {str(e)}")
+            return self._get_default_features()
         
         return features
     
-    def _extract_landscape_features(self, X, y, objective_func):
+    def _extract_landscape_features(self, X, y, objective_func, y_range):
         """Extract features related to the optimization landscape."""
         features = {}
         
@@ -222,8 +314,7 @@ class ProblemAnalyzer:
         features['ruggedness'] = ruggedness / len(X_subset)
         
         # Function response characteristics
-        response_ratio = features['y_range'] / self.dim
-        features['response_ratio'] = response_ratio
+        features['response_ratio'] = y_range / self.dim
         
         return features
     

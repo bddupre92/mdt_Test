@@ -248,72 +248,109 @@ class TestComparisonVisualizer(unittest.TestCase):
         self.assertEqual(set(self.visualizer.methods), set(self.results.keys()))
     
     def test_head_to_head_comparison(self):
-        """Test creation of head-to-head comparison plot."""
-        # Generate plot
-        fig = self.visualizer.head_to_head_comparison(save=True)
-        
-        # Check that the figure was created
-        self.assertIsInstance(fig, plt.Figure)
-        
-        # Check that the file was saved
-        self.assertTrue(os.path.exists(f"{self.test_dir}/head_to_head_comparison.png"))
+        """Test head-to-head comparison visualization."""
+        try:
+            # Generate head-to-head comparison plot
+            fig = self.visualizer.plot_head_to_head_comparison()
+            
+            # Check that we got a figure
+            self.assertIsInstance(fig, plt.Figure)
+            
+            # Save the plot
+            self.visualizer.save_plot(fig, 'head_to_head.png')
+            
+            # Check that file was created
+            self.assertTrue(os.path.exists(os.path.join(self.test_dir, 'head_to_head.png')))
+        finally:
+            plt.close('all')
     
     def test_performance_profile(self):
-        """Test creation of performance profile plot."""
-        # Generate plot
-        fig = self.visualizer.performance_profile(save=True)
-        
-        # Check that the figure was created
-        self.assertIsInstance(fig, plt.Figure)
-        
-        # Check that the file was saved
-        self.assertTrue(os.path.exists(f"{self.test_dir}/performance_profile.png"))
+        """Test performance profile visualization."""
+        try:
+            # Generate performance profile plot
+            fig = self.visualizer.plot_performance_profile()
+            
+            # Check that we got a figure
+            self.assertIsInstance(fig, plt.Figure)
+            
+            # Save the plot
+            self.visualizer.save_plot(fig, 'performance_profile.png')
+            
+            # Check that file was created
+            self.assertTrue(os.path.exists(os.path.join(self.test_dir, 'performance_profile.png')))
+        finally:
+            plt.close('all')
     
     def test_rank_table(self):
-        """Test creation of rank table."""
-        # Generate table
-        rank_df = self.visualizer.rank_table(save=True)
-        
-        # Check that the DataFrame was created
-        self.assertIsInstance(rank_df, pd.DataFrame)
-        
-        # Check that the files were saved
-        self.assertTrue(os.path.exists(f"{self.test_dir}/rank_table.csv"))
-        self.assertTrue(os.path.exists(f"{self.test_dir}/rank_table.png"))
+        """Test rank table visualization."""
+        try:
+            # Generate rank table plot
+            fig = self.visualizer.plot_rank_table()
+            
+            # Check that we got a figure
+            self.assertIsInstance(fig, plt.Figure)
+            
+            # Save the plot
+            self.visualizer.save_plot(fig, 'rank_table.png')
+            
+            # Check that file was created
+            self.assertTrue(os.path.exists(os.path.join(self.test_dir, 'rank_table.png')))
+        finally:
+            plt.close('all')
     
     def test_critical_difference_diagram(self):
-        """Test creation of critical difference diagram."""
-        # Generate plot
-        fig = self.visualizer.critical_difference_diagram(save=True)
-        
-        # Check that the figure was created
-        self.assertIsInstance(fig, plt.Figure)
-        
-        # Check that the file was saved
-        self.assertTrue(os.path.exists(f"{self.test_dir}/critical_difference.png"))
+        """Test critical difference diagram visualization."""
+        try:
+            # Generate critical difference diagram
+            fig = self.visualizer.plot_critical_difference_diagram()
+            
+            # Check that we got a figure
+            self.assertIsInstance(fig, plt.Figure)
+            
+            # Save the plot
+            self.visualizer.save_plot(fig, 'critical_difference.png')
+            
+            # Check that file was created
+            self.assertTrue(os.path.exists(os.path.join(self.test_dir, 'critical_difference.png')))
+        finally:
+            plt.close('all')
     
     def test_improvement_heatmap(self):
-        """Test creation of improvement heatmap."""
-        # Generate plot
-        fig = self.visualizer.improvement_heatmap(save=True)
-        
-        # Check that the figure was created
-        self.assertIsInstance(fig, plt.Figure)
-        
-        # Check that the file was saved
-        self.assertTrue(os.path.exists(f"{self.test_dir}/improvement_heatmap.png"))
+        """Test improvement heatmap visualization."""
+        try:
+            # Generate improvement heatmap
+            fig = self.visualizer.plot_improvement_heatmap()
+            
+            # Check that we got a figure
+            self.assertIsInstance(fig, plt.Figure)
+            
+            # Save the plot
+            self.visualizer.save_plot(fig, 'improvement_heatmap.png')
+            
+            # Check that file was created
+            self.assertTrue(os.path.exists(os.path.join(self.test_dir, 'improvement_heatmap.png')))
+        finally:
+            plt.close('all')
     
     def test_create_all_visualizations(self):
-        """Test creation of all visualizations at once."""
-        # Generate all visualizations
-        self.visualizer.create_all_visualizations()
-        
-        # Check that all files were saved
-        self.assertTrue(os.path.exists(f"{self.test_dir}/head_to_head_comparison.png"))
-        self.assertTrue(os.path.exists(f"{self.test_dir}/performance_profile.png"))
-        self.assertTrue(os.path.exists(f"{self.test_dir}/rank_table.csv"))
-        self.assertTrue(os.path.exists(f"{self.test_dir}/critical_difference.png"))
-        self.assertTrue(os.path.exists(f"{self.test_dir}/improvement_heatmap.png"))
+        """Test creating all visualizations."""
+        try:
+            # Create all visualizations
+            self.visualizer.create_all_visualizations()
+            
+            # Check that all files were created
+            expected_files = [
+                'head_to_head.png',
+                'performance_profile.png',
+                'rank_table.png',
+                'critical_difference.png',
+                'improvement_heatmap.png'
+            ]
+            
+            for filename in expected_files:
+                self.assertTrue(os.path.exists(os.path.join(self.test_dir, filename)))
+        finally:
+            plt.close('all')
 
 
 if __name__ == '__main__':

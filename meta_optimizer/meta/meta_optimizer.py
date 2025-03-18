@@ -43,52 +43,102 @@ class OptimizationResult:
 
 class MetaOptimizer:
     """Meta-optimizer that learns to select the best optimization algorithm."""
-    def __init__(self, 
-                 dim: int,
-                 bounds: List[Tuple[float, float]],
-                 optimizers: Dict[str, 'BaseOptimizer'],
-                 history_file: Optional[str] = None,
-                 selection_file: Optional[str] = None,
-                 n_parallel: int = 2,
-                 budget_per_iteration: int = 100,
-                 default_max_evals: int = 1000,
-                 use_ml_selection: bool = True,
-                 verbose: bool = False):
+    def __init__(
+        self,
+        dim,
+        bounds,
+        optimizers=None,
+        n_parallel=2,
+        budget_per_iteration=50,
+        history_db_path=None,
+        history_table=None,
+        use_ml_selection=False,
+        max_retrain_interval=10,
+        visualize_selection=True,
+        verbose=False,
+        default_max_evals=None,
+        use_selection_tracker=True,
+        selection_tracker_weights=None,
+        early_stopping=False,
+        early_stopping_patience=3,
+        early_stopping_min_delta=1e-6,
+    ):
+        """Initialize Meta-Optimizer.
+        
+        Args:
+            dim: Problem dimensionality
+            bounds: List of (lower, upper) bounds for each dimension
+            optimizers: Dictionary of optimizer instances keyed by name
+            n_parallel: Number of parallel optimization runs
+            budget_per_iteration: Budget per iteration
+            history_db_path: Path to history database
+            history_table: Name of history table
+            use_ml_selection: Whether to use ML for algorithm selection
+            max_retrain_interval: Maximum interval between model retraining
+            visualize_selection: Whether to visualize algorithm selection
+            verbose: Verbosity level
+            default_max_evals: Default maximum evaluations cap
+            use_selection_tracker: Whether to use selection tracker
+            selection_tracker_weights: Selection tracker weights
+            early_stopping: Whether to use early stopping
+            early_stopping_patience: Early stopping patience
+            early_stopping_min_delta: Early stopping minimum delta
+        """
         self.dim = dim
         self.bounds = bounds
+        self.optimizers = optimizers or {}
+        
+        # Debug: Count and log received optimizers
+        optimizers_count = len(self.optimizers) if self.optimizers else 0
+        print(f"DEBUG: Received {optimizers_count} optimizers: {', '.join(self.optimizers.keys() if self.optimizers else [])}")
+        
         # Set verbosity for all optimizers
-        for optimizer in optimizers.values():
-            if hasattr(optimizer, 'verbose'):
-                optimizer.verbose = verbose
-        self.optimizers = optimizers
-        self.history_file = history_file
-        self.selection_file = selection_file
-        self.n_parallel = n_parallel
-        self.budget_per_iteration = budget_per_iteration
-        self.default_max_evals = default_max_evals
+        if self.optimizers:
+            for name, optimizer in self.optimizers.items():
+                if hasattr(optimizer, "verbose") and verbose:
+                    optimizer.verbose = verbose
+            
+        # Setup logger
+        self.logger = logging.getLogger("MetaOptimizer")
         self.verbose = verbose
-        self.use_ml_selection = use_ml_selection
-        self.logger = logging.getLogger('MetaOptimizer')
-        if not self.logger.handlers:  
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
         
-        # Set log level based on verbose flag
-        self.logger.setLevel(logging.DEBUG if verbose else logging.WARNING)
-        
-        # Configure logging
-        # self.logger.setLevel(logging.DEBUG)
+        # Set log level based on verbosity
+        if verbose:
+            self.logger.setLevel(logging.DEBUG)
+        else:
+            self.logger.setLevel(logging.INFO)
+            
+        # Debug: Log optimizer count again
+        if hasattr(self, 'optimizers'):
+            self.logger.info(f"After setup: {len(self.optimizers)} optimizers available: {', '.join(self.optimizers.keys() if self.optimizers else [])}")
+        else:
+            self.logger.warning("After setup: No optimizers attribute exists")
+            
+        # Store optimizers reference
+        self._original_optimizers = dict(self.optimizers)
         
         # Log initialization parameters
         self.logger.info(f"Initializing MetaOptimizer with dim={dim}, n_parallel={n_parallel}")
         
+        # Store parameters
+        self.dim = dim
+        self.bounds = bounds
+        self.n_parallel = n_parallel
+        self.budget_per_iteration = budget_per_iteration
+        self.default_max_evals = default_max_evals
+        self.early_stopping = early_stopping
+        self.early_stopping_patience = early_stopping_patience
+        self.early_stopping_min_delta = early_stopping_min_delta
+        self.use_ml_selection = use_ml_selection
+        self.use_selection_tracker = use_selection_tracker
+        self.max_retrain_interval = max_retrain_interval
+        self.visualize_selection = visualize_selection
+        
         # Initialize optimization history
-        self.history = OptimizationHistory(history_file)
+        self.history = OptimizationHistory(history_db_path)
         
         # Initialize selection tracker
-        self.selection_tracker = SelectionTracker(selection_file)
+        self.selection_tracker = SelectionTracker(selection_tracker_weights) if use_selection_tracker else None
         
         # Initialize state variables
         self.objective_func = None
@@ -102,12 +152,18 @@ class MetaOptimizer:
         self.optimization_history = []
         
         # Load optimization history and selection data
-        self._load_data()
+        if hasattr(self, '_load_data'):
+            self._load_data()
+        else:
+            # Placeholder for loading data when method is missing
+            self.logger.info("No _load_data method available, initializing empty history")
+            self.history = OptimizationHistory(history_db_path)
+            self.selection_tracker = SelectionTracker(selection_tracker_weights) if use_selection_tracker else None
         
         # Initialize ML model for selections
         self.ml_model = None
         self.feature_scaler = None
-        if self.use_ml_selection:
+        if use_ml_selection:
             self.train_selection_model()
         
         # Problem features
@@ -187,17 +243,170 @@ class MetaOptimizer:
         
     def _select_optimizer(self, context: Dict[str, Any]) -> List[str]:
         """
-        Select which optimizer(s) to use based on problem features.
+        Select optimizers based on problem features and history.
         
         Args:
-            context: Additional context information
+            context: Problem context
             
         Returns:
             List of selected optimizer names
         """
-        # If no features available, use random selection
+        # Debug optimizers state before selection
+        if hasattr(self, 'optimizers'):
+            self.logger.info(f"_select_optimizer: {len(self.optimizers)} optimizers available: {', '.join(self.optimizers.keys() if self.optimizers else [])}")
+        else:
+            self.logger.warning("_select_optimizer: No optimizers attribute exists")
+            
+        # Create default optimizers if none are available
+        if not self.optimizers:
+            # Create optimizers using OptimizerFactory if available
+            try:
+                from meta_optimizer.optimizers.optimizer_factory import OptimizerFactory
+                bounds = self.bounds
+                dim = self.dim
+                
+                self.logger.info(f"Creating default optimizers with dim={dim} and bounds={bounds}")
+                
+                factory = OptimizerFactory()
+                default_optimizers = {
+                    'DE': factory.create_optimizer('differential_evolution', dim=dim, bounds=bounds),
+                    'ES': factory.create_optimizer('evolution_strategy', dim=dim, bounds=bounds)
+                }
+                
+                # Store the created optimizers
+                self.optimizers = default_optimizers
+                self.logger.info(f"Created {len(self.optimizers)} default optimizers: {', '.join(self.optimizers.keys())}")
+                
+                # Return the first optimizer
+                if self.optimizers:
+                    return [list(self.optimizers.keys())[0]]
+                    
+            except (ImportError, Exception) as e:
+                self.logger.warning(f"Failed to create default optimizers: {str(e)}")
+                
+            # No optimizers available, add a fallback algorithm
+            self.logger.warning("No optimizers available, adding fallback differential evolution algorithm")
+            try:
+                # Try to import DE from scipy as a fallback
+                from scipy.optimize import differential_evolution
+                
+                # Create wrapper class instead of simple function
+                class FallbackDEOptimizer:
+                    def __init__(self):
+                        self.name = "fallback_de"
+                        self.evaluations = 0
+                        self.reset()
+                        
+                    def reset(self):
+                        self.evaluations = 0
+                        
+                    def optimize(self, func, max_evals):
+                        # Use bounds from MetaOptimizer
+                        try:
+                            # For scipy's differential_evolution, bounds must be a sequence of (min, max) pairs
+                            if hasattr(self.meta_optimizer, 'bounds') and self.meta_optimizer.bounds:
+                                # Check if we have nested bounds like [((0, 1), (0, 1))]
+                                if isinstance(self.meta_optimizer.bounds[0], tuple) and len(self.meta_optimizer.bounds[0]) == 2:
+                                    # Check if the bounds are nested tuples
+                                    if isinstance(self.meta_optimizer.bounds[0][0], tuple):
+                                        self.meta_optimizer.logger.warning(f"Nested bounds detected. Flattening bounds.")
+                                        # Flatten nested bounds
+                                        bounds = []
+                                        for b in self.meta_optimizer.bounds:
+                                            if isinstance(b[0], tuple):
+                                                for inner_b in b:
+                                                    bounds.append(inner_b)
+                                            else:
+                                                bounds.append(b)
+                                    else:
+                                        # Already in the correct format [(min1, max1), (min2, max2), ...]
+                                        bounds = self.meta_optimizer.bounds
+                                else:
+                                    # Unexpected format, set default bounds
+                                    self.meta_optimizer.logger.warning(f"Unexpected bounds format. Using default bounds.")
+                                    bounds = [(0, 1)] * self.meta_optimizer.dim
+                            else:
+                                # No bounds, use default
+                                self.meta_optimizer.logger.warning(f"No bounds found. Using default bounds.")
+                                bounds = [(0, 1)] * self.meta_optimizer.dim
+                                
+                            # Verify bounds length matches dimensions
+                            if len(bounds) != self.meta_optimizer.dim:
+                                self.meta_optimizer.logger.warning(f"Bounds mismatch: have {len(bounds)} bounds for {self.meta_optimizer.dim} dimensions. Adjusting bounds.")
+                                if len(bounds) > 0:
+                                    # Use the first bound for all dimensions
+                                    bounds = [bounds[0]] * self.meta_optimizer.dim
+                                else:
+                                    # Use default bounds
+                                    bounds = [(0, 1)] * self.meta_optimizer.dim
+                                
+                            self.meta_optimizer.logger.debug(f"Using DE bounds: {bounds}")
+                            
+                            # Run scipy's differential_evolution with proper bounds
+                            result = differential_evolution(
+                                func, 
+                                bounds=bounds, 
+                                maxiter=max(10, max_evals//10), 
+                                popsize=10,
+                                updating='deferred',
+                                workers=1  # Single worker for deterministic behavior
+                            )
+                            self.evaluations = result.nfev
+                            return result.x, result.fun
+                        except Exception as e:
+                            self.meta_optimizer.logger.error(f"Fallback DE optimizer failed: {str(e)}")
+                            # Return a zero vector as a fallback solution
+                            return np.zeros(self.meta_optimizer.dim), float('inf')
+                
+                # Create instance and store self reference
+                fallback_de = FallbackDEOptimizer()
+                fallback_de.meta_optimizer = self
+                
+                # Add to optimizers
+                self.optimizers = {"fallback_de": fallback_de}
+                return ["fallback_de"]
+            except ImportError:
+                self.logger.error("Could not import scipy.optimize.differential_evolution for fallback")
+                # Create a dummy optimizer for fallback
+                class RandomSearchOptimizer:
+                    def __init__(self):
+                        self.evaluations = 0
+                        self.reset()
+                        
+                    def reset(self):
+                        self.evaluations = 0
+                        
+                    def optimize(self, func, max_evals):
+                        # Use bounds from MetaOptimizer
+                        bounds = self.meta_optimizer.bounds
+                        best_x = None
+                        best_y = float('inf')
+                        
+                        # Generate random points
+                        for i in range(max_evals):
+                            # Generate random point
+                            x = np.array([np.random.uniform(low, high) for low, high in bounds])
+                            
+                            # Evaluate
+                            y = func(x)
+                            
+                            # Update best
+                            if y < best_y:
+                                best_y = y
+                                best_x = x
+                        
+                        self.evaluations = max_evals
+                        return best_x, best_y
+                
+                # Create instance and store self reference
+                random_search = RandomSearchOptimizer()
+                random_search.meta_optimizer = self
+                
+                # Add to optimizers dictionary
+                self.optimizers = {"random_search": random_search}
+                return ["random_search"]
+        
         if self.current_features is None:
-            self.logger.info("No problem features available, using random selection")
             return list(np.random.choice(
                 list(self.optimizers.keys()),
                 size=min(self.n_parallel, len(self.optimizers)),
@@ -548,29 +757,35 @@ class MetaOptimizer:
     def _run_single_optimizer(self, optimizer_name: str, objective_func: Callable, max_evals: int) -> OptimizationResult:
         """Run a single optimizer and return its result."""
         optimizer = self.optimizers[optimizer_name]
-        optimizer.reset()
         
-        # Set max_iterations based on max_evals
-        optimizer.max_iterations = max_evals
-        optimizer.max_evals = max_evals
-        
-        # Run optimization
+        # Handle both object and function interfaces
         try:
-            # Unpack the tuple returned by optimize
-            solution, score = optimizer.optimize(objective_func, max_evals=max_evals)
+            # Reset the optimizer if it's an object with reset method
+            if hasattr(optimizer, 'reset'):
+                optimizer.reset()
+            
+            # Different optimizers have different interfaces
+            if hasattr(optimizer, 'optimize'):
+                # Object with optimize method
+                solution, score = optimizer.optimize(objective_func, max_evals)
+                n_evals = getattr(optimizer, 'evaluations', max_evals)
+            else:
+                # Function that takes (func, bounds, max_evals)
+                solution, score, n_evals = optimizer(objective_func, self.bounds, max_evals)
+            
             success = score < float('inf')
             return OptimizationResult(
                 optimizer_name=optimizer_name,
                 solution=solution,
                 score=score,
-                n_evals=optimizer.evaluations,
+                n_evals=n_evals,
                 success=success
             )
         except Exception as e:
             self.logger.error(f"Optimizer {optimizer_name} failed: {str(e)}")
             return OptimizationResult(
                 optimizer_name=optimizer_name,
-                solution=None,
+                solution=np.zeros(self.dim),  # Use zeros of correct dimensionality
                 score=float('inf'),
                 n_evals=0,
                 success=False
@@ -592,6 +807,7 @@ class MetaOptimizer:
     def optimize(self,
                 objective_func: Callable,
                 max_evals: Optional[int] = None,
+                max_evaluations: Optional[int] = None,
                 context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         """
         Run optimization with all configured optimizers.
@@ -599,16 +815,40 @@ class MetaOptimizer:
         Args:
             objective_func: Objective function to minimize
             max_evals: Maximum number of function evaluations
+            max_evaluations: Alias for max_evals (for compatibility)
             context: Optional context information
             
         Returns:
             Best solution found (numpy array)
         """
+        # Use max_evaluations as an alias for max_evals if provided
+        if max_evaluations is not None and max_evals is None:
+            max_evals = max_evaluations
+            
         # Use default max evaluations if not specified
         max_evals = max_evals or self.default_max_evals
         
         # Set initial parameters
         self.reset()
+        
+        # Handle benchmark function objects that aren't callable
+        if hasattr(objective_func, 'evaluate'):
+            # Wrap the evaluate method in a callable function
+            self.logger.info(f"Wrapping benchmark function {getattr(objective_func, 'name', 'unknown')}")
+            original_func = objective_func
+            objective_func = lambda x: original_func.evaluate(x)
+            
+            # Set problem dimensionality if available
+            if hasattr(original_func, 'dims') and original_func.dims != self.dim:
+                self.logger.info(f"Updating dimensionality from {self.dim} to {original_func.dims}")
+                self.dim = original_func.dims
+                
+            # Set bounds if available
+            if hasattr(original_func, 'bounds') and len(original_func.bounds) == 2:
+                low, high = original_func.bounds
+                self.bounds = [(low, high)] * self.dim
+                self.logger.info(f"Using bounds from benchmark function: {self.bounds[0]}")
+        
         self.objective_func = objective_func
         self.max_evals = max_evals
         self.start_time = time.time()
@@ -659,6 +899,7 @@ class MetaOptimizer:
                     
                 # Select optimizer to use for this iteration based on problem features
                 selected_optimizers = self._select_optimizer(context or {})
+                self.most_recent_selected_optimizers = selected_optimizers
                 
                 # Check if we need to select at least one
                 if not selected_optimizers:
@@ -905,7 +1146,7 @@ class MetaOptimizer:
         save_visualize_algo_selection = self.visualize_algorithm_selection if hasattr(self, 'visualize_algorithm_selection') else False
         
         # Save selection history if requested
-        if self.selection_file:
+        if self.selection_tracker:
             if hasattr(self, 'selection_history') and self.selection_history:
                 try:
                     with open(self.selection_file, 'w') as f:
@@ -1639,3 +1880,63 @@ class MetaOptimizer:
                     optimizer.param_history = params
         
         self.logger.info("Restored optimizer states from imported data")
+
+    def _random_search(self, objective_func, bounds, max_evals):
+        """Fallback random search implementation"""
+        self.logger.warning("Using fallback random search algorithm")
+        best_x = None
+        best_y = float('inf')
+        
+        # Generate random points
+        for i in range(max_evals):
+            # Generate random point
+            x = np.array([np.random.uniform(low, high) for low, high in bounds])
+            
+            # Evaluate
+            y = objective_func(x)
+            
+            # Update best
+            if y < best_y:
+                best_y = y
+                best_x = x
+                
+        return best_x, best_y, max_evals
+
+    def _log_evaluation_stats(self, optimizer, result, problem, final_eval_count):
+        """Log stats about the optimizer's evaluation performance."""
+        if self.verbose:
+            logging.info(f"Optimizer {optimizer.name} finished with {final_eval_count} evaluations")
+            logging.info(f"Best fitness found: {result[1]}")
+            logging.info(f"Remaining budget: {self.budget_per_iteration - final_eval_count}")
+    
+    def get_selected_algorithm(self) -> str:
+        """Return the name of the most recently selected algorithm(s).
+        
+        If multiple optimizers were used in parallel, returns a comma-separated list.
+        If no optimizer was selected yet, returns 'unknown'.
+        """
+        if hasattr(self, 'most_recent_selected_optimizers') and self.most_recent_selected_optimizers:
+            self.logger.debug(f"Selected optimizers: {self.most_recent_selected_optimizers}")
+            if isinstance(self.most_recent_selected_optimizers, list) and len(self.most_recent_selected_optimizers) > 0:
+                # This is the path that should be taken
+                names = []
+                for opt_name in self.most_recent_selected_optimizers:
+                    # Handle string optimizer names
+                    self.logger.debug(f"Optimizer name: {opt_name}, type: {type(opt_name)}")
+                    if isinstance(opt_name, str):
+                        names.append(opt_name)
+                    elif hasattr(opt_name, 'name'):
+                        names.append(opt_name.name)
+                    else:
+                        names.append(str(opt_name))
+                
+                result = ",".join(names)
+                self.logger.debug(f"Returning joined optimizer names: {result}")
+                return result
+            else:
+                # Fallback for non-list types
+                self.logger.debug(f"most_recent_selected_optimizers is not a list: {type(self.most_recent_selected_optimizers)}")
+                return str(self.most_recent_selected_optimizers)
+        
+        self.logger.debug("No optimizers selected yet, returning 'unknown'")
+        return "unknown"

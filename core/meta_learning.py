@@ -184,6 +184,8 @@ class ProblemAnalyzer:
                 'y_mean': 0.0,
                 'y_std': 1.0,
                 'y_range': 10.0,
+                'y_min': -5.0,
+                'y_max': 5.0,
                 'multimodality_estimate': 0.5,
                 'gradient_mean': 1.0,
                 'convexity_ratio': 0.5,
