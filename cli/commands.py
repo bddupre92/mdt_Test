@@ -138,6 +138,15 @@ class DriftExplainerCommand(Command):
         self.logger.info("Running drift explanation")
         return explain_drift(self.args)
 
+class MoEValidationCommand(Command):
+    """Command for running MoE validation framework tests"""
+    def execute(self) -> Dict[str, Any]:
+        """Execute MoE validation framework tests"""
+        from core.moe_validation import run_moe_validation
+        
+        self.logger.info("Running MoE validation framework tests")
+        return run_moe_validation(self.args)
+
 class MigraineDataImportCommand(Command):
     """Command for importing migraine data"""
     def execute(self) -> Dict[str, Any]:
@@ -174,26 +183,15 @@ class BaselineComparisonCommand(Command):
             output_dir = self.args.output_dir
             model_path = self.args.selector_path
             
-            # Validate model path if provided
-            if model_path:
-                model_path = Path(model_path)
-                if not model_path.exists():
-                    # Try adding .joblib extension if not already present
-                    if not str(model_path).endswith('.joblib'):
-                        joblib_path = Path(f"{str(model_path)}.joblib")
-                        if joblib_path.exists():
-                            model_path = joblib_path
-                            logger.info(f"Using model path with .joblib extension: {model_path}")
-                        else:
-                            # Try with .pkl extension as well
-                            pkl_path = Path(f"{str(model_path)}.pkl")
-                            if pkl_path.exists():
-                                model_path = pkl_path
-                                logger.info(f"Using model path with .pkl extension: {model_path}")
-                            else:
-                                logger.warning(f"Model file not found at: {model_path}, {joblib_path}, or {pkl_path}")
-                    else:
-                        logger.warning(f"Model file not found at: {model_path}")
+            # Parse functions to test
+            if self.args.all_functions:
+                logger.info(f"Using all benchmark functions")
+                functions = ["sphere", "rosenbrock", "rastrigin", "ackley", "griewank", "levy", "schwefel"]
+            else:
+                functions = self.args.functions
+                if isinstance(functions, str):
+                    functions = functions.split(",")
+                logger.info(f"Using specified functions: {functions}")
             
             # Create timestamped output directory
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -201,102 +199,98 @@ class BaselineComparisonCommand(Command):
             os.makedirs(output_dir, exist_ok=True)
             logger.info(f"Output directory: {output_dir}")
             
-            # Initialize meta optimizer
-            meta_optimizer = MetaOptimizer(
+            # Initialize all four optimizers
+            
+            # 1. Simple Baseline (Random Selection)
+            from baseline_comparison.baseline_algorithms.simple_baseline import SimpleBaselineSelector
+            simple_baseline = SimpleBaselineSelector()
+            logger.info("Initialized SimpleBaselineSelector")
+            
+            # 2. Meta-Learner (Basic Bandit)
+            meta_learner = MetaOptimizer(
                 dimensions=dimensions,
                 max_evaluations=max_evaluations,
-                n_parallel=2,
+                n_parallel=1,
                 visualize_selection=True
             )
+            logger.info("Initialized Meta-Learner")
             
-            # Load optimizer implementations
+            # 3. Enhanced Meta-Optimizer
+            enhanced_meta = MetaOptimizer(
+                dimensions=dimensions,
+                max_evaluations=max_evaluations,
+                n_parallel=1,
+                visualize_selection=True,
+                use_ml_selection=True,
+                extract_features=True
+            )
+            logger.info("Initialized Enhanced Meta-Optimizer")
+            
+            # 4. SATzilla-Inspired Selector
+            satzilla_selector = SatzillaInspiredSelector()
+            logger.info("Initialized SatzillaInspiredSelector")
+            
+            # Load optimizer implementations for all selectors
             try:
                 optimizers = load_optimizers()
-                meta_optimizer.register_optimizers(optimizers)
-            except ImportError:
-                logger.warning("Could not import optimizer implementations, using empty optimizer dictionary")
+                meta_learner.register_optimizers(optimizers)
+                enhanced_meta.register_optimizers(optimizers)
+                simple_baseline.set_available_algorithms(list(optimizers.keys()))
+                satzilla_selector.set_available_algorithms(list(optimizers.keys()))
+                logger.info(f"Loaded {len(optimizers)} optimizers: {list(optimizers.keys())}")
+            except ImportError as e:
+                logger.error(f"Could not import optimizer implementations: {e}")
+                return 1
             
-            # Get benchmark functions
-            if self.args.all_functions:
-                logger.info(f"Using all {len(BENCHMARK_FUNCTIONS)} benchmark functions")
-                benchmark_functions = BENCHMARK_FUNCTIONS
-            else:
-                benchmark_functions = [BENCHMARK_FUNCTIONS[0]]  # Just use first function
+            # Load SATzilla model if provided
+            if model_path:
+                model_path_str = str(model_path)
+                logger.info(f"Loading SATzilla model from: {model_path_str}")
+                try:
+                    satzilla_selector.load_model(model_path_str)
+                    if satzilla_selector.is_trained:
+                        logger.info("Successfully loaded SATzilla model")
+                    else:
+                        logger.warning("Model loaded but is_trained=False. The model may be invalid.")
+                except Exception as e:
+                    logger.error(f"Failed to load SATzilla model: {e}")
+                    return 1
             
-            # Initialize baseline selector
-            baseline_selector = SatzillaInspiredSelector()
-            logger.info(f"Initialized SatzillaInspiredSelector")
-            
-            # Convert model_path to string if it's a Path object
-            model_path_str = str(model_path) if model_path else None
-            
-            # Log the model path for debugging
-            if model_path_str:
-                logger.info(f"Using model file: {model_path_str}")
-                
-                # Check if file exists
-                if os.path.exists(model_path_str):
-                    logger.info(f"Verified model file exists: {model_path_str}")
-                    
-                    # Load model directly into the selector first
-                    try:
-                        logger.info(f"Loading model directly into selector: {model_path_str}")
-                        baseline_selector.load_model(model_path_str)
-                        if baseline_selector.is_trained:
-                            logger.info(f"Successfully loaded model, is_trained={baseline_selector.is_trained}")
-                        else:
-                            logger.warning(f"Model loaded but is_trained=False. The model may be invalid.")
-                    except Exception as e:
-                        logger.error(f"Failed to load model directly into selector: {e}")
-                        
-                    # Try to load and check the model directly 
-                    try:
-                        import joblib
-                        logger.info(f"Directly loading model to inspect it: {model_path_str}")
-                        model_data = joblib.load(model_path_str)
-                        
-                        if isinstance(model_data, dict):
-                            logger.info(f"Model data is a dictionary with keys: {list(model_data.keys())}")
-                            if 'is_trained' in model_data:
-                                logger.info(f"Model has is_trained flag set to: {model_data['is_trained']}")
-                            if 'models' in model_data:
-                                logger.info(f"Model has {len(model_data['models'])} trained models")
-                                for alg, model in model_data['models'].items():
-                                    logger.info(f"  - Model for algorithm {alg} is {'NOT None' if model is not None else 'None'}")
-                        else:
-                            logger.info(f"Model data is not a dictionary but a {type(model_data)}")
-                    except Exception as e:
-                        logger.warning(f"Failed to directly inspect model file: {e}")
-                else:
-                    logger.warning(f"Model file does not exist: {model_path_str}")
-            
-            # Create the comparison object
+            # Initialize comparison framework
             comparison = BaselineComparison(
-                baseline_selector,
-                meta_optimizer,
+                simple_baseline=simple_baseline,
+                meta_learner=meta_learner,
+                enhanced_meta=enhanced_meta,
+                satzilla_selector=satzilla_selector,
                 max_evaluations=max_evaluations,
                 num_trials=num_trials,
-                output_dir=output_dir,
                 verbose=True,
-                model_path=model_path_str
+                output_dir=output_dir,
+                model_path=model_path
             )
-            logger.info(f"Max evaluations: {max_evaluations}, Num trials: {num_trials}")
-            
-            # Check if model was loaded successfully
-            if hasattr(comparison, 'model_loaded'):
-                logger.info(f"Model loaded successfully: {comparison.model_loaded}")
             
             # Run comparison for each benchmark function
             logger.info("Running baseline comparison...")
-            for func in benchmark_functions:
-                func_name = func.name if hasattr(func, "name") else str(func)
-                comparison.run_comparison(
-                    problem_name=func_name,
-                    problem_func=func,
-                    dimensions=dimensions,
-                    max_evaluations=max_evaluations,
-                    num_trials=num_trials
-                )
+            for func_name in functions:
+                try:
+                    # Get benchmark function
+                    func = get_benchmark_function(func_name, dimensions)
+                    if func is None:
+                        logger.warning(f"Skipping unknown function: {func_name}")
+                        continue
+                    
+                    # Run comparison
+                    logger.info(f"Running comparison for {func_name}")
+                    comparison.run_comparison(
+                        problem_name=func_name,
+                        problem_func=func,
+                        dimensions=dimensions,
+                        max_evaluations=max_evaluations,
+                        num_trials=num_trials
+                    )
+                except Exception as e:
+                    logger.error(f"Error running comparison for {func_name}: {e}")
+                    traceback.print_exc()
             
             # Generate visualizations
             logger.info("Generating visualizations...")
@@ -310,9 +304,9 @@ class BaselineComparisonCommand(Command):
                 f.write(f"Dimensions: {dimensions}\n")
                 f.write(f"Max Evaluations: {max_evaluations}\n")
                 f.write(f"Number of Trials: {num_trials}\n")
-                f.write(f"Model Path: {model_path_str}\n")
-                f.write(f"Model Loaded Successfully: {comparison.model_loaded}\n")
-                f.write(f"Benchmark Functions: {[func.name if hasattr(func, 'name') else str(func) for func in benchmark_functions]}\n")
+                f.write(f"Model Path: {model_path if model_path else 'None'}\n")
+                f.write(f"SATzilla Model Loaded: {satzilla_selector.is_trained}\n")
+                f.write(f"Benchmark Functions: {functions}\n")
                 f.write(f"Timestamp: {timestamp}\n")
             
             logger.info(f"Baseline comparison completed successfully. Results saved to: {output_dir}")
@@ -413,6 +407,8 @@ def get_command(args: argparse.Namespace) -> Optional[Command]:
         return ExplainabilityCommand(args)
     elif args.explain_drift:
         return DriftExplainerCommand(args)
+    elif args.moe_validation:
+        return MoEValidationCommand(args)
     elif args.import_migraine_data:
         return MigraineDataImportCommand(args)
     elif args.predict_migraine:

@@ -90,31 +90,125 @@ def run_baseline_comparison(args):
     max_evaluations = args.get('max_evaluations', 10000)
     num_trials = args.get('num_trials', 30)
 
-    # Create baseline selector
-    baseline_selector = SatzillaInspiredSelector()
+    # Load optimizer implementations first
+    try:
+        optimizers = create_optimizers()
+        logger.info(f"Loaded {len(optimizers)} optimizers: {list(optimizers.keys())}")
+    except ImportError as e:
+        logger.error(f"Could not import optimizer implementations: {e}")
+        raise
 
-    # Create meta optimizer
-    meta_optimizer = MetaOptimizer(
+    # 1. Simple Baseline (Random Selection)
+    from baseline_comparison.baseline_algorithms.simple_baseline import SimpleBaselineSelector
+    simple_baseline = SimpleBaselineSelector()
+    simple_baseline.set_available_algorithms(list(optimizers.keys()))
+    logger.info("Initialized SimpleBaselineSelector")
+    
+    # 2. Meta-Learner (Basic Bandit)
+    meta_learner = MetaOptimizer(
         dim=dimensions,
-        bounds=[(0, 1)] * dimensions,
-        optimizers={},  # Will be populated by available optimizers
-        n_parallel=2,
-        budget_per_iteration=100,
-        default_max_evals=max_evaluations,
-        use_ml_selection=True,
-        verbose=True
+        bounds=[(-5, 5)] * dimensions,  # Default bounds, will be overridden per problem
+        optimizers=optimizers,
+        n_parallel=1,
+        visualize_selection=True,
+        default_max_evals=max_evaluations
     )
+    logger.info("Initialized Meta-Learner")
+    
+    # 3. Enhanced Meta-Optimizer
+    enhanced_meta = MetaOptimizer(
+        dim=dimensions,
+        bounds=[(-5, 5)] * dimensions,  # Default bounds, will be overridden per problem
+        optimizers=optimizers,
+        n_parallel=1,
+        visualize_selection=True,
+        use_ml_selection=True,
+        default_max_evals=max_evaluations
+    )
+    logger.info("Initialized Enhanced Meta-Optimizer")
+    
+    # 4. SATzilla-Inspired Selector
+    satzilla_selector = SatzillaInspiredSelector()
+    satzilla_selector.set_available_algorithms(list(optimizers.keys()))
+    logger.info("Initialized SatzillaInspiredSelector")
+    
+    # Load SATzilla model if provided
+    model_path = args.get('selector_path')
+    if model_path:
+        model_path_str = str(model_path)
+        logger.info(f"Loading SATzilla model from: {model_path_str}")
+        try:
+            satzilla_selector.load_model(model_path_str)
+            if satzilla_selector.is_trained:
+                logger.info("Successfully loaded SATzilla model")
+            else:
+                logger.warning("Model loaded but is_trained=False. The model may be invalid.")
+        except Exception as e:
+            logger.error(f"Failed to load SATzilla model: {e}")
+            raise
 
     # Run comparison
     comparison = BaselineComparison(
-        baseline_selector=baseline_selector,
-        meta_optimizer=meta_optimizer,
+        simple_baseline=simple_baseline,
+        meta_learner=meta_learner,
+        enhanced_meta=enhanced_meta,
+        satzilla_selector=satzilla_selector,
         max_evaluations=max_evaluations,
         num_trials=num_trials,
         verbose=True,
-        output_dir=output_dir
+        output_dir=output_dir,
+        model_path=model_path
     )
-    comparison.run()
+    
+    # Get functions to test
+    if args.get('all_functions', False):
+        logger.info(f"Using all benchmark functions")
+        functions = ["sphere", "rosenbrock", "rastrigin", "ackley", "griewank", "levy", "schwefel"]
+    else:
+        functions = args.get('functions', ['sphere', 'rosenbrock'])
+        if isinstance(functions, str):
+            functions = functions.split(",")
+        logger.info(f"Using specified functions: {functions}")
+    
+    # Run comparison for each benchmark function
+    logger.info("Running baseline comparison...")
+    for func_name in functions:
+        try:
+            # Get benchmark function
+            func = get_benchmark_function(func_name, dimensions)
+            if func is None:
+                logger.warning(f"Skipping unknown function: {func_name}")
+                continue
+            
+            # Run comparison
+            logger.info(f"Running comparison for {func_name}")
+            comparison.run_comparison(
+                problem_name=func_name,
+                problem_func=func,
+                dimensions=dimensions,
+                max_evaluations=max_evaluations,
+                num_trials=num_trials
+            )
+        except Exception as e:
+            logger.error(f"Error running comparison for {func_name}: {e}")
+            traceback.print_exc()
+    
+    # Generate visualizations
+    logger.info("Generating visualizations...")
+    visualizer = ComparisonVisualizer(comparison.results, export_dir=os.path.join(output_dir, "visualizations"))
+    visualizer.create_all_visualizations()
+    
+    # Save summary information
+    with open(os.path.join(output_dir, "comparison_summary.txt"), "w") as f:
+        f.write(f"Baseline Comparison Summary\n")
+        f.write(f"==========================\n")
+        f.write(f"Dimensions: {dimensions}\n")
+        f.write(f"Max Evaluations: {max_evaluations}\n")
+        f.write(f"Number of Trials: {num_trials}\n")
+        f.write(f"Model Path: {model_path if model_path else 'None'}\n")
+        f.write(f"SATzilla Model Loaded: {satzilla_selector.is_trained}\n")
+        f.write(f"Benchmark Functions: {functions}\n")
+        f.write(f"Timestamp: {timestamp}\n")
 
 class SatzillaTrainingCommand(Command):
     """Command for training the SATzilla-inspired selector"""
@@ -243,11 +337,80 @@ class BaselineComparisonCommand(Command):
             traceback.print_exc()
             return 1
 
+class MoEValidationCommand(Command):
+    """Command for running the MoE validation framework"""
+    
+    def execute(self) -> int:
+        """
+        Execute the MoE validation framework tests
+        
+        Returns:
+            Exit code (0 for success, non-zero for failure)
+        """
+        try:
+            # Import the MoE validation module
+            from core.moe_validation import run_moe_validation
+            
+            # Create a dictionary with the args from self.args
+            args_dict = {}
+            # Components
+            args_dict['components'] = getattr(self.args, 'components', ['all'])
+            # Interactive
+            args_dict['interactive'] = getattr(self.args, 'interactive', False)
+            
+            # Basic arguments
+            args_dict['results_dir'] = getattr(self.args, 'results_dir', 'results/moe_validation')
+            args_dict['benchmark_comparison'] = getattr(self.args, 'benchmark_comparison', False)
+            args_dict['explainers'] = getattr(self.args, 'explainers', ['all'])
+            
+            # Enhanced Drift Notifications arguments
+            args_dict['notify'] = getattr(self.args, 'notify', False)
+            args_dict['notify_threshold'] = getattr(self.args, 'notify_threshold', 0.5)
+            args_dict['notify_with_visuals'] = getattr(self.args, 'notify_with_visuals', False)
+            
+            # Selective Expert Retraining arguments
+            args_dict['enable_retraining'] = getattr(self.args, 'enable_retraining', False)
+            args_dict['retraining_threshold'] = getattr(self.args, 'retraining_threshold', 0.3)
+            
+            # Continuous Explainability arguments
+            args_dict['enable_continuous_explain'] = getattr(self.args, 'enable_continuous_explain', False)
+            args_dict['continuous_explain_interval'] = getattr(self.args, 'continuous_explain_interval', 60)
+            args_dict['continuous_explain_types'] = getattr(self.args, 'continuous_explain_types', ['shap', 'feature_importance'])
+            
+            # Confidence Metrics arguments
+            args_dict['enable_confidence'] = getattr(self.args, 'enable_confidence', False)
+            args_dict['drift_weight'] = getattr(self.args, 'drift_weight', 0.5)
+            args_dict['confidence_thresholds'] = getattr(self.args, 'confidence_thresholds', [0.3, 0.5, 0.7, 0.9])
+            
+            # Execute the MoE validation framework
+            self.logger.info("Running MoE validation framework tests...")
+            self.logger.info(f"Components: {args_dict['components']}")
+            result = run_moe_validation(args_dict)
+            
+            # Check if validation was successful
+            if result.get('success', False):
+                self.logger.info(result.get('message', 'MoE validation completed successfully'))
+                
+                # Log report path if available
+                if 'report_path' in result and result['report_path']:
+                    self.logger.info(f"Validation report available at: {result['report_path']}")
+                    
+                return result.get('exit_code', 0)
+            else:
+                self.logger.error(result.get('message', 'MoE validation failed'))
+                return result.get('exit_code', 1)
+                
+        except Exception as e:
+            self.logger.error(f"Error during MoE validation: {e}")
+            traceback.print_exc()
+            return 1
+
 # Define COMMAND_MAP here, AFTER the BaselineComparisonCommand class is defined
 COMMAND_MAP = {
     "baseline_comparison": BaselineComparisonCommand,
     "train_satzilla": SatzillaTrainingCommand,
     "dynamic_optimization": DynamicOptimizationCommand,
+    "moe_validation": MoEValidationCommand,
     # Add other commands as they become available
 }
 

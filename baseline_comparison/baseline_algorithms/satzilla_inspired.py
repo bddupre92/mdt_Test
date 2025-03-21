@@ -15,6 +15,7 @@ import os
 import pickle
 import traceback
 from analysis.problem_analyzer import extract_features
+from sklearn.metrics import r2_score
 
 # Configure logging
 logging.basicConfig(
@@ -261,87 +262,82 @@ class SatzillaInspiredSelector:
     
     def train(self, problems: List['OptimizationProblem'], max_evaluations: int = 1000) -> None:
         """
-        Train the selector on a set of problems
+        Train the algorithm selector using a set of problems
         
         Args:
-            problems: List of optimization problems for training
-            max_evaluations: Maximum function evaluations per algorithm
+            problems: List of optimization problems to train on
+            max_evaluations: Maximum number of function evaluations per algorithm
         """
-        logger.info("Training SatzillaInspiredSelector...")
+        logger.info("Training SATzilla-inspired selector...")
         
-        # Extract features from each problem
-        feature_dicts = []
+        # Extract features and performance for each problem
+        X = []  # Features
+        y = {alg: [] for alg in self.algorithms}  # Performance
+        
         for problem in problems:
+            # Extract features
             features = self.extract_features(problem)
-            feature_dicts.append(features)
-            
-        # Set feature names based on extracted features
-        if feature_dicts:
-            # Get feature names from first problem's features
-            feature_names = list(feature_dicts[0].keys())
-            
-            # Log if feature names have changed
-            if self.feature_names != feature_names:
-                logger.info(f"Updated feature_names from training data: {feature_names}")
-                logger.warning(f"Feature names changed during training. Original: {self.feature_names}, New: {feature_names}")
-                self.feature_names = feature_names
-        
-        # Create training data: X (features) and y (performance for each algorithm)
-        X = []
-        y_dict = {alg: [] for alg in self.algorithms}
-        
-        # Collect data for each problem and algorithm
-        for problem, features in zip(problems, feature_dicts):
-            # Extract feature values
-            feature_values = [features[feat] for feat in self.feature_names]
-            X.append(feature_values)
+            if not features:
+                logger.warning(f"Could not extract features for problem {problem}")
+                continue
+                
+            # Convert features to vector
+            feature_vector = self._prepare_feature_vector(features)
+            X.append(feature_vector)
             
             # Run each algorithm and record performance
             for alg in self.algorithms:
-                perf = self._run_algorithm(problem, alg, max_evaluations)
-                y_dict[alg].append(perf)
+                performance = self._run_algorithm(problem, alg, max_evaluations)
+                y[alg].append(performance)
         
+        if not X:
+            logger.error("No valid training data collected")
+            return
+            
         # Convert to numpy arrays
         X = np.array(X)
-        self.X_train = X  # Store for future reference
         
-        # Standardize features
-        self.scaler = StandardScaler()
+        # Scale features
         X_scaled = self.scaler.fit_transform(X)
         
-        # Train a regression model for each algorithm
+        # Train model for each algorithm
         for alg in self.algorithms:
-            y = np.array(y_dict[alg])
+            logger.info(f"Training model for algorithm: {alg}")
             
-            # Skip if all values are identical or no valid performance data
-            if len(np.unique(y)) < 2 or np.all(np.isnan(y)) or np.all(np.isinf(y)):
-                logger.warning(f"Skipping model training for {alg}: insufficient variation in performance data")
-                self.models[alg] = None
-                continue
-                
-            # Replace any inf or nan values with large finite values
-            y[np.isnan(y) | np.isinf(y)] = 1e10
-            
-            # Train random forest regression model
+            # Train random forest model
             model = RandomForestRegressor(n_estimators=100, random_state=42)
             try:
-                model.fit(X_scaled, y)
+                model.fit(X_scaled, y[alg])
                 self.models[alg] = model
                 logger.info(f"Successfully trained model for algorithm: {alg}")
             except Exception as e:
                 logger.error(f"Failed to train model for {alg}: {e}")
                 self.models[alg] = None
+
+            # Validate the trained model
+            if self.models[alg] is not None:
+                try:
+                    # Make predictions on training data
+                    y_pred = self.models[alg].predict(X_scaled)
+                    
+                    # Calculate R-squared score
+                    r2 = r2_score(y[alg], y_pred)
+                    logger.info(f"R-squared score for {alg}: {r2:.4f}")
+                    
+                    if r2 < 0.1:  # Very poor fit
+                        logger.warning(f"Model for {alg} has very poor fit (R2={r2:.4f})")
+                        self.models[alg] = None
+                except Exception as e:
+                    logger.error(f"Error validating model for {alg}: {e}")
+                    self.models[alg] = None
         
-        # Validate the trained models
-        model_valid = self._validate_model()
+        # Set trained flag if at least one model is valid
+        self.is_trained = any(model is not None for model in self.models.values())
         
-        # Update trained flag
-        self.is_trained = model_valid
-        
-        if model_valid:
-            logger.info("Training completed successfully. Model is ready for use.")
+        if self.is_trained:
+            logger.info("Successfully trained SATzilla-inspired selector")
         else:
-            logger.warning("Training completed with issues. Model may not be fully functional.")
+            logger.warning("Failed to train any valid models")
     
     def save_model(self, model_path: str) -> None:
         """

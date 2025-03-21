@@ -22,6 +22,7 @@ def create_parser() -> argparse.ArgumentParser:
     add_drift_detection_args(parser)
     add_migraine_args(parser)
     add_benchmark_args(parser)
+    add_moe_validation_args(parser)
     
     return parser
 
@@ -212,6 +213,23 @@ def add_benchmark_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--model-path', type=str,
                      help="Path to trained SatzillaInspiredSelector model")
     
+    # New baseline comparison arguments
+    parser.add_argument('--baseline-comparison', help="Run baseline comparison", action='store_true')
+    parser.add_argument('--dimensions', type=int, default=3,
+                     help="Dimension for optimization problems")
+    parser.add_argument('--max-evaluations', type=int, default=1000,
+                     help="Maximum function evaluations per algorithm")
+    parser.add_argument('--num-trials', type=int, default=3,
+                     help="Number of trials to run per algorithm")
+    parser.add_argument('--functions', type=str, default='sphere',
+                     help="Comma-separated list of test functions (sphere,rosenbrock,rastrigin,ackley,griewank,levy,schwefel)")
+    parser.add_argument('--output-dir', type=str, default='results',
+                     help="Directory to save results")
+    parser.add_argument('--selector-path', type=str,
+                     help="Path to trained SatzillaInspiredSelector model")
+    parser.add_argument('--all-functions', action='store_true',
+                     help="Use all available benchmark functions")
+    
     # Dynamic optimization visualization
     parser.add_argument('--dynamic-optimization', action='store_true',
                      help="Run dynamic optimization visualization")
@@ -233,6 +251,71 @@ def add_benchmark_args(parser: argparse.ArgumentParser) -> None:
                      help="Re-optimize after this many function evaluations")
     parser.add_argument('--show-plot', action='store_true',
                      help="Show plot in addition to saving it")
+
+def add_moe_validation_args(parser: argparse.ArgumentParser) -> None:
+    """
+    Add MoE validation framework related arguments to the parser
+    
+    Parameters:
+    -----------
+    parser : argparse.ArgumentParser
+        The parser to add arguments to
+    """
+    parser.add_argument('--moe-validation', action='store_true',
+                      help="Run MoE validation framework tests")
+    parser.add_argument('--components', nargs='+', 
+                      choices=['meta_optimizer', 'meta_learner', 'drift', 'explainability', 'gating', 'integrated', 'explain_drift', 'all'],
+                      default=['all'], 
+                      help="Components to test in MoE validation framework")
+    parser.add_argument('--interactive', action='store_true',
+                      help="Generate interactive HTML report with visualizations")
+    
+    # Basic validation arguments
+    parser.add_argument('--results-dir', default='results/moe_validation',
+                      help="Directory to save validation results")
+    parser.add_argument('--benchmark-comparison', action='store_true',
+                      help="Run benchmarking against baseline methods for MoE performance")
+    parser.add_argument('--explainers', nargs='+',
+                      choices=['shap', 'lime', 'feature_importance', 'optimizer'],
+                      default=['shap'],
+                      help="Explainability methods to use in validation")
+    
+    # Enhanced Drift Notifications
+    notification_group = parser.add_argument_group('Enhanced Drift Notifications')
+    notification_group.add_argument('--notify', action='store_true',
+                     help="Enable enhanced notifications with explanations of why drift occurred")
+    notification_group.add_argument('--notify-threshold', type=float, default=0.5,
+                     help="Threshold for drift notifications (0-1, higher means only notify on severe drift)")
+    notification_group.add_argument('--notify-with-visuals', action='store_true',
+                     help="Include visualizations with drift notifications")
+    
+    # Selective Expert Retraining
+    retraining_group = parser.add_argument_group('Selective Expert Retraining')
+    retraining_group.add_argument('--enable-retraining', action='store_true',
+                    help="Enable selective retraining of experts affected by drift")
+    retraining_group.add_argument('--retraining-threshold', type=float, default=0.3,
+                    help="Impact threshold for expert retraining (0-1)")
+    
+    # Continuous Explainability
+    continuous_group = parser.add_argument_group('Continuous Explainability')
+    continuous_group.add_argument('--enable-continuous-explain', action='store_true',
+                     help="Enable continuous explainability monitoring")
+    continuous_group.add_argument('--continuous-explain-interval', type=int, default=60,
+                     help="Update interval in seconds for continuous explainability")
+    continuous_group.add_argument('--continuous-explain-types', nargs='+',
+                     choices=['shap', 'lime', 'feature_importance', 'optimizer'],
+                     default=['shap', 'feature_importance'],
+                     help="Explainer types for continuous monitoring")
+    
+    # Confidence Metrics
+    confidence_group = parser.add_argument_group('Confidence Metrics')
+    confidence_group.add_argument('--enable-confidence', action='store_true',
+                     help="Enable confidence metrics integrating drift severity with model uncertainty")
+    confidence_group.add_argument('--drift-weight', type=float, default=0.5,
+                     help="Weight of drift impact in confidence calculation (0-1)")
+    confidence_group.add_argument('--confidence-thresholds', nargs='+', type=float,
+                     default=[0.3, 0.5, 0.7, 0.9],
+                     help="Confidence thresholds for reporting (space-separated values between 0-1)")
 
 def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
     """
@@ -290,6 +373,12 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
     baseline_parser = subparsers.add_parser(
         "baseline_comparison",
         help="Run baseline comparison benchmark"
+    )
+    
+    # Define the MoE validation command
+    moe_validation_parser = subparsers.add_parser(
+        "moe_validation",
+        help="Run MoE validation framework tests"
     )
     
     # Add baseline comparison arguments
@@ -351,10 +440,128 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
         help="Disable visualization generation"
     )
     
+    baseline_parser.add_argument(
+        "--equal-budget",
+        action="store_true",
+        help="Use equal budget for both baseline and meta-optimizer for fair comparison"
+    )
+    
     # Define a SATzilla training command
     satzilla_train_parser = subparsers.add_parser(
         "train_satzilla",
         help="Train a SATzilla-inspired algorithm selector"
+    )
+    
+    # Add MoE validation framework arguments
+    moe_validation_parser.add_argument(
+        "--components", 
+        nargs="+",
+        choices=["meta_optimizer", "meta_learner", "drift", "explainability", "gating", "integrated", "explain_drift", "all"],
+        default=["all"],
+        help="Components to test in MoE validation framework"
+    )
+    
+    moe_validation_parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Generate interactive HTML report with visualizations"
+    )
+    
+    moe_validation_parser.add_argument(
+        "--notify",
+        action="store_true",
+        help="Enable automatic drift notifications"
+    )
+    
+    moe_validation_parser.add_argument(
+        "--notify-threshold",
+        type=float,
+        default=0.5,
+        help="Threshold for drift notifications (0-1, higher means only notify on severe drift)"
+    )
+    
+    moe_validation_parser.add_argument(
+        "--results-dir",
+        default="results/moe_validation",
+        help="Directory to save validation results"
+    )
+    
+    moe_validation_parser.add_argument(
+        "--benchmark-comparison",
+        action="store_true",
+        help="Run benchmarking against baseline methods for MoE performance"
+    )
+    
+    moe_validation_parser.add_argument(
+        "--explainers",
+        nargs="+",
+        choices=["shap", "lime", "feature_importance", "optimizer_explainer", "all"],
+        default=["all"],
+        help="Explainers to use for MoE explainability tests"
+    )
+    
+    # Enhanced Drift Notifications arguments
+    notification_group = moe_validation_parser.add_argument_group('Enhanced Drift Notifications')
+    notification_group.add_argument(
+        "--notify-with-visuals",
+        action="store_true",
+        help="Include visualizations with drift notifications"
+    )
+    
+    # Selective Expert Retraining arguments
+    retraining_group = moe_validation_parser.add_argument_group('Selective Expert Retraining')
+    retraining_group.add_argument(
+        "--enable-retraining",
+        action="store_true",
+        help="Enable selective retraining of experts affected by drift"
+    )
+    retraining_group.add_argument(
+        "--retraining-threshold",
+        type=float,
+        default=0.3,
+        help="Impact threshold to determine which experts need retraining (0-1)"
+    )
+    
+    # Continuous Explainability arguments
+    continuous_group = moe_validation_parser.add_argument_group('Continuous Explainability')
+    continuous_group.add_argument(
+        "--enable-continuous-explain",
+        action="store_true",
+        help="Enable continuous explainability monitoring"
+    )
+    continuous_group.add_argument(
+        "--continuous-explain-interval",
+        type=int,
+        default=60,
+        help="Update interval in seconds for continuous explainability"
+    )
+    continuous_group.add_argument(
+        "--continuous-explain-types",
+        nargs="+",
+        choices=["shap", "lime", "feature_importance", "optimizer"],
+        default=["shap", "feature_importance"],
+        help="Explainer types for continuous monitoring"
+    )
+    
+    # Confidence Metrics arguments
+    confidence_group = moe_validation_parser.add_argument_group('Confidence Metrics')
+    confidence_group.add_argument(
+        "--enable-confidence",
+        action="store_true",
+        help="Enable confidence metrics for predictions that account for drift"
+    )
+    confidence_group.add_argument(
+        "--drift-weight",
+        type=float,
+        default=0.5,
+        help="Weight of drift impact in confidence calculation (0-1)"
+    )
+    confidence_group.add_argument(
+        "--confidence-thresholds",
+        nargs="+",
+        type=float,
+        default=[0.3, 0.5, 0.7, 0.9],
+        help="Confidence thresholds for reporting (space-separated values between 0-1)"
     )
     
     # Add SATzilla training arguments

@@ -5,7 +5,14 @@ Problem wrapper class for optimization problems.
 class ProblemWrapper:
     def __init__(self, function, dimensions, bounds=None):
         self.function = function
-        self.dimensions = dimensions
+        
+        # Handle dimensions from function if available
+        if hasattr(function, 'dims'):
+            self.dimensions = function.dims
+        elif hasattr(function, 'dimension'):
+            self.dimensions = function.dimension
+        else:
+            self.dimensions = dimensions
         
         # Extract name from the function if available
         if hasattr(function, 'name'):
@@ -20,21 +27,21 @@ class ProblemWrapper:
             if isinstance(function_bounds, tuple) and len(function_bounds) == 2:
                 # Global bounds format (min, max)
                 low, high = function_bounds
-                self._bounds_list = [(low, high)] * dimensions
-                self.bounds = [(low, high)] * dimensions
-            elif isinstance(function_bounds, list) and len(function_bounds) == dimensions:
+                self._bounds_list = [(low, high)] * self.dimensions
+                self.bounds = [(low, high)] * self.dimensions
+            elif isinstance(function_bounds, list) and len(function_bounds) == self.dimensions:
                 # Per-dimension bounds
                 self._bounds_list = function_bounds
                 self.bounds = function_bounds
             else:
                 # Default bounds
-                self._bounds_list = [(0, 1)] * dimensions
-                self.bounds = [(0, 1)] * dimensions
+                self._bounds_list = [(0, 1)] * self.dimensions
+                self.bounds = [(0, 1)] * self.dimensions
         else:
             # Initialize with provided or default bounds
             if bounds is None:
-                self._bounds_list = [(0, 1)] * dimensions
-                self.bounds = [(0, 1)] * dimensions  # Make bounds a list of tuples for better compatibility
+                self._bounds_list = [(0, 1)] * self.dimensions
+                self.bounds = [(0, 1)] * self.dimensions  # Make bounds a list of tuples for better compatibility
             else:
                 self._bounds_list = bounds
                 self.bounds = bounds  # Use provided bounds

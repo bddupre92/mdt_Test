@@ -10,10 +10,13 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import logging
 from typing import Dict, List, Any, Optional, Tuple
 from matplotlib.figure import Figure
 from scipy import stats
 from matplotlib.axes import Axes
+
+logger = logging.getLogger(__name__)
 
 class ComparisonVisualizer:
     """
@@ -44,18 +47,24 @@ class ComparisonVisualizer:
         # Extract algorithm names
         self.algorithms = set()
         for func_name, func_results in results.items():
-            self.algorithms.update(func_results["baseline_selected_algorithms"])
-            self.algorithms.update(func_results["meta_selected_algorithms"])
+            if "simple_baseline" in func_results:
+                self.algorithms.update(func_results["simple_baseline"]["selections"])
+            if "meta_learner" in func_results:
+                self.algorithms.update(func_results["meta_learner"]["selections"])
+            if "enhanced_meta" in func_results:
+                self.algorithms.update(func_results["enhanced_meta"]["selections"])
+            if "satzilla" in func_results:
+                self.algorithms.update(func_results["satzilla"]["selections"])
         self.algorithms = sorted(list(self.algorithms))
         
         # Available metrics
         self.metrics = [
-            "best_fitness_avg",
-            "evaluations_avg",
-            "time_avg"
+            "best_fitness",
+            "evaluations",
+            "time"
         ]
     
-    def performance_comparison(self, metric: str = "best_fitness_avg", 
+    def performance_comparison(self, metric: str = "best_fitness", 
                              save: bool = True) -> Figure:
         """
         Create a performance comparison plot
@@ -70,15 +79,34 @@ class ComparisonVisualizer:
         fig, ax = plt.subplots(figsize=(10, 6))
         
         # Get data
-        baseline_values = [self.results[f]["baseline_{0}".format(metric)] for f in self.function_names]
-        meta_values = [self.results[f]["meta_{0}".format(metric)] for f in self.function_names]
+        simple_values = []
+        meta_values = []
+        enhanced_values = []
+        satzilla_values = []
+        
+        for f in self.function_names:
+            # Get average values for each approach
+            if "simple_baseline" in self.results[f]:
+                simple_values.append(np.mean(self.results[f]["simple_baseline"][metric]))
+            if "meta_learner" in self.results[f]:
+                meta_values.append(np.mean(self.results[f]["meta_learner"][metric]))
+            if "enhanced_meta" in self.results[f]:
+                enhanced_values.append(np.mean(self.results[f]["enhanced_meta"][metric]))
+            if "satzilla" in self.results[f]:
+                satzilla_values.append(np.mean(self.results[f]["satzilla"][metric]))
         
         # Create bar chart
         x = np.arange(len(self.function_names))
-        width = 0.35
+        width = 0.2  # Narrower bars to fit all four
         
-        ax.bar(x - width/2, baseline_values, width, label='Baseline')
-        ax.bar(x + width/2, meta_values, width, label='Meta Optimizer')
+        if simple_values:
+            ax.bar(x - 1.5*width, simple_values, width, label='Simple Baseline')
+        if meta_values:
+            ax.bar(x - 0.5*width, meta_values, width, label='Meta Learner')
+        if enhanced_values:
+            ax.bar(x + 0.5*width, enhanced_values, width, label='Enhanced Meta')
+        if satzilla_values:
+            ax.bar(x + 1.5*width, satzilla_values, width, label='SATzilla')
         
         # Labels and title
         ax.set_ylabel(metric.replace("_", " ").title())
@@ -108,36 +136,76 @@ class ComparisonVisualizer:
             The figure
         """
         # Collect all selected algorithms
-        baseline_algorithms = []
+        simple_algorithms = []
         meta_algorithms = []
+        enhanced_algorithms = []
+        satzilla_algorithms = []
         
         for func_name, func_results in self.results.items():
-            baseline_algorithms.extend(func_results["baseline_selected_algorithms"])
-            meta_algorithms.extend(func_results["meta_selected_algorithms"])
+            if "simple_baseline" in func_results:
+                simple_algorithms.extend(func_results["simple_baseline"]["selections"])
+            if "meta_learner" in func_results:
+                meta_algorithms.extend(func_results["meta_learner"]["selections"])
+            if "enhanced_meta" in func_results:
+                enhanced_algorithms.extend(func_results["enhanced_meta"]["selections"])
+            if "satzilla" in func_results:
+                satzilla_algorithms.extend(func_results["satzilla"]["selections"])
         
         # Count frequencies
-        baseline_counts = {}
-        for alg in baseline_algorithms:
-            baseline_counts[alg] = baseline_counts.get(alg, 0) + 1
+        simple_counts = {}
+        for alg in simple_algorithms:
+            simple_counts[alg] = simple_counts.get(alg, 0) + 1
             
         meta_counts = {}
         for alg in meta_algorithms:
             meta_counts[alg] = meta_counts.get(alg, 0) + 1
+            
+        enhanced_counts = {}
+        for alg in enhanced_algorithms:
+            enhanced_counts[alg] = enhanced_counts.get(alg, 0) + 1
+            
+        satzilla_counts = {}
+        for alg in satzilla_algorithms:
+            satzilla_counts[alg] = satzilla_counts.get(alg, 0) + 1
         
         # Create bar chart
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
         
-        # Baseline
-        ax1.bar(baseline_counts.keys(), baseline_counts.values())
-        ax1.set_title('Baseline Algorithm Selection')
-        ax1.set_ylabel('Frequency')
-        ax1.set_xticklabels(baseline_counts.keys(), rotation=45, ha='right')
+        # Simple Baseline
+        if simple_counts:
+            ax1.bar(simple_counts.keys(), simple_counts.values())
+            ax1.set_title('Simple Baseline Selection')
+            ax1.set_ylabel('Frequency')
+            ax1.set_xticklabels(simple_counts.keys(), rotation=45, ha='right')
+        else:
+            ax1.text(0.5, 0.5, 'No data', ha='center', va='center')
         
-        # Meta Optimizer
-        ax2.bar(meta_counts.keys(), meta_counts.values())
-        ax2.set_title('Meta Optimizer Algorithm Selection')
-        ax2.set_ylabel('Frequency')
-        ax2.set_xticklabels(meta_counts.keys(), rotation=45, ha='right')
+        # Meta Learner
+        if meta_counts:
+            ax2.bar(meta_counts.keys(), meta_counts.values())
+            ax2.set_title('Meta Learner Selection')
+            ax2.set_ylabel('Frequency')
+            ax2.set_xticklabels(meta_counts.keys(), rotation=45, ha='right')
+        else:
+            ax2.text(0.5, 0.5, 'No data', ha='center', va='center')
+        
+        # Enhanced Meta
+        if enhanced_counts:
+            ax3.bar(enhanced_counts.keys(), enhanced_counts.values())
+            ax3.set_title('Enhanced Meta Selection')
+            ax3.set_ylabel('Frequency')
+            ax3.set_xticklabels(enhanced_counts.keys(), rotation=45, ha='right')
+        else:
+            ax3.text(0.5, 0.5, 'No data', ha='center', va='center')
+        
+        # SATzilla
+        if satzilla_counts:
+            ax4.bar(satzilla_counts.keys(), satzilla_counts.values())
+            ax4.set_title('SATzilla Selection')
+            ax4.set_ylabel('Frequency')
+            ax4.set_xticklabels(satzilla_counts.keys(), rotation=45, ha='right')
+        else:
+            ax4.text(0.5, 0.5, 'No data', ha='center', va='center')
         
         fig.tight_layout()
         
@@ -219,65 +287,58 @@ class ComparisonVisualizer:
         
         return fig
 
-    def plot_convergence_curves(self):
-        """Plot convergence curves for all functions."""
-        plt.figure(figsize=(12, 8))
+    def plot_convergence_curves(self, save: bool = True) -> Figure:
+        """Plot convergence curves for all approaches."""
+        fig, ax = plt.subplots(figsize=(12, 8))
         
-        for func_name, results in self.results.items():
-            baseline_convergence = results["baseline_convergence_data"]
-            meta_convergence = results["meta_convergence_data"]
+        for func_name in self.function_names:
+            func_results = self.results[func_name]
             
-            # Average convergence data across trials
-            baseline_evals = []
-            baseline_fitness = []
-            meta_evals = []
-            meta_fitness = []
-            
-            for trial_data in baseline_convergence:
-                if trial_data:  # Check if trial data exists
-                    baseline_evals.append(trial_data["evaluations"])
-                    baseline_fitness.append(trial_data["fitness"])
-            
-            for trial_data in meta_convergence:
-                if trial_data:  # Check if trial data exists
-                    meta_evals.append(trial_data["evaluations"])
-                    meta_fitness.append(trial_data["fitness"])
-            
-            if baseline_evals and baseline_fitness:
-                # Convert to numpy arrays for calculations
-                baseline_evals = np.array(baseline_evals)
-                baseline_fitness = np.array(baseline_fitness)
-                meta_evals = np.array(meta_evals)
-                meta_fitness = np.array(meta_fitness)
-                
-                # Calculate means and standard deviations
-                baseline_mean_fitness = np.mean(baseline_fitness, axis=0)
-                baseline_std_fitness = np.std(baseline_fitness, axis=0)
-                meta_mean_fitness = np.mean(meta_fitness, axis=0)
-                meta_std_fitness = np.std(meta_fitness, axis=0)
-                
-                # Plot means with standard deviation bands
-                plt.plot(baseline_evals[0], baseline_mean_fitness, label=f'Baseline - {func_name}')
-                plt.fill_between(baseline_evals[0], 
-                               baseline_mean_fitness - baseline_std_fitness,
-                               baseline_mean_fitness + baseline_std_fitness,
-                               alpha=0.2)
-                
-                plt.plot(meta_evals[0], meta_mean_fitness, label=f'Meta - {func_name}')
-                plt.fill_between(meta_evals[0],
-                               meta_mean_fitness - meta_std_fitness,
-                               meta_mean_fitness + meta_std_fitness,
-                               alpha=0.2)
+            # Plot convergence for each approach
+            for approach in ["simple", "meta", "enhanced", "satzilla"]:
+                if approach in func_results:
+                    convergence_data = func_results[approach]["convergence"]
+                    if convergence_data and any(len(data) > 0 for data in convergence_data):
+                        try:
+                            # Find the minimum length to truncate all arrays to the same length
+                            non_empty_data = [data for data in convergence_data if len(data) > 0]
+                            if not non_empty_data:
+                                continue
+                                
+                            min_length = min(len(data) for data in non_empty_data)
+                            
+                            # Truncate all arrays to the minimum length
+                            truncated_data = [data[:min_length] for data in non_empty_data]
+                            
+                            # Now we can safely create a numpy array
+                            convergence_array = np.array(truncated_data)
+                            
+                            if len(convergence_array) > 0:
+                                mean_curve = np.mean(convergence_array, axis=0)
+                                std_curve = np.std(convergence_array, axis=0)
+                                iterations = range(len(mean_curve))
+                                
+                                # Plot mean with std shading
+                                label = f"{approach.capitalize()} - {func_name}"
+                                ax.plot(iterations, mean_curve, label=label)
+                                ax.fill_between(iterations, mean_curve - std_curve, mean_curve + std_curve, alpha=0.2)
+                        except Exception as e:
+                            logger.warning(f"Error plotting convergence for {approach} on {func_name}: {e}")
+                            continue
         
-        plt.xlabel('Number of Evaluations')
-        plt.ylabel('Best Fitness')
-        plt.title('Convergence Curves')
-        plt.legend()
-        plt.grid(True)
+        ax.set_xlabel('Iterations')
+        ax.set_ylabel('Fitness Value')
+        ax.set_title('Convergence Comparison')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
         
-        # Save the plot
-        plt.savefig(os.path.join(self.export_dir, 'convergence_curves.png'))
-        plt.close()
+        if save:
+            plt.tight_layout()
+            save_path = os.path.join(self.export_dir, "convergence_curves.png")
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Saved convergence curves to {save_path}")
+        
+        return fig
 
     def plot_critical_difference_diagram(self, save: bool = True) -> Figure:
         """Create a critical difference diagram using statistical tests"""
@@ -286,26 +347,55 @@ class ComparisonVisualizer:
         # Collect rankings for each function
         rankings = []
         for func_name in self.function_names:
-            baseline_perf = self.results[func_name]["baseline_best_fitness_avg"]
-            meta_perf = self.results[func_name]["meta_best_fitness_avg"]
-            # Lower is better for fitness
-            rankings.append([1 if baseline_perf < meta_perf else 2,
-                           1 if meta_perf < baseline_perf else 2])
+            func_results = self.results[func_name]
+            if "averages" in func_results:
+                simple_perf = func_results["averages"]["simple"]["avg_fitness"]
+                meta_perf = func_results["averages"]["meta"]["avg_fitness"]
+                enhanced_perf = func_results["averages"]["enhanced"]["avg_fitness"]
+                satzilla_perf = func_results["averages"]["satzilla"]["avg_fitness"]
+                
+                # Get rankings (1 is best, 4 is worst) - Lower is better for fitness
+                perfs = [simple_perf, meta_perf, enhanced_perf, satzilla_perf]
+                sorted_idx = np.argsort(perfs)
+                trial_ranks = np.zeros(4)
+                for i, idx in enumerate(sorted_idx):
+                    trial_ranks[idx] = i + 1
+                rankings.append(trial_ranks)
+            else:
+                logger.warning(f"No averages found for {func_name}, skipping in critical difference diagram")
+        
+        if not rankings:
+            logger.warning("No valid rankings found for critical difference diagram")
+            fig, ax = plt.subplots(figsize=(8, 4))
+            ax.text(0.5, 0.5, "Insufficient data for critical difference diagram", 
+                   ha='center', va='center', fontsize=12)
+            
+            if save:
+                fig.savefig(f"{self.export_dir}/critical_difference.png", dpi=300, bbox_inches='tight')
+                print(f"Saved critical difference diagram to {self.export_dir}/critical_difference.png")
+            
+            return fig
         
         rankings = np.array(rankings)
         avg_ranks = np.mean(rankings, axis=0)
         
-        # Perform Wilcoxon signed-rank test
-        stat, pvalue = stats.wilcoxon(rankings[:, 0], rankings[:, 1])
+        # Perform Friedman test if we have enough data
+        if len(rankings) >= 2:
+            try:
+                stat, pvalue = stats.friedmanchisquare(*[rankings[:, i] for i in range(rankings.shape[1])])
+            except:
+                pvalue = float('nan')
+        else:
+            pvalue = float('nan')
         
         # Create the visualization
-        fig, ax = plt.subplots(figsize=(8, 4))
+        fig, ax = plt.subplots(figsize=(10, 6))
         
-        y_pos = [1, 2]
-        ax.barh(y_pos, avg_ranks, height=0.3)
+        y_pos = [1, 2, 3, 4]
+        ax.barh(y_pos, avg_ranks, height=0.5)
         ax.set_yticks(y_pos)
-        ax.set_yticklabels(['Baseline', 'Meta Optimizer'])
-        ax.set_xlabel('Average Rank')
+        ax.set_yticklabels(['Simple', 'Meta', 'Enhanced', 'SATzilla'])
+        ax.set_xlabel('Average Rank (lower is better)')
         ax.set_title(f'Critical Difference Diagram\n(p-value: {pvalue:.4f})')
         
         if save:
@@ -318,22 +408,81 @@ class ComparisonVisualizer:
         """Create performance profiles showing the cumulative distribution of performance ratios"""
         fig, ax = plt.subplots(figsize=(10, 6))
         
+        # DEBUG: Print the structure of results for one function
+        for func_name in self.function_names:
+            print(f"DEBUG - Performance Profiles - Function: {func_name}")
+            print(f"Structure of results[{func_name}]:")
+            for key1, value1 in self.results[func_name].items():
+                print(f"  {key1}: {type(value1)}")
+                if isinstance(value1, dict):
+                    for key2, value2 in value1.items():
+                        print(f"    {key2}: {type(value2)}")
+                        if isinstance(value2, dict):
+                            for key3, value3 in value2.items():
+                                print(f"      {key3}: {type(value3)} = {value3}")
+            break  # Only print for one function
+        
         # Collect performance ratios
         ratios = []
         for func_name in self.function_names:
-            baseline_perf = self.results[func_name]["baseline_best_fitness_avg"]
-            meta_perf = self.results[func_name]["meta_best_fitness_avg"]
-            best_perf = min(baseline_perf, meta_perf)
-            
-            ratios.append([baseline_perf/best_perf, meta_perf/best_perf])
+            try:
+                # Get performance metrics from results using the correct keys
+                if "averages" in self.results[func_name]:
+                    averages = self.results[func_name]["averages"]
+                    
+                    # Extract fitness values from the nested dictionaries
+                    simple_perf = float(averages["simple"]["avg_fitness"]) if "simple" in averages and "avg_fitness" in averages["simple"] else float('inf')
+                    meta_perf = float(averages["meta"]["avg_fitness"]) if "meta" in averages and "avg_fitness" in averages["meta"] else float('inf')
+                    enhanced_perf = float(averages["enhanced"]["avg_fitness"]) if "enhanced" in averages and "avg_fitness" in averages["enhanced"] else float('inf')
+                    satzilla_perf = float(averages["satzilla"]["avg_fitness"]) if "satzilla" in averages and "avg_fitness" in averages["satzilla"] else float('inf')
+                    
+                    # Find the best performance across all approaches (excluding infinity and zero)
+                    valid_perfs = [p for p in [simple_perf, meta_perf, enhanced_perf, satzilla_perf] if p != float('inf') and p > 0]
+                    if valid_perfs:
+                        best_perf = min(valid_perfs)
+                        
+                        # Add performance ratios for all approaches (for finite values only)
+                        # Avoid division by zero and handle zero values separately
+                        ratios.append([
+                            1.0 if simple_perf == 0 else (simple_perf/best_perf if simple_perf != float('inf') else float('inf')), 
+                            1.0 if meta_perf == 0 else (meta_perf/best_perf if meta_perf != float('inf') else float('inf')),
+                            1.0 if enhanced_perf == 0 else (enhanced_perf/best_perf if enhanced_perf != float('inf') else float('inf')),
+                            1.0 if satzilla_perf == 0 else (satzilla_perf/best_perf if satzilla_perf != float('inf') else float('inf'))
+                        ])
+                    else:
+                        # If all valid performances are zero or inf, assign ratio of 1.0 for zero values and inf for others
+                        ratios.append([
+                            1.0 if simple_perf == 0 else float('inf'),
+                            1.0 if meta_perf == 0 else float('inf'),
+                            1.0 if enhanced_perf == 0 else float('inf'),
+                            1.0 if satzilla_perf == 0 else float('inf')
+                        ])
+                else:
+                    logger.warning(f"No averages data found for function {func_name}")
+            except KeyError as e:
+                logger.warning(f"Missing key in results for function {func_name}: {e}")
+                continue
+            except Exception as e:
+                logger.warning(f"Error processing performance data for {func_name}: {e}")
+                continue
+        
+        if not ratios:
+            ax.text(0.5, 0.5, "No performance data available for profiles", 
+                   ha='center', va='center', fontsize=12)
+            return fig
         
         ratios = np.array(ratios)
         
         # Create cumulative distribution
-        for i, label in enumerate(['Baseline', 'Meta Optimizer']):
-            sorted_ratios = np.sort(ratios[:, i])
-            cumulative = np.arange(1, len(sorted_ratios) + 1) / len(sorted_ratios)
-            ax.step(sorted_ratios, cumulative, label=label, where='post')
+        labels = ['Simple', 'Meta', 'Enhanced', 'SATzilla']
+        for i, label in enumerate(labels):
+            if i < ratios.shape[1]:  # Check if we have data for this approach
+                # Filter out inf values
+                valid_ratios = ratios[:, i][~np.isinf(ratios[:, i])]
+                if len(valid_ratios) > 0:
+                    sorted_ratios = np.sort(valid_ratios)
+                    cumulative = np.arange(1, len(sorted_ratios) + 1) / len(sorted_ratios)
+                    ax.step(sorted_ratios, cumulative, label=label, where='post')
         
         ax.set_xlabel('Performance Ratio τ')
         ax.set_ylabel('Probability P(ratio ≤ τ)')
@@ -348,103 +497,222 @@ class ComparisonVisualizer:
         return fig
 
     def plot_heatmap(self, save: bool = True) -> Figure:
-        """Create a heatmap showing algorithm selection frequency for each function"""
-        fig, ax = plt.subplots(figsize=(12, 8))
+        """
+        Create a heatmap showing algorithm selection patterns across different functions
         
-        # Collect selection frequencies
-        data = np.zeros((len(self.function_names), len(self.algorithms)))
-        for i, func_name in enumerate(self.function_names):
-            selections = self.results[func_name]["meta_selected_algorithms"]
-            for j, algo in enumerate(self.algorithms):
-                data[i, j] = selections.count(algo) / len(selections)
+        Args:
+            save: Whether to save the plot
+            
+        Returns:
+            The figure
+        """
+        # Collect all algorithms used
+        all_algorithms = set()
+        for func_results in self.results.values():
+            if "simple_baseline" in func_results:
+                all_algorithms.update(func_results["simple_baseline"]["selections"])
+            if "meta_learner" in func_results:
+                all_algorithms.update(func_results["meta_learner"]["selections"])
+            if "enhanced_meta" in func_results:
+                all_algorithms.update(func_results["enhanced_meta"]["selections"])
+            if "satzilla" in func_results:
+                all_algorithms.update(func_results["satzilla"]["selections"])
         
-        # Create heatmap
-        im = ax.imshow(data, cmap='YlOrRd')
+        all_algorithms = sorted(list(all_algorithms))
         
-        # Add colorbar
-        cbar = ax.figure.colorbar(im, ax=ax)
-        cbar.ax.set_ylabel('Selection Frequency', rotation=-90, va="bottom")
+        # Initialize data arrays
+        simple_data = np.zeros((len(self.results), len(all_algorithms)))
+        meta_data = np.zeros((len(self.results), len(all_algorithms)))
+        enhanced_data = np.zeros((len(self.results), len(all_algorithms)))
+        satzilla_data = np.zeros((len(self.results), len(all_algorithms)))
         
-        # Show all ticks and label them
-        ax.set_xticks(np.arange(len(self.algorithms)))
-        ax.set_yticks(np.arange(len(self.function_names)))
-        ax.set_xticklabels(self.algorithms, rotation=45, ha='right')
-        ax.set_yticklabels(self.function_names)
+        # Fill data arrays
+        for i, (func_name, func_results) in enumerate(self.results.items()):
+            if "simple_baseline" in func_results:
+                for alg in func_results["simple_baseline"]["selections"]:
+                    j = all_algorithms.index(alg)
+                    simple_data[i, j] += 1
+            if "meta_learner" in func_results:
+                for alg in func_results["meta_learner"]["selections"]:
+                    j = all_algorithms.index(alg)
+                    meta_data[i, j] += 1
+            if "enhanced_meta" in func_results:
+                for alg in func_results["enhanced_meta"]["selections"]:
+                    j = all_algorithms.index(alg)
+                    enhanced_data[i, j] += 1
+            if "satzilla" in func_results:
+                for alg in func_results["satzilla"]["selections"]:
+                    j = all_algorithms.index(alg)
+                    satzilla_data[i, j] += 1
         
-        # Add value annotations
-        for i in range(len(self.function_names)):
-            for j in range(len(self.algorithms)):
-                text = ax.text(j, i, f'{data[i, j]:.2f}',
-                             ha="center", va="center", color="black")
+        # Normalize data
+        simple_data = simple_data / np.sum(simple_data, axis=1, keepdims=True)
+        meta_data = meta_data / np.sum(meta_data, axis=1, keepdims=True)
+        enhanced_data = enhanced_data / np.sum(enhanced_data, axis=1, keepdims=True)
+        satzilla_data = satzilla_data / np.sum(satzilla_data, axis=1, keepdims=True)
         
-        ax.set_title("Algorithm Selection Frequency Heatmap")
+        # Create figure
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
+        
+        # Plot heatmaps
+        sns.heatmap(simple_data, ax=ax1, xticklabels=all_algorithms, yticklabels=list(self.results.keys()),
+                   cmap='YlOrRd', annot=True, fmt='.2f')
+        ax1.set_title('Simple Baseline Selection Frequency')
+        ax1.set_xlabel('Algorithm')
+        ax1.set_ylabel('Function')
+        plt.setp(ax1.get_xticklabels(), rotation=45, ha='right')
+        
+        sns.heatmap(meta_data, ax=ax2, xticklabels=all_algorithms, yticklabels=list(self.results.keys()),
+                   cmap='YlOrRd', annot=True, fmt='.2f')
+        ax2.set_title('Meta Learner Selection Frequency')
+        ax2.set_xlabel('Algorithm')
+        ax2.set_ylabel('Function')
+        plt.setp(ax2.get_xticklabels(), rotation=45, ha='right')
+        
+        sns.heatmap(enhanced_data, ax=ax3, xticklabels=all_algorithms, yticklabels=list(self.results.keys()),
+                   cmap='YlOrRd', annot=True, fmt='.2f')
+        ax3.set_title('Enhanced Meta Selection Frequency')
+        ax3.set_xlabel('Algorithm')
+        ax3.set_ylabel('Function')
+        plt.setp(ax3.get_xticklabels(), rotation=45, ha='right')
+        
+        sns.heatmap(satzilla_data, ax=ax4, xticklabels=all_algorithms, yticklabels=list(self.results.keys()),
+                   cmap='YlOrRd', annot=True, fmt='.2f')
+        ax4.set_title('SATzilla Selection Frequency')
+        ax4.set_xlabel('Algorithm')
+        ax4.set_ylabel('Function')
+        plt.setp(ax4.get_xticklabels(), rotation=45, ha='right')
+        
         fig.tight_layout()
         
+        # Save figure
         if save:
-            fig.savefig(f"{self.export_dir}/selection_heatmap.png", dpi=300, bbox_inches='tight')
-            print(f"Saved selection heatmap to {self.export_dir}/selection_heatmap.png")
+            fig_path = f"{self.export_dir}/algorithm_selection_heatmap.png"
+            fig.savefig(fig_path, dpi=300, bbox_inches='tight')
+            print(f"Saved figure to {fig_path}")
         
         return fig
 
     def plot_radar_chart(self, save: bool = True) -> Figure:
         """Create a radar chart comparing baseline and meta optimizer performance"""
+        # DEBUG: Print the structure of results for one function
+        for func_name in self.function_names:
+            print(f"DEBUG - Radar Chart - Function: {func_name}")
+            print(f"Structure of results[{func_name}]:")
+            for key1, value1 in self.results[func_name].items():
+                print(f"  {key1}: {type(value1)}")
+                if isinstance(value1, dict):
+                    for key2, value2 in value1.items():
+                        print(f"    {key2}: {type(value2)}")
+                        if isinstance(value2, dict):
+                            for key3, value3 in value2.items():
+                                print(f"      {key3}: {type(value3)} = {value3}")
+            break  # Only print for one function
+            
         # Prepare the data
         metrics = ["Best Fitness", "Convergence Speed", "Success Rate"]
         num_metrics = len(metrics)
         
         # Calculate normalized scores for each metric
-        baseline_scores = []
+        simple_scores = []
         meta_scores = []
+        enhanced_scores = []
+        satzilla_scores = []
+        
         for func_name in self.function_names:
-            # Best fitness (normalized)
-            baseline_fit = self.results[func_name]["baseline_best_fitness_avg"]
-            meta_fit = self.results[func_name]["meta_best_fitness_avg"]
-            max_fit = max(baseline_fit, meta_fit)
-            baseline_scores.append(1 - (baseline_fit / max_fit))
-            meta_scores.append(1 - (meta_fit / max_fit))
-            
-            # Convergence speed (normalized)
-            baseline_evals = self.results[func_name]["baseline_evaluations_avg"]
-            meta_evals = self.results[func_name]["meta_evaluations_avg"]
-            max_evals = max(baseline_evals, meta_evals)
-            baseline_scores.append(1 - (baseline_evals / max_evals))
-            meta_scores.append(1 - (meta_evals / max_evals))
-            
-            # Success rate
-            baseline_success = self.results[func_name].get("baseline_success_rate", 0)
-            meta_success = self.results[func_name].get("meta_success_rate", 0)
-            baseline_scores.append(baseline_success)
-            meta_scores.append(meta_success)
+            try:
+                if "averages" in self.results[func_name]:
+                    averages = self.results[func_name]["averages"]
+                    
+                    # Extract fitness values from the nested dictionaries
+                    simple_fit = float(averages["simple"]["avg_fitness"]) if "simple" in averages and "avg_fitness" in averages["simple"] else float('inf')
+                    meta_fit = float(averages["meta"]["avg_fitness"]) if "meta" in averages and "avg_fitness" in averages["meta"] else float('inf')
+                    enhanced_fit = float(averages["enhanced"]["avg_fitness"]) if "enhanced" in averages and "avg_fitness" in averages["enhanced"] else float('inf')
+                    satzilla_fit = float(averages["satzilla"]["avg_fitness"]) if "satzilla" in averages and "avg_fitness" in averages["satzilla"] else float('inf')
+                    
+                    # Use valid fitness values only (exclude infinity)
+                    valid_fits = [f for f in [simple_fit, meta_fit, enhanced_fit, satzilla_fit] if f != float('inf')]
+                    if valid_fits:
+                        max_fit = max(valid_fits)
+                        
+                        # For fitness, lower is better, so normalize accordingly (1 is best)
+                        simple_scores.append(1 - (simple_fit / max_fit) if simple_fit != float('inf') and max_fit > 0 else 0)
+                        meta_scores.append(1 - (meta_fit / max_fit) if meta_fit != float('inf') and max_fit > 0 else 0)
+                        enhanced_scores.append(1 - (enhanced_fit / max_fit) if enhanced_fit != float('inf') and max_fit > 0 else 0)
+                        satzilla_scores.append(1 - (satzilla_fit / max_fit) if satzilla_fit != float('inf') and max_fit > 0 else 0)
+                    
+                    # Convergence speed (based on evaluations, lower is better)
+                    simple_evals = float(averages["simple"]["avg_evaluations"]) if "simple" in averages and "avg_evaluations" in averages["simple"] else 0
+                    meta_evals = float(averages["meta"]["avg_evaluations"]) if "meta" in averages and "avg_evaluations" in averages["meta"] else 0
+                    enhanced_evals = float(averages["enhanced"]["avg_evaluations"]) if "enhanced" in averages and "avg_evaluations" in averages["enhanced"] else 0
+                    satzilla_evals = float(averages["satzilla"]["avg_evaluations"]) if "satzilla" in averages and "avg_evaluations" in averages["satzilla"] else 0
+                    
+                    max_evals = max(simple_evals, meta_evals, enhanced_evals, satzilla_evals)
+                    
+                    # For evaluations, lower is better, so normalize accordingly
+                    simple_scores.append(1 - (simple_evals / max_evals) if max_evals > 0 else 0)
+                    meta_scores.append(1 - (meta_evals / max_evals) if max_evals > 0 else 0)
+                    enhanced_scores.append(1 - (enhanced_evals / max_evals) if max_evals > 0 else 0)
+                    satzilla_scores.append(1 - (satzilla_evals / max_evals) if max_evals > 0 else 0)
+                    
+                    # Success rate (higher is better)
+                    # Use a default of 0 if not available
+                    simple_success = 0
+                    meta_success = 0
+                    enhanced_success = 0
+                    satzilla_success = 0
+                    
+                    simple_scores.append(simple_success)
+                    meta_scores.append(meta_success)
+                    enhanced_scores.append(enhanced_success)
+                    satzilla_scores.append(satzilla_success)
+            except KeyError as e:
+                logger.warning(f"Missing key in results for function {func_name}: {e}")
+                continue
+            except Exception as e:
+                logger.warning(f"Error processing data for radar chart for {func_name}: {e}")
+                continue
+        
+        if not simple_scores:
+            fig, ax = plt.subplots(figsize=(8, 8))
+            ax.text(0.5, 0.5, "No data available for radar chart", 
+                   ha='center', va='center', fontsize=12)
+            return fig
         
         # Average scores across functions
-        baseline_avg = np.mean(np.array(baseline_scores).reshape(-1, 3), axis=0)
+        simple_avg = np.mean(np.array(simple_scores).reshape(-1, 3), axis=0)
         meta_avg = np.mean(np.array(meta_scores).reshape(-1, 3), axis=0)
+        enhanced_avg = np.mean(np.array(enhanced_scores).reshape(-1, 3), axis=0)
+        satzilla_avg = np.mean(np.array(satzilla_scores).reshape(-1, 3), axis=0)
         
         # Set up the angles for the radar chart
         angles = np.linspace(0, 2*np.pi, num_metrics, endpoint=False)
         
         # Close the plot by appending the first value
-        baseline_avg = np.concatenate((baseline_avg, [baseline_avg[0]]))
+        simple_avg = np.concatenate((simple_avg, [simple_avg[0]]))
         meta_avg = np.concatenate((meta_avg, [meta_avg[0]]))
+        enhanced_avg = np.concatenate((enhanced_avg, [enhanced_avg[0]]))
+        satzilla_avg = np.concatenate((satzilla_avg, [satzilla_avg[0]]))
         angles = np.concatenate((angles, [angles[0]]))
         
         # Create the plot
         fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(projection='polar'))
         
         # Plot data
-        ax.plot(angles, baseline_avg, 'o-', linewidth=2, label='Baseline')
-        ax.fill(angles, baseline_avg, alpha=0.25)
-        ax.plot(angles, meta_avg, 'o-', linewidth=2, label='Meta Optimizer')
-        ax.fill(angles, meta_avg, alpha=0.25)
+        ax.plot(angles, simple_avg, 'o-', linewidth=2, label='Simple')
+        ax.fill(angles, simple_avg, alpha=0.1)
+        ax.plot(angles, meta_avg, 'o-', linewidth=2, label='Meta')
+        ax.fill(angles, meta_avg, alpha=0.1)
+        ax.plot(angles, enhanced_avg, 'o-', linewidth=2, label='Enhanced')
+        ax.fill(angles, enhanced_avg, alpha=0.1)
+        ax.plot(angles, satzilla_avg, 'o-', linewidth=2, label='SATzilla')
+        ax.fill(angles, satzilla_avg, alpha=0.1)
         
-        # Set the labels
-        ax.set_xticks(angles[:-1])
-        ax.set_xticklabels(metrics)
-        
-        # Add legend
-        ax.legend(loc='upper right', bbox_to_anchor=(0.1, 0.1))
+        # Set labels
+        ax.set_thetagrids(np.degrees(angles[:-1]), metrics)
         
         ax.set_title("Overall Performance Comparison")
+        ax.legend(loc='upper right', bbox_to_anchor=(0.1, 0.1))
         
         if save:
             fig.savefig(f"{self.export_dir}/radar_chart.png", dpi=300, bbox_inches='tight')

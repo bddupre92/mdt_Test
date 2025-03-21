@@ -1,0 +1,1862 @@
+"""
+Comparison runner for baseline algorithm selectors and Meta Optimizer
+
+This module provides a framework for benchmarking baseline algorithm
+selection methods against the Meta Optimizer.
+"""
+
+import os
+import json
+import time
+import logging
+import random
+import pickle
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib import gridspec
+from matplotlib.gridspec import GridSpec
+from typing import Dict, List, Any, Tuple, Optional
+from collections import Counter
+from cli.problem_wrapper import ProblemWrapper
+from meta_optimizer.benchmark.test_functions import create_test_suite
+from scipy import stats
+from pathlib import Path
+import matplotlib.pyplot as plt
+from typing import List, Dict, Any, Tuple, Optional
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+class BaselineComparison:
+    """
+    Comparison between baseline optimizers and meta-optimizer.
+    """
+    
+    def __init__(
+        self,
+        baseline_selector,
+        meta_optimizer=None,
+        function_names=None,
+        num_trials=10,
+        dimensions=30,
+        max_evaluations=10000,
+        generate_visualizations=True,
+        output_dir="results/baseline_comparison",
+        equal_budget=False,
+        seed=None
+    ):
+        """
+        Initialize the comparison.
+        
+        Args:
+            baseline_selector: The baseline algorithm selector
+            meta_optimizer: The meta-optimizer (or None to create one)
+            function_names: List of function names to compare
+            num_trials: Number of trials per function
+            dimensions: Dimension of the problems
+            max_evaluations: Maximum evaluations per trial
+            generate_visualizations: Whether to generate visualizations
+            output_dir: Directory to save results and visualizations
+            equal_budget: Whether to use equal budget for fair comparison
+            seed: Random seed for reproducibility
+        """
+        self.baseline_selector = baseline_selector
+        self.meta_optimizer = meta_optimizer
+        self.function_names = function_names or []
+        self.dimensions = dimensions
+        self.num_trials = num_trials
+        self.max_evaluations = max_evaluations
+        self.generate_visualizations = generate_visualizations
+        self.output_dir = output_dir
+        self.equal_budget = equal_budget
+        self.seed = seed if seed is not None else int(time.time())
+        
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Used to store results
+        self.results = {}
+        
+        # Configure logger
+        logger.info(f"Initialized BaselineComparison with {len(baseline_selector.get_available_algorithms())} algorithms")
+        logger.info(f"Max evaluations: {max_evaluations}, Num trials: {num_trials}")
+
+    def run(self):
+        """Run the baseline comparison for all benchmark functions."""
+        if not self.results:
+            logger.warning("No results to process. Make sure run_comparison was called first.")
+            return
+            
+        # Save the aggregated results
+        with open(os.path.join(self.output_dir, "results.json"), "w") as f:
+            json.dump(self.results, f, indent=2)
+        
+        # Generate visualizations if enabled
+        if self.generate_visualizations:
+            logging.info("Generating additional visualizations...")
+            
+            # Generate convergence curves for all functions
+            self.plot_convergence_curves(self.results, self.output_dir)
+            
+            # Generate statistical test plots if we have enough data
+            if len(self.results) > 1:  # Need at least 2 functions for statistical tests
+                self.plot_statistical_tests(self.results)
+                logging.info("Statistical test plots saved")
+            
+            # Generate progress curves with equal budget visualization for each function
+            for func_name in self.results.keys():
+                if func_name not in ['summary', 'config', 'timestamp']:
+                    # Create function-specific output directory
+                    func_output_dir = os.path.join(self.output_dir, func_name)
+                    os.makedirs(func_output_dir, exist_ok=True)
+                    
+                    # Plot progress curves if we have the data
+                    if 'baseline' in self.results[func_name] and 'meta' in self.results[func_name]:
+                        self.plot_progress_curves(self.results[func_name], func_name, func_output_dir)
+            
+            # Generate radar comparison if we have enough functions
+            if len(self.results) > 2:  # Need at least 3 functions for meaningful radar plot
+                self.plot_radar_comparison(self.results)
+                logging.info("Radar comparison chart saved")
+            
+            # Create summary table
+            self.create_summary_table(self.results)
+            logging.info("Summary table saved")
+            
+            logging.info("All visualizations completed")
+            
+        # Log final summary
+        for func_name, func_results in self.results.items():
+            if isinstance(func_results, dict) and 'baseline' in func_results and 'meta' in func_results:
+                baseline_avg = func_results['baseline'].get('avg_best_fitness', float('inf'))
+                meta_avg = func_results['meta'].get('avg_best_fitness', float('inf'))
+                logger.info(f"{func_name} results:")
+                logger.info(f"  Baseline average fitness: {baseline_avg:.2e}")
+                logger.info(f"  Meta-optimizer average fitness: {meta_avg:.2e}")
+                if baseline_avg != 0 and not np.isinf(baseline_avg):
+                    improvement = ((baseline_avg - meta_avg) / abs(baseline_avg)) * 100
+                    logger.info(f"  Improvement: {improvement:.2f}%")
+
+    def plot_statistical_tests(self, results: Dict[str, Dict]) -> None:
+        """Plot statistical significance tests between baseline and meta optimizer results."""
+        from scipy import stats
+        
+        plt.figure(figsize=(12, 6))
+        
+        # Collect p-values and effect sizes
+        func_names = []
+        p_values = []
+        effect_sizes = []
+        significance = []
+        
+        for func_name, func_results in results.items():
+            if "baseline" not in func_results or "meta" not in func_results:
+                logger.warning(f"Missing baseline or meta data for {func_name}")
+                continue
+                
+            if "best_fitness" not in func_results["baseline"] or "best_fitness" not in func_results["meta"]:
+                logger.warning(f"Missing best_fitness data for {func_name}")
+                continue
+                
+            func_names.append(func_name)
+            baseline = func_results["baseline"]["best_fitness"]
+            meta = func_results["meta"]["best_fitness"]
+            
+            # Skip if not enough data points
+            if len(baseline) < 2 or len(meta) < 2:
+                logger.warning(f"Not enough data points for statistical test on {func_name}")
+                p_values.append(1.0)
+                effect_sizes.append(0.0)
+                significance.append("n/a")
+                continue
+            
+            # Perform t-test
+            try:
+                t_stat, p_value = stats.ttest_ind(baseline, meta, equal_var=False)
+                if np.isnan(p_value) or np.isinf(p_value):
+                    p_value = 1.0  # Default to no significance if test fails
+                p_values.append(p_value)
+                
+                # Calculate Cohen's d effect size
+                mean_diff = abs(np.mean(baseline) - np.mean(meta))
+                pooled_std = np.sqrt((np.std(baseline)**2 + np.std(meta)**2) / 2)
+                d = mean_diff / max(pooled_std, 1e-10)  # Avoid division by zero
+                if np.isnan(d) or np.isinf(d):
+                    d = 0.0  # Default to no effect if calculation fails
+                effect_sizes.append(d)
+                
+                # Determine significance
+                if p_value < 0.001:
+                    significance.append("***")
+                elif p_value < 0.01:
+                    significance.append("**")
+                elif p_value < 0.05:
+                    significance.append("*")
+                else:
+                    significance.append("ns")
+            except Exception as e:
+                logger.warning(f"Statistical test failed for {func_name}: {e}")
+                p_values.append(1.0)
+                effect_sizes.append(0.0)
+                significance.append("error")
+        
+        if not func_names:  # If no functions to plot, skip plotting
+            logger.warning("No functions with valid data for statistical tests")
+            return
+        
+        if not p_values:  # If no valid p-values, skip plotting
+            logger.warning("No valid statistical tests to plot")
+            return
+        
+        # Create subplot for p-values
+        plt.subplot(1, 2, 1)
+        bars = plt.bar(func_names, p_values, color='skyblue')
+        
+        # Add significance markers
+        for i, (bar, sig) in enumerate(zip(bars, significance)):
+            height = bar.get_height()
+            if height > 0:
+                plt.text(i, min(height + 0.01, 1.0), sig, 
+                    ha='center', va='bottom', fontweight='bold')
+            else:
+                plt.text(i, 0.01, sig, ha='center', va='bottom', fontweight='bold')
+        
+        plt.axhline(y=0.05, color='r', linestyle='--', alpha=0.7)
+        plt.text(len(func_names)-1, 0.055, 'p=0.05', color='r', ha='right')
+        
+        plt.ylabel('p-value')
+        plt.title('Statistical Significance (t-test)')
+        plt.xticks(rotation=45, ha='right')
+        
+        # Set reasonable y-limits
+        valid_p = [p for p in p_values if not np.isnan(p) and not np.isinf(p) and p > 0]
+        if valid_p:
+            max_p = max(valid_p)
+            plt.ylim(0, min(max_p * 1.2 + 0.05, 1.05))  # Cap at slightly above 1.0
+        else:
+            plt.ylim(0, 1.05)
+        
+        # Create subplot for effect sizes
+        plt.subplot(1, 2, 2)
+        bars = plt.bar(func_names, effect_sizes, color='lightgreen')
+        
+        # Add effect size interpretation
+        for i, d in enumerate(effect_sizes):
+            if np.isnan(d) or np.isinf(d):
+                effect = "Invalid"
+                d_plot = 0
+            else:
+                effect = "Large" if d > 0.8 else "Medium" if d > 0.5 else "Small" if d > 0.2 else "Negligible"
+                d_plot = d
+            plt.text(i, min(d_plot + 0.1, 5.0), effect, ha='center', va='bottom', rotation=45)
+        
+        plt.ylabel("Effect Size (Cohen's d)")
+        plt.title('Effect Size Comparison')
+        plt.xticks(rotation=45, ha='right')
+        
+        # Set reasonable y-limits for effect sizes
+        valid_d = [d for d in effect_sizes if not np.isnan(d) and not np.isinf(d) and d > 0]
+        if valid_d:
+            max_d = max(valid_d)
+            plt.ylim(0, max(max_d * 1.2 + 0.2, 1.5))  # Ensure enough room for labels
+        else:
+            plt.ylim(0, 1.5)
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.output_dir, 'statistical_tests.png'), dpi=150, bbox_inches='tight')
+        plt.close()
+
+    def plot_radar_comparison(self, results: Dict[str, Dict]) -> None:
+        """Create a radar chart comparing multiple metrics between baseline and meta optimizer."""
+        import matplotlib.pyplot as plt
+        import numpy as np
+        
+        # Prepare data for radar chart
+        func_names = list(results.keys())
+        if not func_names:
+            logger.warning("No functions to plot in radar chart")
+            return
+        
+        n_funcs = len(func_names)
+        
+        # Calculate relative improvements for each metric
+        fitness_improvement = []
+        time_improvement = []
+        evaluations_improvement = []
+        
+        for func_name in func_names:
+            if "baseline" not in results[func_name] or "meta" not in results[func_name]:
+                logger.warning(f"Missing baseline or meta data for {func_name}")
+                # Use zero improvement as fallback
+                fitness_improvement.append(0.0)
+                time_improvement.append(0.0)
+                evaluations_improvement.append(0.0)
+                continue
+            
+            # Get baseline data
+            baseline_data = results[func_name]["baseline"]
+            meta_data = results[func_name]["meta"]
+            
+            # Fitness improvement (negative is better)
+            baseline_fitness = baseline_data.get("avg_best_fitness", 0)
+            meta_fitness = meta_data.get("avg_best_fitness", 0)
+            
+            # Handle infinity and NaN values
+            if np.isinf(baseline_fitness) or np.isnan(baseline_fitness):
+                baseline_fitness = 1e10
+            if np.isinf(meta_fitness) or np.isnan(meta_fitness):
+                meta_fitness = 1e10
+                
+            rel_fitness_imp = (baseline_fitness - meta_fitness) / max(abs(baseline_fitness), 1e-10)
+            fitness_improvement.append(max(min(rel_fitness_imp, 1.0), -1.0))  # Clamp to [-1, 1]
+            
+            # Time improvement (negative is better)
+            baseline_time = baseline_data.get("avg_time", 0)
+            meta_time = meta_data.get("avg_time", 0)
+            rel_time_imp = (baseline_time - meta_time) / max(baseline_time, 1e-10)
+            time_improvement.append(max(min(rel_time_imp, 1.0), -1.0))  # Clamp to [-1, 1]
+            
+            # Evaluations improvement (negative is better)
+            baseline_evals = baseline_data.get("avg_evaluations", 0)
+            meta_evals = meta_data.get("avg_evaluations", 0)
+            rel_eval_imp = (baseline_evals - meta_evals) / max(baseline_evals, 1e-10)
+            evaluations_improvement.append(max(min(rel_eval_imp, 1.0), -1.0))  # Clamp to [-1, 1]
+        
+        # Set up radar chart
+        angles = np.linspace(0, 2*np.pi, n_funcs, endpoint=False).tolist()
+        angles += angles[:1]  # Close the loop
+        
+        # Add the metrics to their respective lists and close the loop
+        fitness_improvement += fitness_improvement[:1]
+        time_improvement += time_improvement[:1]
+        evaluations_improvement += evaluations_improvement[:1]
+        
+        func_names += func_names[:1]  # Close the loop for labels
+        
+        fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(polar=True))
+        
+        # Plot each metric
+        ax.plot(angles, fitness_improvement, 'o-', linewidth=2, label='Fitness Improvement')
+        ax.fill(angles, fitness_improvement, alpha=0.25)
+        
+        ax.plot(angles, time_improvement, 'o-', linewidth=2, label='Time Improvement')
+        ax.fill(angles, time_improvement, alpha=0.25)
+        
+        ax.plot(angles, evaluations_improvement, 'o-', linewidth=2, label='Evaluations Improvement')
+        ax.fill(angles, evaluations_improvement, alpha=0.25)
+        
+        # Set labels
+        ax.set_xticks(angles[:-1])
+        ax.set_xticklabels(func_names[:-1])
+        
+        # Add reference circles
+        ax.set_yticks([-1, -0.5, 0, 0.5, 1])
+        ax.set_yticklabels(['-100%', '-50%', '0%', '50%', '100%'])
+        ax.set_rlim(-1, 1)
+        
+        # Add grid
+        ax.grid(True)
+        
+        # Add a legend
+        plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
+        
+        # Add title
+        plt.title('Relative Improvement: Meta Optimizer vs Baseline', size=15, y=1.1)
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.output_dir, 'radar_comparison.png'), dpi=150, bbox_inches='tight')
+        plt.close()
+
+    def create_summary_table(self, results: Dict[str, Dict]) -> None:
+        """Create a summary table of results as an image."""
+        from matplotlib.table import Table
+        
+        if not results:
+            logger.warning("No results to create summary table")
+            return
+        
+        fig, ax = plt.subplots(figsize=(12, len(results) * 0.8 + 2))
+        ax.axis('off')
+        ax.axis('tight')
+        
+        # Prepare data for table
+        table_data = []
+        for func_name, func_results in results.items():
+            if "baseline" not in func_results or "meta" not in func_results:
+                logger.warning(f"Missing baseline or meta data for {func_name}")
+                continue
+            
+            # Get baseline and meta data
+            baseline_data = func_results["baseline"]
+            meta_data = func_results["meta"]
+            
+            # Handle missing data safely
+            if "avg_best_fitness" not in baseline_data or "avg_best_fitness" not in meta_data:
+                logger.warning(f"Missing fitness data for {func_name}")
+                continue
+            
+            # Extract fitness values with safety checks
+            baseline_fitness_raw = baseline_data["avg_best_fitness"]
+            meta_fitness_raw = meta_data["avg_best_fitness"]
+            
+            # Handle inf/nan values
+            if np.isinf(baseline_fitness_raw) or np.isnan(baseline_fitness_raw):
+                baseline_fitness = 1e16
+            else:
+                baseline_fitness = max(baseline_fitness_raw, 1e-16)  # Ensure non-zero for display
+                
+            if np.isinf(meta_fitness_raw) or np.isnan(meta_fitness_raw):
+                meta_fitness = 1e16
+            else:
+                meta_fitness = max(meta_fitness_raw, 1e-16)  # Ensure non-zero for display
+            
+            # Calculate improvement - avoid division by zero and extreme percentages
+            if baseline_fitness < 1e-15 and meta_fitness < 1e-15:
+                # Both solutions are effectively at the optimum
+                improvement = 0.0
+            elif baseline_fitness < 1e-15:
+                # Baseline is effectively at the optimum but meta is not
+                # Cap at -100% instead of showing extreme negative values
+                improvement = -100.0
+            else:
+                # Normal case - calculate actual improvement
+                raw_improvement = (baseline_fitness - meta_fitness) / baseline_fitness * 100
+                # Cap the improvement to reasonable bounds
+                improvement = max(min(raw_improvement, 100.0), -100.0)
+            
+            # Extract other metrics with safety checks
+            baseline_evals = baseline_data.get("avg_evaluations", 0)
+            meta_evals = meta_data.get("avg_evaluations", 0)
+            
+            baseline_time = baseline_data.get("avg_time", 0)
+            meta_time = meta_data.get("avg_time", 0)
+            
+            # Format values for display
+            row = [
+                func_name,
+                f"{baseline_fitness:.2e}",
+                f"{meta_fitness:.2e}",
+                f"{improvement:.2f}%",
+                f"{baseline_evals:.0f}",
+                f"{meta_evals:.0f}",
+                f"{baseline_time:.2f}s",
+                f"{meta_time:.2f}s"
+            ]
+            table_data.append(row)
+        
+        if not table_data:
+            logger.warning("No valid data for summary table")
+            return
+        
+        # Create header
+        columns = [
+            "Function",
+            "Baseline Fitness",
+            "Meta Fitness",
+            "Improvement",
+            "Baseline Evals",
+            "Meta Evals",
+            "Baseline Time",
+            "Meta Time"
+        ]
+        
+        # Create the table
+        table = ax.table(
+            cellText=table_data,
+            colLabels=columns,
+            loc='center',
+            cellLoc='center'
+        )
+        
+        # Style the table
+        table.auto_set_font_size(False)
+        table.set_fontsize(10)
+        table.scale(1, 1.5)
+        
+        # Color code the improvement column
+        for i, row in enumerate(table_data):
+            try:
+                improvement = float(row[3].strip('%'))
+                cell = table[(i+1, 3)]  # +1 for header row
+                
+                if improvement > 10:  # Significant improvement
+                    cell.set_facecolor('lightgreen')
+                elif improvement < -10:  # Significant degradation
+                    cell.set_facecolor('lightcoral')
+                else:  # Neutral
+                    cell.set_facecolor('lightyellow')
+            except (ValueError, IndexError):
+                # Skip if can't parse improvement value
+                pass
+        
+        # Color the header row
+        for i in range(len(columns)):
+            table[(0, i)].set_facecolor('lightgrey')
+            table[(0, i)].set_text_props(weight='bold')
+        
+        plt.title('Performance Summary Table', fontsize=14)
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.output_dir, 'summary_table.png'), dpi=200, bbox_inches='tight')
+        plt.close()
+
+    def plot_performance_comparison(self, results: Dict[str, Dict],
+                                   metric: str = "best_fitness_avg") -> None:
+        """
+        Plot a comparison of performance between baseline and Meta Optimizer
+        
+        Args:
+            results: Dictionary with results from run_comparison
+            metric: Which metric to plot (default: best_fitness_avg)
+        """
+        func_names = list(results.keys())
+        
+        # Get all fitness values for box plots
+        baseline_all_values = []
+        meta_all_values = []
+        baseline_avgs = []
+        meta_avgs = []
+        
+        for func_name in func_names:
+            baseline_values = results[func_name]["baseline_best_fitness_all"]
+            meta_values = results[func_name]["meta_best_fitness_all"]
+            
+            # Ensure we have non-zero values to display for baseline
+            # Add a small epsilon to zero values to make them visible on log scale
+            baseline_values = [max(val, 1e-16) for val in baseline_values]
+            meta_values = [max(val, 1e-16) for val in meta_values]
+            
+            baseline_all_values.append(baseline_values)
+            meta_all_values.append(meta_values)
+            baseline_avgs.append(np.mean(baseline_values))
+            meta_avgs.append(np.mean(meta_values))
+        
+        # Create figure with two subplots
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), height_ratios=[2, 1])
+        
+        # Box plot
+        positions = np.arange(len(func_names)) * 3
+        width = 0.8
+        
+        bp1 = ax1.boxplot(baseline_all_values, positions=positions-width, 
+                         widths=width, patch_artist=True,
+                         boxprops=dict(facecolor='lightblue', color='blue'),
+                         medianprops=dict(color='blue'),
+                         flierprops=dict(color='blue', markerfacecolor='blue'),
+                         labels=[''] * len(func_names))
+        
+        bp2 = ax1.boxplot(meta_all_values, positions=positions+width,
+                         widths=width, patch_artist=True,
+                         boxprops=dict(facecolor='orange', color='red'),
+                         medianprops=dict(color='red'),
+                         flierprops=dict(color='red', markerfacecolor='red'),
+                         labels=[''] * len(func_names))
+        
+        # Set y-scale to log for better visualization
+        ax1.set_yscale('log')
+        ax1.set_ylabel('Best Fitness (log scale)')
+        ax1.set_title('Performance Distribution Across Trials')
+        ax1.legend([bp1["boxes"][0], bp2["boxes"][0]], ['Baseline', 'Meta Optimizer'])
+        ax1.set_xticks(positions)
+        ax1.set_xticklabels(func_names, rotation=45, ha='right')
+        ax1.grid(True, which='both', linestyle='--', alpha=0.5)
+        
+        # Bar plot
+        x = np.arange(len(func_names))
+        width = 0.35
+        
+        ax2.bar(x - width/2, baseline_avgs, width, label='Baseline', color='lightblue')
+        ax2.bar(x + width/2, meta_avgs, width, label='Meta Optimizer', color='orange')
+        
+        ax2.set_yscale('log')
+        ax2.set_ylabel('Average Best Fitness (log scale)')
+        ax2.set_title('Average Performance Comparison')
+        ax2.set_xticks(x)
+        ax2.set_xticklabels(func_names, rotation=45, ha='right')
+        ax2.legend()
+        ax2.grid(True, which='both', linestyle='--', alpha=0.5)
+        
+        plt.tight_layout()
+
+    def plot_violin_comparison(self, results: Dict[str, Dict]) -> None:
+        """Create violin plots comparing the distribution of fitness values."""
+        plt.figure(figsize=(12, 6))
+        
+        # Collect all fitness values for each problem
+        data = []
+        labels = []
+        positions = []
+        colors = []
+        pos = 0
+        
+        for problem_name in results:
+            baseline_fitness = results[problem_name]["baseline_best_fitness_all"]
+            meta_fitness = results[problem_name]["meta_best_fitness_all"]
+            
+            # Ensure we have non-zero values to display for baseline
+            baseline_fitness = [max(val, 1e-16) for val in baseline_fitness]
+            meta_fitness = [max(val, 1e-16) for val in meta_fitness]
+            
+            data.extend([baseline_fitness, meta_fitness])
+            labels.extend([f"{problem_name}\nBaseline", f"{problem_name}\nMeta"])
+            positions.extend([pos, pos + 1])
+            colors.extend(['lightblue', '#D43F3A'])
+            pos += 3
+        
+        # Create violin plot
+        parts = plt.violinplot(data, positions=positions, showmeans=True)
+        
+        # Customize violin plot appearance
+        for i, pc in enumerate(parts['bodies']):
+            pc.set_facecolor(colors[i])
+            pc.set_edgecolor('black')
+            pc.set_alpha(0.7)
+        
+        parts['cmeans'].set_color('black')
+        parts['cmins'].set_color('black')
+        parts['cmaxes'].set_color('black')
+        parts['cbars'].set_color('black')
+        
+        plt.xticks(positions, labels, rotation=45, ha='right')
+        plt.yscale('log')
+        plt.ylabel('Fitness Value (log scale)')
+        plt.title('Distribution of Fitness Values: Baseline vs Meta-Optimizer')
+        plt.grid(True, which="both", ls="-", alpha=0.2)
+        
+        # Add legend for colors
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor='lightblue', edgecolor='black', alpha=0.7, label='Baseline'),
+            Patch(facecolor='#D43F3A', edgecolor='black', alpha=0.7, label='Meta Optimizer')
+        ]
+        plt.legend(handles=legend_elements, loc='upper right')
+        
+        # Adjust layout and save
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.output_dir, 'violin_comparison.png'))
+        plt.close()
+
+    def plot_convergence_curves(self, results: Dict[str, Any], output_dir: str):
+        """Plot convergence curves for baseline and meta optimizer."""
+        plt.figure(figsize=(10, 6))
+        
+        # Plot baseline convergence
+        baseline_convergence = results.get('baseline_convergence_data', [])
+        if baseline_convergence:
+            # Average convergence data across trials
+            min_length = min(len(curve) for curve in baseline_convergence if curve)  # Check for non-empty curves
+            if min_length > 0:
+                # Truncate all curves to minimum length and convert to numpy array
+                baseline_curves = np.array([curve[:min_length] for curve in baseline_convergence if len(curve) >= min_length])
+                if len(baseline_curves) > 0:
+                    # Add small epsilon to zero values for log scale
+                    baseline_curves = np.maximum(baseline_curves, 1e-16)
+                    # Calculate mean and std across trials
+                    baseline_mean = np.mean(baseline_curves, axis=0)
+                    baseline_std = np.std(baseline_curves, axis=0)
+                    x = range(len(baseline_mean))
+                    plt.plot(x, baseline_mean, label='Baseline', color='blue', linewidth=2)
+                    plt.fill_between(x, baseline_mean - baseline_std, baseline_mean + baseline_std, 
+                                   color='blue', alpha=0.2)
+        
+        # Plot meta optimizer convergence
+        meta_convergence = results.get('meta_convergence_data', [])
+        if meta_convergence:
+            min_length = min(len(curve) for curve in meta_convergence if curve)  # Check for non-empty curves
+            if min_length > 0:
+                meta_curves = np.array([curve[:min_length] for curve in meta_convergence if len(curve) >= min_length])
+                if len(meta_curves) > 0:
+                    # Add small epsilon to zero values for log scale
+                    meta_curves = np.maximum(meta_curves, 1e-16)
+                    meta_mean = np.mean(meta_curves, axis=0)
+                    meta_std = np.std(meta_curves, axis=0)
+                    x = range(len(meta_mean))
+                    plt.plot(x, meta_mean, label='Meta Optimizer', color='orange', linewidth=2)
+                    plt.fill_between(x, meta_mean - meta_std, meta_mean + meta_std,
+                                   color='orange', alpha=0.2)
+        
+        plt.yscale('log')  # Use log scale for fitness values
+        plt.xlabel('Evaluations')
+        plt.ylabel('Best Fitness (log scale)')
+        plt.title('Convergence Comparison')
+        plt.legend()
+        plt.grid(True, which='both', linestyle='--', alpha=0.5)
+        
+        # Save plot
+        plt.savefig(os.path.join(output_dir, '@convergence_curves.png'))
+        plt.close()
+
+    def plot_progress_curves(self, results, function_name, output_dir):
+        """Plot convergence curves of fitness vs evaluations.
+        
+        Args:
+            results: Dictionary containing all results
+            function_name: Name of the function being compared
+            output_dir: Directory to save plots
+        """
+        if not self.equal_budget:
+            logger.warning("Skipping progress curve plotting (equal_budget=False)")
+            return
+            
+        # Create function-specific directory
+        function_dir = os.path.join(output_dir, function_name)
+        os.makedirs(function_dir, exist_ok=True)
+        
+        # Get baseline and meta progress data
+        baseline_progress = results.get('baseline', {}).get('progress_data', [])
+        meta_progress = results.get('meta', {}).get('progress_data', [])
+        
+        # Plot each trial separately
+        for trial_idx in range(len(baseline_progress)):
+            # Create trial-specific directory
+            trial_dir = os.path.join(function_dir, f"trial_{trial_idx + 1}")
+            os.makedirs(trial_dir, exist_ok=True)
+            
+            plt.figure(figsize=(10, 6))
+            
+            # Plot baseline data for this trial
+            if trial_idx < len(baseline_progress) and baseline_progress[trial_idx]:
+                baseline_data = baseline_progress[trial_idx]
+                if isinstance(baseline_data, dict) and 'evaluations' in baseline_data and 'fitness' in baseline_data:
+                    plt.plot(
+                        baseline_data['evaluations'],
+                        baseline_data['fitness'],
+                        color='blue',
+                        label="Baseline",
+                        alpha=0.8
+                    )
+            
+            # Plot meta optimizer data for this trial
+            if trial_idx < len(meta_progress) and meta_progress[trial_idx]:
+                meta_data = meta_progress[trial_idx]
+                if isinstance(meta_data, dict) and 'evaluations' in meta_data and 'fitness' in meta_data:
+                    plt.plot(
+                        meta_data['evaluations'],
+                        meta_data['fitness'],
+                        color='red',
+                        label="Meta Optimizer",
+                        linestyle='--',
+                        alpha=0.8
+                    )
+            
+            plt.title(f"Progress Curves for {function_name} - Trial {trial_idx + 1}")
+            plt.xlabel("Number of Evaluations")
+            plt.ylabel("Fitness Value")
+            plt.yscale('log')  # Use log scale for fitness values
+            plt.grid(True, linestyle='--', alpha=0.7)
+            plt.legend()
+            
+            # Save figure to trial-specific directory
+            progress_curves_path = os.path.join(trial_dir, "progress_curves.png")
+            plt.savefig(progress_curves_path, dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            logger.info(f"Progress curves for trial {trial_idx + 1} saved to {progress_curves_path}")
+        
+        # Create aggregate plot with all trials
+        plt.figure(figsize=(12, 8))
+        
+        # Plot all baseline trials
+        for trial_idx, baseline_data in enumerate(baseline_progress):
+            if baseline_data and isinstance(baseline_data, dict):
+                if 'evaluations' in baseline_data and 'fitness' in baseline_data:
+                    plt.plot(
+                        baseline_data['evaluations'],
+                        baseline_data['fitness'],
+                        color='blue',
+                        alpha=0.3,
+                        label="Baseline" if trial_idx == 0 else None
+                    )
+        
+        # Plot all meta optimizer trials
+        for trial_idx, meta_data in enumerate(meta_progress):
+            if meta_data and isinstance(meta_data, dict):
+                if 'evaluations' in meta_data and 'fitness' in meta_data:
+                    plt.plot(
+                        meta_data['evaluations'],
+                        meta_data['fitness'],
+                        color='red',
+                        alpha=0.3,
+                        linestyle='--',
+                        label="Meta Optimizer" if trial_idx == 0 else None
+                    )
+        
+        plt.title(f"Progress Curves for {function_name} - All Trials")
+        plt.xlabel("Number of Evaluations")
+        plt.ylabel("Fitness Value")
+        plt.yscale('log')
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.legend()
+        
+        # Save aggregate plot
+        aggregate_path = os.path.join(function_dir, "progress_curves_aggregate.png")
+        plt.savefig(aggregate_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        
+        logger.info(f"Aggregate progress curves saved to {aggregate_path}")
+
+    def plot_algorithm_selection_frequency(self, results: Dict[str, Dict]) -> None:
+        """
+        Plot the frequency of algorithm selection
+        
+        Args:
+            results: Dictionary with results from run_comparison
+        """
+        # Collect all selected algorithms
+        baseline_algorithms = []
+        meta_algorithms = []
+        
+        for func_name, func_results in results.items():
+            baseline_algorithms.extend(func_results["baseline_selected_algorithms"])
+            meta_algorithms.extend(func_results["meta_selected_algorithms"])
+        
+        # Count frequencies
+        baseline_counts = {}
+        for alg in baseline_algorithms:
+            baseline_counts[alg] = baseline_counts.get(alg, 0) + 1
+            
+        meta_counts = {}
+        for alg in meta_algorithms:
+            meta_counts[alg] = meta_counts.get(alg, 0) + 1
+        
+        # Create a bar chart
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+        
+        # Convert dict to lists for plotting
+        baseline_keys = list(baseline_counts.keys())
+        baseline_values = [baseline_counts[k] for k in baseline_keys]
+        
+        # Baseline
+        ax1.bar(range(len(baseline_keys)), baseline_values)
+        ax1.set_title('Baseline Algorithm Selection')
+        ax1.set_ylabel('Frequency')
+        ax1.set_xticks(range(len(baseline_keys)))
+        ax1.set_xticklabels(baseline_keys, rotation=45, ha='right')
+        
+        # Convert dict to lists for plotting
+        meta_keys = list(meta_counts.keys())
+        meta_values = [meta_counts[k] for k in meta_keys]
+        
+        # Meta Optimizer
+        ax2.bar(range(len(meta_keys)), meta_values)
+        ax2.set_title('Meta Optimizer Algorithm Selection')
+        ax2.set_ylabel('Frequency')
+        ax2.set_xticks(range(len(meta_keys)))
+        ax2.set_xticklabels(meta_keys, rotation=45, ha='right')
+        
+        fig.tight_layout()
+    
+    def calculate_success_rate(self, fitness_values: List[float], threshold: float = 1e-6) -> float:
+        """
+        Calculate the success rate based on fitness values
+        
+        Args:
+            fitness_values: List of fitness values from optimization runs
+            threshold: Success threshold - values below this are considered successful
+            
+        Returns:
+            Success rate as a float between 0 and 1
+        """
+        if not fitness_values:
+            return 0.0
+            
+        # Filter out inf/nan values
+        valid_values = [f for f in fitness_values if not (np.isinf(f) or np.isnan(f))]
+        if not valid_values:
+            return 0.0
+            
+        # Calculate success rate based on threshold
+        successes = sum(1 for f in valid_values if f < threshold)
+        return successes / len(fitness_values)  # Use total trials for denominator
+    
+    def save_results(self):
+        """Save results to a JSON file"""
+        results_file = os.path.join(self.output_dir, "results.json")
+        with open(results_file, 'w') as f:
+            json.dump(self.results, f, indent=2)
+        print(f"Results saved to {results_file}")
+        
+    def plot_algorithm_distribution(self, ax1, ax2, figure_path: str):
+        """
+        Plot the distribution of algorithms selected by baseline and Meta Optimizer
+        
+        Args:
+            ax1: Axis for baseline plot
+            ax2: Axis for Meta Optimizer plot
+            figure_path: Path to save the figure
+        """
+        from collections import Counter
+        
+        if not self.results:
+            logger.warning("No results to plot algorithm distribution")
+            return
+        
+        # Count algorithm frequencies
+        baseline_algs = []
+        meta_algs = []
+        
+        for problem_name, result in self.results.items():
+            if "baseline" not in result or "meta" not in result:
+                continue
+                
+            # Get algorithm selections
+            if "selected_algorithms" in result["baseline"]:
+                baseline_algs.extend(result["baseline"]["selected_algorithms"])
+                
+            if "selected_algorithms" in result["meta"]:
+                meta_algs.extend(result["meta"]["selected_algorithms"])
+        
+        if not baseline_algs and not meta_algs:
+            logger.warning("No algorithm selection data available")
+            return
+        
+        # Count occurrences
+        baseline_counts = Counter(baseline_algs)
+        meta_counts = Counter(meta_algs)
+        
+        # Plot baseline distribution
+        if baseline_counts:
+            ax1.bar(baseline_counts.keys(), baseline_counts.values())
+            ax1.set_title("Baseline Algorithm Selection")
+            ax1.set_ylabel("Frequency")
+            ax1.tick_params(axis='x', rotation=45)
+        else:
+            ax1.text(0.5, 0.5, "No baseline algorithm data", ha='center', va='center')
+        
+        # Plot meta distribution
+        if meta_counts:
+            ax2.bar(meta_counts.keys(), meta_counts.values())
+            ax2.set_title("Meta Optimizer Algorithm Selection")
+            ax2.set_ylabel("Frequency")
+            ax2.tick_params(axis='x', rotation=45)
+        else:
+            ax2.text(0.5, 0.5, "No meta-optimizer algorithm data", ha='center', va='center')
+        
+        # Save figure
+        plt.tight_layout()
+        plt.savefig(figure_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+    def _calculate_improvement_percentage(self, baseline_fitness, meta_fitness):
+        """
+        Calculate bounded improvement percentage, capped between -100% and +100%
+        
+        Args:
+            baseline_fitness: Average fitness from the baseline algorithm
+            meta_fitness: Average fitness from the meta-optimizer
+            
+        Returns:
+            Improvement percentage, between -100% and +100%
+        """
+        # For minimization problems, lower values are better
+        if abs(baseline_fitness) < 1e-10:  # Avoid division by zero
+            # If baseline already found perfect solution
+            if abs(meta_fitness) < 1e-10:
+                return 0.0  # Both found perfect solution
+            else:
+                return -100.0  # Meta performed worse, cap at -100%
+        
+        raw_improvement = (baseline_fitness - meta_fitness) / abs(baseline_fitness) * 100
+        
+        # Cap improvement between -100% and +100%
+        return max(min(raw_improvement, 100.0), -100.0) 
+
+    def calculate_normalized_metrics(self, baseline_result, meta_result):
+        """
+        Calculate normalized performance metrics between baseline and meta optimizer.
+        
+        Args:
+            baseline_result: Dictionary with baseline optimizer results
+            meta_result: Dictionary with meta optimizer results
+            
+        Returns:
+            Dictionary of normalized metrics
+        """
+        # Initialize metrics dictionary
+        metrics = {
+            "fitness_improvement": 0.0,
+            "evaluations_improvement": 0.0,
+            "time_improvement": 0.0,
+            "normalized_points": {
+                "baseline": {},
+                "meta": {}
+            }
+        }
+        
+        # Extract values
+        baseline_fitness = baseline_result.get("best_fitness", float('inf'))
+        meta_fitness = meta_result.get("best_fitness", float('inf'))
+        
+        baseline_evals = baseline_result.get("evaluations", 0)
+        meta_evals = meta_result.get("evaluations", 0)
+        
+        baseline_time = baseline_result.get("time", 0.0)
+        meta_time = meta_result.get("time", 0.0)
+        
+        # Calculate fitness improvement (percentage)
+        # Lower fitness is better, so improvement is negative
+        if np.isfinite(baseline_fitness) and np.isfinite(meta_fitness) and baseline_fitness != 0:
+            fitness_improvement = ((baseline_fitness - meta_fitness) / abs(baseline_fitness)) * 100.0
+            metrics["fitness_improvement"] = self._clip_improvement(fitness_improvement)
+        
+        # Calculate evaluations improvement
+        # Lower evaluations is better
+        if baseline_evals > 0:
+            evals_improvement = ((baseline_evals - meta_evals) / baseline_evals) * 100.0
+            metrics["evaluations_improvement"] = self._clip_improvement(evals_improvement)
+        
+        # Calculate time improvement
+        # Lower time is better
+        if baseline_time > 0:
+            time_improvement = ((baseline_time - meta_time) / baseline_time) * 100.0
+            metrics["time_improvement"] = self._clip_improvement(time_improvement)
+        
+        # Extract convergence data for normalized comparisons
+        baseline_convergence = baseline_result.get("convergence_data", [])
+        meta_convergence = meta_result.get("convergence_data", [])
+        
+        # If convergence data is available, normalize it
+        if baseline_convergence and meta_convergence:
+            # Create evenly spaced evaluation points for comparison
+            max_evals = max(baseline_evals, meta_evals)
+            eval_points = np.linspace(0, max_evals, num=100)
+            
+            # Interpolate baseline and meta convergence data to these points
+            baseline_interp = self._interpolate_convergence(baseline_convergence, baseline_evals, eval_points)
+            meta_interp = self._interpolate_convergence(meta_convergence, meta_evals, eval_points)
+            
+            # Store normalized points
+            metrics["normalized_points"]["baseline"] = {
+                "evaluations": eval_points.tolist(),
+                "fitness": baseline_interp.tolist()
+            }
+            metrics["normalized_points"]["meta"] = {
+                "evaluations": eval_points.tolist(),
+                "fitness": meta_interp.tolist()
+            }
+            
+            # Calculate area under convergence curve (normalized)
+            baseline_area = np.trapz(baseline_interp, eval_points)
+            meta_area = np.trapz(meta_interp, eval_points)
+            
+            # Calculate convergence speed improvement
+            if baseline_area > 0:
+                convergence_improvement = ((baseline_area - meta_area) / baseline_area) * 100.0
+                metrics["convergence_improvement"] = self._clip_improvement(convergence_improvement)
+        
+        return metrics
+    
+    def _interpolate_convergence(self, convergence_data, max_evals, eval_points):
+        """
+        Interpolate convergence data to specified evaluation points.
+        
+        Args:
+            convergence_data: List of fitness values at different evaluation points
+            max_evals: Maximum number of evaluations
+            eval_points: Array of evaluation points to interpolate to
+            
+        Returns:
+            Interpolated fitness values at eval_points
+        """
+        # Create evaluation points for the convergence data
+        if not convergence_data:
+            return np.full_like(eval_points, float('inf'))
+            
+        # Create evaluation points for the original data
+        orig_evals = np.linspace(0, max_evals, num=len(convergence_data))
+        
+        # Use linear interpolation
+        interp_fitness = np.interp(
+            eval_points, 
+            orig_evals, 
+            convergence_data,
+            right=convergence_data[-1]  # Use last value for extrapolation
+        )
+        
+        return interp_fitness
+
+    def generate_normalized_comparison_plots(self, baseline_result, meta_result, output_path, title=None):
+        """
+        Generate normalized comparison plots between baseline and meta optimizer.
+        
+        Args:
+            baseline_result: Dictionary with baseline optimizer results
+            meta_result: Dictionary with meta optimizer results
+            output_path: Path to save the plot
+            title: Optional title for the plot
+        """
+        import matplotlib.pyplot as plt
+        
+        # Extract convergence data
+        baseline_convergence = baseline_result.get("convergence_data", [])
+        meta_convergence = meta_result.get("convergence_data", [])
+        
+        baseline_evals = baseline_result.get("evaluations", 0)
+        meta_evals = meta_result.get("evaluations", 0)
+        
+        # If no convergence data, create from best fitness
+        if not baseline_convergence:
+            baseline_convergence = [baseline_result.get("best_fitness", float('inf'))]
+        if not meta_convergence:
+            meta_convergence = [meta_result.get("best_fitness", float('inf'))]
+        
+        # Create evenly spaced evaluation points for comparison
+        max_evals = max(baseline_evals, meta_evals)
+        eval_points = np.linspace(0, max_evals, num=100)
+        
+        # Interpolate baseline and meta convergence data to these points
+        baseline_interp = self._interpolate_convergence(baseline_convergence, baseline_evals, eval_points)
+        meta_interp = self._interpolate_convergence(meta_convergence, meta_evals, eval_points)
+        
+        # Create the plot
+        plt.figure(figsize=(10, 6))
+        
+        plt.plot(eval_points, baseline_interp, 'b-', label='Baseline')
+        plt.plot(eval_points, meta_interp, 'r-', label='Meta-Optimizer')
+        
+        plt.xlabel('Function Evaluations')
+        plt.ylabel('Best Fitness')
+        if title:
+            plt.title(title)
+        else:
+            plt.title('Normalized Convergence Comparison')
+            
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        
+        # Save the plot
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        
+    def generate_aggregate_normalized_comparison(self, normalized_metrics_list, output_path, title=None):
+        """
+        Generate aggregate normalized comparison plots across multiple trials.
+        
+        Args:
+            normalized_metrics_list: List of normalized metrics from multiple trials
+            output_path: Path to save the plot
+            title: Optional title for the plot
+        """
+        import matplotlib.pyplot as plt
+        
+        # If no normalized metrics, skip plotting
+        if not normalized_metrics_list:
+            logger.warning("No normalized metrics to plot")
+            return
+        
+        # Aggregate metrics
+        fitness_improvements = [m.get("fitness_improvement", 0.0) for m in normalized_metrics_list]
+        evaluation_improvements = [m.get("evaluations_improvement", 0.0) for m in normalized_metrics_list]
+        time_improvements = [m.get("time_improvement", 0.0) for m in normalized_metrics_list]
+        convergence_improvements = [m.get("convergence_improvement", 0.0) for m in normalized_metrics_list]
+        
+        # Create the plot with a grid of 2x2 subplots
+        fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+        fig.suptitle(title or "Aggregate Normalized Comparison", fontsize=16)
+        
+        # Plot fitness improvements
+        axs[0, 0].boxplot(fitness_improvements)
+        axs[0, 0].set_ylabel('Fitness Improvement (%)')
+        axs[0, 0].set_title('Fitness Improvement')
+        axs[0, 0].grid(True, alpha=0.3)
+        
+        # Plot evaluation improvements
+        axs[0, 1].boxplot(evaluation_improvements)
+        axs[0, 1].set_ylabel('Evaluation Improvement (%)')
+        axs[0, 1].set_title('Evaluation Improvement')
+        axs[0, 1].grid(True, alpha=0.3)
+        
+        # Plot time improvements
+        axs[1, 0].boxplot(time_improvements)
+        axs[1, 0].set_ylabel('Time Improvement (%)')
+        axs[1, 0].set_title('Time Improvement')
+        axs[1, 0].grid(True, alpha=0.3)
+        
+        # Plot convergence improvements if available
+        if any(convergence_improvements):
+            axs[1, 1].boxplot(convergence_improvements)
+            axs[1, 1].set_ylabel('Convergence Improvement (%)')
+            axs[1, 1].set_title('Convergence Improvement')
+            axs[1, 1].grid(True, alpha=0.3)
+        else:
+            axs[1, 1].text(0.5, 0.5, 'No convergence data available', 
+                        horizontalalignment='center', verticalalignment='center', 
+                        transform=axs[1, 1].transAxes)
+            axs[1, 1].set_title('Convergence Improvement')
+        
+        # Add a horizontal line at y=0 for reference
+        for ax in axs.flat:
+            ax.axhline(y=0, color='r', linestyle='--', alpha=0.5)
+        
+        plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust layout to make room for suptitle
+        
+        # Save the plot
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+    def validate_results(self, baseline_result, meta_result):
+        """
+        Validate that the comparison results meet expected criteria.
+        
+        Args:
+            baseline_result: Dictionary with baseline optimizer results
+            meta_result: Dictionary with meta optimizer results
+            
+        Returns:
+            Dictionary with validation results and warnings
+        """
+        validation_result = {
+            "valid": True,
+            "warnings": []
+        }
+        
+        # Check if baseline_result and meta_result are valid
+        if baseline_result is None or meta_result is None:
+            validation_result["valid"] = False
+            validation_result["warnings"].append("Missing baseline or meta optimizer results")
+            return validation_result
+        
+        # Validate that both optimizers returned valid solutions
+        baseline_solution = baseline_result.get("best_solution", None)
+        meta_solution = meta_result.get("best_solution", None)
+        
+        if baseline_solution is None:
+            validation_result["valid"] = False
+            validation_result["warnings"].append("Baseline optimizer did not return a valid solution")
+        
+        if meta_solution is None:
+            validation_result["valid"] = False
+            validation_result["warnings"].append("Meta optimizer did not return a valid solution")
+        
+        # Validate optimization outcomes based on fitness values
+        baseline_fitness = baseline_result.get("best_fitness", float('inf'))
+        meta_fitness = meta_result.get("best_fitness", float('inf'))
+        
+        if np.isinf(baseline_fitness) and np.isinf(meta_fitness):
+            validation_result["valid"] = False
+            validation_result["warnings"].append("Both optimizers failed to find a valid solution")
+        
+        # Validate that evaluations are within acceptable limits
+        baseline_evals = baseline_result.get("evaluations", 0)
+        meta_evals = meta_result.get("evaluations", 0)
+        
+        if baseline_evals <= 0:
+            validation_result["valid"] = False
+            validation_result["warnings"].append(f"Baseline evaluations is suspiciously low: {baseline_evals}")
+            
+        if meta_evals <= 0:
+            validation_result["valid"] = False
+            validation_result["warnings"].append(f"Meta evaluations is suspiciously low: {meta_evals}")
+            
+        # Check if baseline evaluations exceed maximum by more than 5%
+        max_evaluations = self.max_evaluations
+        allowed_excess = 0.05 * max_evaluations  # Allow 5% excess
+        
+        if baseline_evals > max_evaluations + allowed_excess:
+            validation_result["valid"] = False
+            validation_result["warnings"].append(f"Baseline evaluations ({baseline_evals}) exceeds maximum allowed ({max_evaluations + allowed_excess})")
+        
+        # We no longer check if meta evaluations exceed the maximum
+        # This allows the meta optimizer to run as long as needed
+        
+        return validation_result
+    
+    def _wrap_problem(self, problem, max_evaluations):
+        """Wrap a problem with evaluation count limit."""
+        if hasattr(problem, 'evaluations'):
+            # Problem already has evaluation tracking
+            return problem
+            
+        # Create a wrapper to track evaluations
+        class ProblemWrapper:
+            def __init__(self, problem, max_evaluations):
+                self.problem = problem
+                self.max_evaluations = max_evaluations
+                self.evaluations = 0
+                self.best_fitness = float('inf')
+                self.best_solution = None
+                
+                # Copy problem attributes
+                self.dim = problem.dim if hasattr(problem, 'dim') else problem.dimensions if hasattr(problem, 'dimensions') else None
+                self.bounds = problem.bounds if hasattr(problem, 'bounds') else None
+                
+            def evaluate(self, x):
+                """Evaluate function with tracking."""
+                if self.evaluations >= self.max_evaluations:
+                    return self.best_fitness
+                    
+                fitness = self.problem.evaluate(x)
+                self.evaluations += 1
+                
+                # Track best solution
+                if fitness < self.best_fitness:
+                    self.best_fitness = fitness
+                    self.best_solution = x.copy()
+                    
+                return fitness
+                
+            def copy(self):
+                """Create a copy of the problem."""
+                return ProblemWrapper(self.problem.copy(), self.max_evaluations)
+                
+        return ProblemWrapper(problem, max_evaluations)
+        
+    def _calculate_normalized_metrics(self, baseline_metrics, meta_metrics):
+        """Calculate normalized metrics comparing baseline and meta-optimization.
+        
+        Args:
+            baseline_metrics: Metrics from baseline algorithm
+            meta_metrics: Metrics from meta optimizer
+            
+        Returns:
+            Dictionary of normalized metrics
+        """
+        baseline_fitness = baseline_metrics.get('fitness', float('inf'))
+        baseline_evals = baseline_metrics.get('evaluations', 0)
+        baseline_time = baseline_metrics.get('time', 0)
+        
+        meta_fitness = meta_metrics.get('fitness', float('inf'))
+        meta_evals = meta_metrics.get('evaluations', 0)
+        meta_time = meta_metrics.get('time', 0)
+        
+        # Avoid division by zero
+        if baseline_fitness == 0:
+            baseline_fitness = 1e-10
+            
+        if baseline_evals == 0:
+            baseline_evals = 1
+            
+        if baseline_time == 0:
+            baseline_time = 1e-6
+            
+        # Calculate normalized metrics
+        fitness_improvement = (baseline_fitness - meta_fitness) / baseline_fitness
+        fitness_improvement = self._clip_improvement(fitness_improvement)
+        
+        eval_ratio = meta_evals / baseline_evals
+        time_ratio = meta_time / baseline_time
+        
+        # Return normalized metrics
+        return {
+            'fitness_improvement': fitness_improvement,
+            'evaluation_ratio': eval_ratio,
+            'time_ratio': time_ratio,
+            'baseline_algorithm': baseline_metrics.get('algorithm', 'unknown'),
+            'meta_algorithms': meta_metrics.get('algorithms', []),
+            'detailed': {
+                'baseline': {
+                    'fitness': baseline_fitness,
+                    'evaluations': baseline_evals,
+                    'time': baseline_time
+                },
+                'meta': {
+                    'fitness': meta_fitness,
+                    'evaluations': meta_evals,
+                    'time': meta_time
+                }
+            }
+        }
+        
+    def _validate_trial_results(self, baseline_metrics, meta_metrics, trial_num):
+        """Validate trial results for correctness.
+        
+        Args:
+            baseline_metrics: Metrics from baseline algorithm
+            meta_metrics: Metrics from meta optimizer
+            trial_num: Trial number
+            
+        Returns:
+            None, but logs warnings
+        """
+        warnings = []
+        
+        # Check for missing data
+        if not baseline_metrics:
+            warnings.append("Baseline metrics missing")
+            
+        if not meta_metrics:
+            warnings.append("Meta optimizer metrics missing")
+            
+        # Check for invalid fitness values
+        baseline_fitness = baseline_metrics.get('fitness', float('inf'))
+        meta_fitness = meta_metrics.get('fitness', float('inf'))
+        
+        if baseline_fitness == float('inf'):
+            warnings.append("Baseline did not return a valid solution")
+            
+        if meta_fitness == float('inf'):
+            warnings.append("Meta optimizer did not return a valid solution")
+            
+        # Log warnings
+        for warning in warnings:
+            logger.warning(f"Validation warning for trial {trial_num}: {warning}")
+            
+    def plot_all_visualizations(self, output_dir):
+        """Generate all visualizations for the comparison results.
+        
+        Args:
+            output_dir: Directory to save visualizations
+        """
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Plot progress curves for each function
+        for function_name, results in self.results.items():
+            # Create function-specific directory
+            function_dir = os.path.join(output_dir, function_name)
+            os.makedirs(function_dir, exist_ok=True)
+            
+            # Plot progress curves
+            self.plot_progress_curves(results, function_name, output_dir)
+        
+        # Generate aggregate radar chart
+        self.plot_radar_comparison(os.path.join(output_dir, "radar_comparison.png"))
+        
+        # Generate statistical test plots
+        self.plot_statistical_tests(os.path.join(output_dir, "statistical_tests.png"))
+        
+        # Generate summary table
+        self.create_summary_table(os.path.join(output_dir, "summary_table.png"))
+
+    def run_comparison(self, problem_name, problem_func, dimensions, max_evaluations, num_trials):
+        """Run comparison between baseline and meta optimizer.
+        
+        Args:
+            problem_name: Name of the problem
+            problem_func: Either a function to create a problem instance or a problem instance itself
+            dimensions: Dimension of the problem
+            max_evaluations: Maximum evaluations per trial
+            num_trials: Number of trials to run
+            
+        Returns:
+            Results of the comparison
+        """
+        # Create problem instance if problem_func is a function, or use as-is if it's an instance
+        if callable(problem_func) and not hasattr(problem_func, 'evaluate'):
+            problem_instance = problem_func(dimensions)
+            bounds = problem_instance.bounds
+        else:
+            # problem_func is already a problem instance
+            problem_instance = problem_func
+            bounds = problem_instance.bounds if hasattr(problem_instance, 'bounds') else [(-5, 5)] * dimensions
+        
+        # Create function-specific directory
+        function_dir = os.path.join(self.output_dir, problem_name)
+        os.makedirs(function_dir, exist_ok=True)
+        
+        # Results data structure
+        results = {
+            'baseline': {
+                'best_fitness': [],
+                'evaluations': [],
+                'time': [],
+                'selected_algorithms': [],
+                'progress_data': []  # List to store progress data from each trial
+            },
+            'meta': {
+                'best_fitness': [],
+                'evaluations': [],
+                'time': [],
+                'selected_algorithms': [],
+                'progress_data': []  # List to store progress data from each trial
+            }
+        }
+        
+        baseline_metrics_list = []
+        meta_metrics_list = []
+        normalized_metrics_list = []
+        
+        # Use random seed for reproducibility if not provided
+        random_seed = getattr(self, 'seed', None) or int(time.time())
+        
+        for i in range(num_trials):
+            # Create trial-specific directory
+            trial_dir = os.path.join(function_dir, f"trial_{i+1}")
+            os.makedirs(trial_dir, exist_ok=True)
+            
+            logger.info(f"  Trial {i+1}/{num_trials}")
+            
+            # Set random seeds based on trial number for reproducibility
+            trial_seed = random_seed + i
+            np.random.seed(trial_seed)
+            random.seed(trial_seed)
+            
+            # Run each baseline algorithm
+            trial_baseline_results = {}
+            trial_baseline_metrics = {}
+            
+            # Track best fitness and evaluations for each baseline algorithm
+            for algo_name in self.baseline_selector.get_available_algorithms():
+                # Create a fresh copy of the problem
+                baseline_problem = problem_instance.copy() if hasattr(problem_instance, 'copy') else problem_instance
+                
+                # Initialize algorithm
+                algorithm = self.baseline_selector.initialize_algorithm(algo_name, dimensions, bounds)
+                
+                # Start timing
+                start_time = time.time()
+                
+                # Run optimization
+                try:
+                    best_fitness, best_solution, evaluations, progress_data = self._run_baseline_algorithm(
+                        algorithm, baseline_problem, max_evaluations)
+                    
+                    # Record results
+                    trial_baseline_results[algo_name] = {
+                        'fitness': best_fitness,
+                        'solution': best_solution,
+                        'evaluations': evaluations,
+                        'time': time.time() - start_time,
+                        'progress': progress_data  # Store progress data
+                    }
+                    
+                    trial_baseline_metrics[algo_name] = {
+                        'fitness': best_fitness,
+                        'evaluations': evaluations,
+                        'time': time.time() - start_time
+                    }
+                except Exception as e:
+                    logger.error(f"Error running baseline algorithm {algo_name}: {e}")
+                    trial_baseline_results[algo_name] = {
+                        'fitness': float('inf'),
+                        'solution': None,
+                        'evaluations': 0,
+                        'time': 0,
+                        'error': str(e)
+                    }
+            
+            # Find the best baseline algorithm for this trial
+            best_algo = None
+            best_fitness = float('inf')
+            
+            for algo_name, algo_result in trial_baseline_results.items():
+                if algo_result.get('fitness', float('inf')) < best_fitness:
+                    best_fitness = algo_result.get('fitness', float('inf'))
+                    best_algo = algo_name
+            
+            if best_algo:
+                best_baseline_algo_result = trial_baseline_results[best_algo]
+                baseline_metrics = {
+                    'fitness': best_baseline_algo_result['fitness'],
+                    'evaluations': best_baseline_algo_result['evaluations'],
+                    'time': best_baseline_algo_result['time'],
+                    'algorithm': best_algo
+                }
+                baseline_metrics_list.append(baseline_metrics)
+                
+                # Store results in the new structure
+                results['baseline']['best_fitness'].append(best_baseline_algo_result['fitness'])
+                results['baseline']['evaluations'].append(best_baseline_algo_result['evaluations'])
+                results['baseline']['time'].append(best_baseline_algo_result['time'])
+                results['baseline']['selected_algorithms'].append(best_algo)
+                results['baseline']['progress_data'].append(best_baseline_algo_result['progress'])
+            
+            # Run meta optimizer
+            # Create fresh problem instances
+            meta_problem = problem_instance.copy() if hasattr(problem_instance, 'copy') else problem_instance
+            baseline_problem = problem_instance.copy() if hasattr(problem_instance, 'copy') else problem_instance  # For synchronization
+            
+            # For fair comparison, synchronize problem instances
+            self._synchronize_problem_instances(baseline_problem, meta_problem)
+            
+            # Reset random seeds for meta-optimizer
+            np.random.seed(trial_seed)
+            random.seed(trial_seed)
+            
+            # Start timing for meta-optimizer
+            start_time = time.time()
+            
+            try:
+                # Run meta-optimization
+                best_fitness, best_solution, evaluations, selected_algorithms, progress_data = self._run_meta_optimizer(
+                    meta_problem, bounds, max_evaluations)
+                
+                # Record results in the new structure
+                results['meta']['best_fitness'].append(best_fitness)
+                results['meta']['evaluations'].append(evaluations)
+                results['meta']['time'].append(time.time() - start_time)
+                results['meta']['selected_algorithms'].append(selected_algorithms)
+                results['meta']['progress_data'].append(progress_data)
+                
+                # Record metrics for analysis
+                meta_metrics = {
+                    'fitness': best_fitness,
+                    'evaluations': evaluations,
+                    'time': time.time() - start_time,
+                    'algorithms': selected_algorithms
+                }
+                meta_metrics_list.append(meta_metrics)
+                
+                # Calculate normalized metrics for this trial
+                normalized_metrics = self._calculate_normalized_metrics(baseline_metrics, meta_metrics)
+                normalized_metrics_list.append(normalized_metrics)
+                
+                # Generate normalized comparison plot for this trial
+                self.generate_normalized_comparison_plots(
+                    best_baseline_algo_result,
+                    {'best_fitness': best_fitness, 'evaluations': evaluations, 'progress': progress_data},
+                    os.path.join(trial_dir, "normalized_comparison.png"),
+                    f"{problem_name} - Trial {i+1}"
+                )
+                
+            except Exception as e:
+                logger.error(f"Error running meta optimizer: {e}")
+                meta_metrics = {
+                    'fitness': float('inf'),
+                    'evaluations': 0,
+                    'time': 0,
+                    'error': str(e)
+                }
+                meta_metrics_list.append(meta_metrics)
+            
+            # Validate the trial results
+            self._validate_trial_results(baseline_metrics, meta_metrics, i+1)
+        
+        # Calculate averages
+        if results['baseline']['best_fitness']:
+            results['baseline']['avg_best_fitness'] = np.mean(results['baseline']['best_fitness'])
+            results['baseline']['avg_evaluations'] = np.mean(results['baseline']['evaluations'])
+            results['baseline']['avg_time'] = np.mean(results['baseline']['time'])
+            
+        if results['meta']['best_fitness']:
+            results['meta']['avg_best_fitness'] = np.mean(results['meta']['best_fitness'])
+            results['meta']['avg_evaluations'] = np.mean(results['meta']['evaluations'])
+            results['meta']['avg_time'] = np.mean(results['meta']['time'])
+        
+        # Aggregate metrics across trials
+        results['metrics'] = self._average_normalized_metrics(normalized_metrics_list)
+        
+        # Generate aggregate normalized comparison for all trials
+        self.generate_aggregate_normalized_comparison(
+            normalized_metrics_list,
+            os.path.join(function_dir, "aggregate_normalized_comparison.png"),
+            f"{problem_name} - All Trials"
+        )
+        
+        # Store in the class for later access
+        self.results[problem_name] = results
+        
+        return results
+
+    def _run_meta_optimizer(self, problem, bounds, max_evaluations):
+        """Run meta-optimizer on a problem.
+        
+        Args:
+            problem: Problem to optimize
+            bounds: Problem bounds
+            max_evaluations: Maximum evaluations allowed
+            
+        Returns:
+            best_fitness, best_solution, evaluations, selected_algorithms, progress_data
+        """
+        # Progress tracking
+        progress_data = {
+            'evaluations': [],
+            'fitness': []
+        }
+        
+        try:
+            # Initialize tracking
+            last_eval_count = 0
+            last_best_fitness = float('inf')
+            
+            # Ensure bounds are in the correct format for the meta-optimizer
+            # Convert tuple bounds to list bounds if necessary
+            if isinstance(bounds[0], tuple):
+                formatted_bounds = [[lower, upper] for lower, upper in bounds]
+            else:
+                formatted_bounds = bounds
+            
+            # Update meta-optimizer bounds if needed
+            if hasattr(self.meta_optimizer, 'bounds'):
+                self.meta_optimizer.bounds = formatted_bounds
+            
+            # Run optimization without passing bounds
+            result = self.meta_optimizer.optimize(problem, max_evaluations=max_evaluations)
+            
+            # Extract results
+            if isinstance(result, dict):
+                best_solution = result.get('solution', None)
+                best_fitness = float(result.get('score', float('inf')))
+                evaluations = result.get('evaluations', 0)
+            else:
+                best_solution = result
+                best_fitness = float(problem(best_solution)) if best_solution is not None else float('inf')
+                evaluations = getattr(self.meta_optimizer, 'total_evaluations', max_evaluations)
+            
+            # Get selected algorithms
+            selected_algorithms = []
+            if hasattr(self.meta_optimizer, 'most_recent_selected_optimizers'):
+                selected_algorithms = self.meta_optimizer.most_recent_selected_optimizers
+            elif hasattr(self.meta_optimizer, 'selected_optimizers'):
+                selected_algorithms = self.meta_optimizer.selected_optimizers
+            
+            # Join algorithm names if they are numpy strings
+            if selected_algorithms:
+                selected_algorithms = [str(algo) for algo in selected_algorithms]
+                selected_algorithms = ','.join(selected_algorithms)
+            
+            return best_fitness, best_solution, evaluations, selected_algorithms, progress_data
+            
+        except Exception as e:
+            logger.error(f"Error in meta optimizer: {e}")
+            return float('inf'), None, 0, [], progress_data
+
+    def _synchronize_problem_instances(self, baseline_problem, meta_problem):
+        """Synchronize problem instances for fair comparison.
+        
+        This ensures both problems use the same reference function, random seed, etc.
+        
+        Args:
+            baseline_problem: The baseline problem instance
+            meta_problem: The meta-optimizer problem instance
+        """
+        # Check if both problems have the same function reference
+        if hasattr(baseline_problem, 'func') and hasattr(meta_problem, 'func'):
+            if baseline_problem.func is not meta_problem.func:
+                logger.warning("Function reference mismatch, synchronizing")
+                meta_problem.func = baseline_problem.func
+        
+        # Synchronize random seeds if applicable
+        if hasattr(baseline_problem, 'seed') and hasattr(meta_problem, 'seed'):
+            meta_problem.seed = baseline_problem.seed
+            
+        # Synchronize dimensions if applicable
+        if hasattr(baseline_problem, 'dim') and hasattr(meta_problem, 'dim'):
+            meta_problem.dim = baseline_problem.dim
+        elif hasattr(baseline_problem, 'dimensions') and hasattr(meta_problem, 'dimensions'):
+            meta_problem.dimensions = baseline_problem.dimensions
+            
+        # Synchronize bounds if applicable
+        if hasattr(baseline_problem, 'bounds') and hasattr(meta_problem, 'bounds'):
+            meta_problem.bounds = baseline_problem.bounds
+        
+    def _run_baseline_algorithm(self, algorithm, problem, max_evaluations):
+        """Run a baseline optimization algorithm.
+        
+        Args:
+            algorithm: The algorithm to run
+            problem: The problem to optimize
+            max_evaluations: Maximum evaluations allowed
+            
+        Returns:
+            best_fitness, best_solution, evaluations, progress_data
+        """
+        # Wrap the problem to respect max_evaluations
+        wrapped_problem = self._wrap_problem(problem, max_evaluations)
+        
+        # Progress tracking
+        progress_data = {
+            'evaluations': [],
+            'fitness': []
+        }
+        
+        try:
+            # Initialize tracking
+            last_eval_count = 0
+            last_best_fitness = float('inf')
+            
+            # Run optimization
+            best_solution, best_fitness = algorithm.optimize(wrapped_problem, max_evals=max_evaluations)
+            
+            # Get evaluations count
+            evaluations = wrapped_problem.evaluations if hasattr(wrapped_problem, 'evaluations') else max_evaluations
+            
+            # Get convergence curve if available
+            if hasattr(algorithm, 'convergence_curve') and algorithm.convergence_curve:
+                # Add points from convergence curve
+                eval_step = evaluations / len(algorithm.convergence_curve)
+                for i, fitness in enumerate(algorithm.convergence_curve):
+                    current_eval = int(i * eval_step)
+                    if current_eval > last_eval_count:  # Only add if we have new evaluations
+                        progress_data['evaluations'].append(current_eval)
+                        progress_data['fitness'].append(fitness)
+                        last_eval_count = current_eval
+                        last_best_fitness = min(last_best_fitness, fitness)
+            else:
+                # If no convergence curve, at least record the final point
+                progress_data['evaluations'].append(evaluations)
+                progress_data['fitness'].append(best_fitness)
+            
+            # Ensure we have the final best point
+            if progress_data['evaluations'] and progress_data['evaluations'][-1] < evaluations:
+                progress_data['evaluations'].append(evaluations)
+                progress_data['fitness'].append(best_fitness)
+            
+            # Sort by evaluations to ensure proper ordering
+            if progress_data['evaluations']:
+                sorted_indices = np.argsort(progress_data['evaluations'])
+                progress_data['evaluations'] = [progress_data['evaluations'][i] for i in sorted_indices]
+                progress_data['fitness'] = [progress_data['fitness'][i] for i in sorted_indices]
+            
+            return best_fitness, best_solution, evaluations, progress_data
+            
+        except Exception as e:
+            logger.error(f"Error in baseline algorithm: {e}")
+            return float('inf'), None, 0, progress_data
+
+    def _clip_improvement(self, improvement):
+        """Clip improvement values to avoid extreme values.
+        
+        Args:
+            improvement: Raw improvement value
+            
+        Returns:
+            Clipped improvement value
+        """
+        # Clip to reasonable range (-100 to 100)
+        return np.clip(improvement, -100, 100)
+
+    def _average_normalized_metrics(self, metrics_list):
+        """Average normalized metrics across trials.
+        
+        Args:
+            metrics_list: List of normalized metrics dictionaries from each trial
+            
+        Returns:
+            Dictionary of averaged metrics
+        """
+        if not metrics_list:
+            return {}
+            
+        # Initialize result dictionary
+        averaged_metrics = {}
+        
+        # Get all metric keys
+        all_keys = set()
+        for metrics in metrics_list:
+            all_keys.update(metrics.keys())
+            
+        # Average each metric
+        for key in all_keys:
+            values = []
+            for metrics in metrics_list:
+                if key in metrics:
+                    if isinstance(metrics[key], (int, float)):
+                        values.append(metrics[key])
+                    elif isinstance(metrics[key], dict):
+                        # Handle nested dictionaries
+                        if key not in averaged_metrics:
+                            averaged_metrics[key] = {}
+                        for subkey, value in metrics[key].items():
+                            if isinstance(value, (int, float)):
+                                if subkey not in averaged_metrics[key]:
+                                    averaged_metrics[key][subkey] = []
+                                averaged_metrics[key][subkey].append(value)
+            
+            if values:  # Only add if we have values to average
+                averaged_metrics[key] = np.mean(values)
+                
+        # Average nested dictionaries
+        for key in list(averaged_metrics.keys()):
+            if isinstance(averaged_metrics[key], dict):
+                for subkey in averaged_metrics[key]:
+                    if averaged_metrics[key][subkey]:
+                        averaged_metrics[key][subkey] = np.mean(averaged_metrics[key][subkey])
+                        
+        return averaged_metrics
