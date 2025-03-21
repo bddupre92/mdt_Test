@@ -72,12 +72,19 @@ class ProblemAnalyzer:
         """
         self.logger.info(f"Analyzing problem features with {n_samples} samples...")
         
+        # Create a shape-safe wrapper for the objective function
+        def shape_safe_objective(x):
+            # Ensure x is a 1D array with proper shape
+            if hasattr(x, 'ndim') and x.ndim > 1:
+                x = x.reshape(-1)  # Flatten to 1D
+            return objective_func(x)
+        
         try:
             # Generate random samples from the search space
             X = self._generate_random_samples(n_samples)
             
             # Evaluate objective function at sample points
-            y = np.array([objective_func(x) for x in X])
+            y = np.array([shape_safe_objective(x) for x in X])
             
             # Handle NaN or infinite values
             if np.any(np.isnan(y)) or np.any(np.isinf(y)):
@@ -93,12 +100,12 @@ class ProblemAnalyzer:
             features = self._extract_statistical_features(X, y)
             
             # Extract landscape features with y_range
-            landscape_features = self._extract_landscape_features(X, y, objective_func, y_range=features['y_range'])
+            landscape_features = self._extract_landscape_features(X, y, shape_safe_objective, y_range=features['y_range'])
             features.update(landscape_features)
             
             if detailed:
                 # Extract more detailed features (may be computationally expensive)
-                detailed_features = self._extract_detailed_features(objective_func)
+                detailed_features = self._extract_detailed_features(shape_safe_objective)
                 features.update(detailed_features)
             
             self.logger.info(f"Feature extraction completed: {len(features)} features extracted")
@@ -234,6 +241,9 @@ class ProblemAnalyzer:
             grad = np.zeros(self.dim)
             hess = np.zeros((self.dim, self.dim))
             
+            # Ensure x is 1D and proper shape
+            x = x.reshape(-1) if hasattr(x, 'ndim') and x.ndim > 1 else x
+            
             # Compute gradient
             fx = objective_func(x)
             for i in range(self.dim):
@@ -343,8 +353,11 @@ class ProblemAnalyzer:
             for i in range(self.dim):
                 # Fix all dimensions except i
                 def f_fixed(xi):
+                    # Ensure xi is properly shaped (scalar to array)
+                    if np.isscalar(xi):
+                        xi = np.array([xi])
                     x = global_min_point.copy()
-                    x[i] = xi
+                    x[i] = xi[0]  # Use first element if xi is array
                     return objective_func(x)
                 
                 # Optimize dimension i

@@ -42,6 +42,7 @@ class SatzillaInspiredSelector:
             random_seed: Random seed for reproducibility
         """
         # Set random seed
+        self.random_seed = random_seed
         np.random.seed(random_seed)
         
         # Available optimization algorithms
@@ -430,7 +431,7 @@ class SatzillaInspiredSelector:
                 try:
                     with open(model_path, 'rb') as f:
                         model_data = pickle.load(f)
-                    logger.info(f"Loaded pickle model from {model_path}")
+                        logger.info(f"Loaded pickle model from {model_path}")
                 except Exception as e:
                     logger.error(f"Error loading pickle model: {e}")
                     return False
@@ -442,8 +443,8 @@ class SatzillaInspiredSelector:
                     self.models = model_data['models']
                 if 'scaler' in model_data:
                     self.scaler = model_data['scaler']
-                if 'feature_names' in model_data:
-                    self.feature_names = model_data['feature_names']
+                    if 'feature_names' in model_data:
+                        self.feature_names = model_data['feature_names']
                 if 'algorithms' in model_data:
                     self.algorithms = model_data['algorithms']
                 if 'X_train' in model_data:
@@ -499,7 +500,7 @@ class SatzillaInspiredSelector:
         if not valid_models:
             logger.warning("No valid models found")
             return False
-            
+        
         # Check that scaler exists
         if not hasattr(self, 'scaler') or self.scaler is None:
             logger.warning("No scaler found in loaded data")
@@ -604,7 +605,7 @@ class SatzillaInspiredSelector:
                             logger.debug(f"Predicted score for {alg}: {score}")
                         except Exception as e:
                             logger.warning(f"Failed to predict for {alg}: {e}")
-                
+            
                 # If we have valid predictions, select the best algorithm
                 if valid_predictions:
                     # Select algorithm with the lowest predicted runtime/best predicted performance
@@ -697,6 +698,41 @@ class SatzillaInspiredSelector:
         alg = np.random.choice(self.algorithms)
         logger.info(f"Randomly selected algorithm: {alg}")
         return alg
+
+    def set_available_algorithms(self, algorithms: List[str]) -> None:
+        """
+        Set the list of available optimization algorithms
+        
+        Args:
+            algorithms: List of algorithm names
+        """
+        if not algorithms:
+            logger.warning("Empty algorithm list provided, keeping current algorithms")
+            return
+            
+        # Only keep algorithms that were in the original list
+        valid_algorithms = [alg for alg in algorithms if alg in self.models]
+        
+        if not valid_algorithms:
+            logger.warning(f"None of the provided algorithms {algorithms} are in the original set {list(self.models.keys())}")
+            return
+            
+        if len(valid_algorithms) != len(algorithms):
+            logger.warning(f"Some algorithms were not in the original set and were ignored: {set(algorithms) - set(valid_algorithms)}")
+            
+        self.algorithms = valid_algorithms
+        logger.info(f"Updated available algorithms: {self.algorithms}")
+    
+    def set_seed(self, seed: int) -> None:
+        """
+        Set random seed for reproducibility
+        
+        Args:
+            seed: Random seed
+        """
+        self.random_seed = seed
+        np.random.seed(seed)
+        logger.info(f"Set random seed to {seed}")
 
 
 # Utility functions for statistical calculations

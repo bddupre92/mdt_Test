@@ -305,40 +305,36 @@ class MetaOptimizer:
                         try:
                             # For scipy's differential_evolution, bounds must be a sequence of (min, max) pairs
                             if hasattr(self.meta_optimizer, 'bounds') and self.meta_optimizer.bounds:
-                                # Check if we have nested bounds like [((0, 1), (0, 1))]
-                                if isinstance(self.meta_optimizer.bounds[0], tuple) and len(self.meta_optimizer.bounds[0]) == 2:
-                                    # Check if the bounds are nested tuples
-                                    if isinstance(self.meta_optimizer.bounds[0][0], tuple):
-                                        self.meta_optimizer.logger.warning(f"Nested bounds detected. Flattening bounds.")
-                                        # Flatten nested bounds
-                                        bounds = []
-                                        for b in self.meta_optimizer.bounds:
-                                            if isinstance(b[0], tuple):
-                                                for inner_b in b:
-                                                    bounds.append(inner_b)
-                                            else:
-                                                bounds.append(b)
+                                # Ensure bounds are in the correct format for differential_evolution
+                                bounds = []
+                                
+                                # Process bounds to flatten any nested structures
+                                for b in self.meta_optimizer.bounds:
+                                    if isinstance(b, tuple) and len(b) == 2 and all(isinstance(x, (int, float)) for x in b):
+                                        # Already in correct format (min, max)
+                                        bounds.append(b)
+                                    elif isinstance(b, (list, tuple)) and len(b) > 0:
+                                        # Nested structure - try to extract pairs
+                                        for inner_b in b:
+                                            if isinstance(inner_b, (tuple, list)) and len(inner_b) == 2:
+                                                bounds.append((inner_b[0], inner_b[1]))
                                     else:
-                                        # Already in the correct format [(min1, max1), (min2, max2), ...]
-                                        bounds = self.meta_optimizer.bounds
-                                else:
-                                    # Unexpected format, set default bounds
-                                    self.meta_optimizer.logger.warning(f"Unexpected bounds format. Using default bounds.")
-                                    bounds = [(0, 1)] * self.meta_optimizer.dim
+                                        # Can't parse this format
+                                        self.meta_optimizer.logger.warning(f"Unparseable bound format: {b}. Using default.")
+                                
+                                # Verify bounds length matches dimensions
+                                if len(bounds) != self.meta_optimizer.dim:
+                                    self.meta_optimizer.logger.warning(f"Bounds mismatch: have {len(bounds)} bounds for {self.meta_optimizer.dim} dimensions. Adjusting bounds.")
+                                    if len(bounds) > 0:
+                                        # Use the first bound for all dimensions
+                                        bounds = [bounds[0]] * self.meta_optimizer.dim
+                                    else:
+                                        # Use default bounds
+                                        bounds = [(0, 1)] * self.meta_optimizer.dim
                             else:
                                 # No bounds, use default
                                 self.meta_optimizer.logger.warning(f"No bounds found. Using default bounds.")
                                 bounds = [(0, 1)] * self.meta_optimizer.dim
-                                
-                            # Verify bounds length matches dimensions
-                            if len(bounds) != self.meta_optimizer.dim:
-                                self.meta_optimizer.logger.warning(f"Bounds mismatch: have {len(bounds)} bounds for {self.meta_optimizer.dim} dimensions. Adjusting bounds.")
-                                if len(bounds) > 0:
-                                    # Use the first bound for all dimensions
-                                    bounds = [bounds[0]] * self.meta_optimizer.dim
-                                else:
-                                    # Use default bounds
-                                    bounds = [(0, 1)] * self.meta_optimizer.dim
                                 
                             self.meta_optimizer.logger.debug(f"Using DE bounds: {bounds}")
                             
@@ -844,10 +840,21 @@ class MetaOptimizer:
                 self.dim = original_func.dims
                 
             # Set bounds if available
-            if hasattr(original_func, 'bounds') and len(original_func.bounds) == 2:
-                low, high = original_func.bounds
-                self.bounds = [(low, high)] * self.dim
-                self.logger.info(f"Using bounds from benchmark function: {self.bounds[0]}")
+            if hasattr(original_func, 'bounds'):
+                if isinstance(original_func.bounds, tuple) and len(original_func.bounds) == 2:
+                    # Global bounds format (min, max) for all dimensions
+                    low, high = original_func.bounds
+                    self.bounds = [(low, high)] * self.dim
+                    self.logger.info(f"Using bounds from benchmark function: {self.bounds}")
+                elif isinstance(original_func.bounds, list):
+                    # List of bounds, one per dimension
+                    if len(original_func.bounds) == self.dim:
+                        self.bounds = original_func.bounds
+                    else:
+                        # If dimensions don't match, replicate the first bound
+                        self.logger.warning(f"Bounds length ({len(original_func.bounds)}) doesn't match dimensions ({self.dim}). Using first bound for all dimensions.")
+                        self.bounds = [original_func.bounds[0]] * self.dim
+                    self.logger.info(f"Using bounds from benchmark function: {self.bounds}")
         
         self.objective_func = objective_func
         self.max_evals = max_evals
@@ -1231,13 +1238,33 @@ class MetaOptimizer:
         Returns:
             Dictionary of problem features
         """
-        # Use the ProblemAnalyzer to extract features
-        analyzer = ProblemAnalyzer(self.bounds, self.dim)
-        features = analyzer.analyze_features(objective_func)
-        
-        self.logger.debug(f"Extracted problem features: {features}")
-        return features
-        
+        # Create a shape-safe wrapper around the objective function
+        def shape_safe_wrapper(x):
+            if isinstance(x, np.ndarray):
+                if x.ndim > 1:
+                    x = x.reshape(-1)  # Ensure 1D
+                # Make sure array has correct shape for the function
+                if len(x) != self.dim:
+                    self.logger.warning(f"Input dimension mismatch: got {len(x)}, expected {self.dim}")
+                    # Try to create array of correct dimension
+                    if len(x) > self.dim:
+                        x = x[:self.dim]  # Truncate
+                    else:
+                        # Pad with zeros
+                        x = np.pad(x, (0, self.dim - len(x)), 'constant')
+            return objective_func(x)
+            
+        try:
+            # Use the ProblemAnalyzer to extract features
+            analyzer = ProblemAnalyzer(self.bounds, self.dim)
+            features = analyzer.analyze_features(shape_safe_wrapper)
+            
+            self.logger.debug(f"Extracted problem features: {features}")
+            return features
+        except Exception as e:
+            self.logger.error(f"Error in feature extraction: {str(e)}")
+            return self._get_default_features()
+
     def _classify_problem(self, features: Dict[str, float]) -> str:
         """
         Classify the problem type based on features.
@@ -1940,3 +1967,26 @@ class MetaOptimizer:
         
         self.logger.debug("No optimizers selected yet, returning 'unknown'")
         return "unknown"
+
+    def _get_default_features(self) -> Dict[str, float]:
+        """
+        Return default features when extraction fails.
+        
+        Returns:
+            Dictionary of default feature values
+        """
+        return {
+            'dimension': self.dim,
+            'modality': 5.0,  # Medium multimodality
+            'ruggedness': 0.5,  # Medium ruggedness
+            'convexity': 0.5,  # Medium convexity
+            'gradient_variance': 0.5,  # Medium gradient variance
+            'separability': 0.5,  # Medium separability
+            'basin_ratio': 0.5,  # Medium basin ratio
+            'noise_estimation': 0.1,  # Low noise
+            'periodicity': 0.0,  # No periodicity
+            'evolvability': 0.5,  # Medium evolvability
+            'neutral_regions': 0.1,  # Few neutral regions
+            'curvature': 0.5,  # Medium curvature
+            'pca_variance_ratio': 0.7  # Medium PCA variance ratio
+        }

@@ -19,6 +19,7 @@ import copy
 import json
 from sklearn.model_selection import cross_val_score, KFold
 from sklearn.metrics import mean_squared_error, r2_score
+import traceback
 
 # Configure logging
 logging.basicConfig(
@@ -308,112 +309,148 @@ def export_training_data(selector, export_dir: Path) -> None:
 
 def evaluate_selector_models(selector) -> Dict[str, Dict[str, float]]:
     """
-    Evaluate the performance of the trained models
+    Evaluate the trained selector models
     
     Args:
-        selector: The trained selector
+        selector: Trained SATzilla-inspired selector
         
     Returns:
-        Dictionary of evaluation metrics for each algorithm model
+        Dictionary of evaluation metrics for each algorithm
     """
     logger.info("Evaluating trained models")
     
-    metrics = {}
-    
-    # For each algorithm model
-    for alg in selector.algorithms:
-        if selector.models[alg] is not None:
-            # Get training data
-            X = np.array([list(f.values()) for f in selector.X_train])
-            X_scaled = selector.scaler.transform(X)
-            y = np.array(selector.y_train[alg])
+    try:
+        evaluation_results = {}
+        
+        # Check if selector has trained models
+        if not hasattr(selector, 'models') or not selector.models:
+            logger.warning("No models found in selector")
+            return {}
             
-            # Get model predictions
-            y_pred = selector.models[alg].predict(X_scaled)
+        # Check if we have feature names
+        if not hasattr(selector, 'feature_names') or not selector.feature_names:
+            logger.warning("No feature names found in selector")
+            return {}
+            
+        # Check if we have training data
+        if not hasattr(selector, 'X_train') or selector.X_train is None or len(selector.X_train) == 0:
+            logger.warning("No training data found in selector")
+            return {}
+        
+        # Prepare X data in DataFrame format
+        if isinstance(selector.X_train, np.ndarray):
+            X_train_df = pd.DataFrame(selector.X_train, columns=selector.feature_names)
+        elif isinstance(selector.X_train, list) and isinstance(selector.X_train[0], dict):
+            # Handle old format where X_train is a list of dictionaries
+            X_train_df = pd.DataFrame(selector.X_train)
+        else:
+            logger.warning(f"Unexpected X_train format: {type(selector.X_train)}")
+            return {}
+            
+        # For each algorithm, evaluate the model
+        for alg, model in selector.models.items():
+            if model is None:
+                logger.warning(f"No model found for algorithm {alg}")
+                continue
+                
+            # Check if we have performance data
+            if not hasattr(selector, 'y_train') or not isinstance(selector.y_train, dict) or alg not in selector.y_train:
+                logger.warning(f"No performance data found for algorithm {alg}")
+                continue
+                
+            # Get the performance data
+            y_train = np.array(selector.y_train[alg])
             
             # Calculate metrics
-            mse = mean_squared_error(y, y_pred)
-            r2 = r2_score(y, y_pred)
+            metrics = {}
             
-            # Cross-validation
-            cv_scores = cross_val_score(
-                selector.models[alg], 
-                X_scaled, 
-                y, 
-                cv=min(5, len(X)), 
-                scoring='neg_mean_squared_error'
-            )
-            cv_mse = -cv_scores.mean()
-            
-            # Store metrics
-            metrics[alg] = {
-                "mse": float(mse),
-                "r2": float(r2),
-                "cv_mse": float(cv_mse),
-                "feature_importance": [float(imp) for imp in selector.models[alg].feature_importances_]
-            }
-    
-    return metrics
+            try:
+                # Use model's score method
+                score = model.score(X_train_df, y_train)
+                metrics["r2_score"] = float(score)
+                
+                # Make predictions
+                y_pred = model.predict(X_train_df)
+                
+                # Calculate mean squared error
+                mse = np.mean((y_train - y_pred) ** 2)
+                metrics["mse"] = float(mse)
+                
+                # Calculate mean absolute error
+                mae = np.mean(np.abs(y_train - y_pred))
+                metrics["mae"] = float(mae)
+                
+                evaluation_results[alg] = metrics
+            except Exception as e:
+                logger.warning(f"Error evaluating model for {alg}: {e}")
+        
+        return evaluation_results
+    except Exception as e:
+        logger.warning(f"Error evaluating models: {e}")
+        return {}
 
 def create_basic_feature_importance(selector, export_dir: Path) -> None:
     """
-    Create basic feature importance visualization using built-in methods
+    Create basic feature importance visualizations
     
     Args:
-        selector: The trained selector
-        export_dir: Directory to export visualizations
+        selector: Trained selector
+        export_dir: Directory to save visualizations
     """
     logger.info("Creating basic feature importance visualizations")
     
-    # Create visualizations directory
-    viz_dir = export_dir / "visualizations"
-    viz_dir.mkdir(exist_ok=True, parents=True)
-    
-    # For each algorithm model
-    for alg in selector.algorithms:
-        if selector.models[alg] is not None and hasattr(selector.models[alg], 'feature_importances_'):
-            # Get feature names and importance scores
-            feature_names = list(selector.X_train[0].keys())
-            importance = selector.models[alg].feature_importances_
+    try:
+        # Ensure visualization directory exists
+        viz_dir = export_dir / "visualizations"
+        viz_dir.mkdir(exist_ok=True, parents=True)
+        
+        # Check if selector has trained models
+        if not hasattr(selector, 'models') or not selector.models:
+            logger.warning("No models found in selector. Skipping feature importance visualization.")
+            return
             
-            # Create DataFrame for better plotting
-            importance_df = pd.DataFrame({
-                'Feature': feature_names,
-                'Importance': importance
-            })
-            
-            # Sort by importance
-            importance_df = importance_df.sort_values('Importance', ascending=False)
+        # Check if we have feature names
+        if not hasattr(selector, 'feature_names') or not selector.feature_names:
+            logger.warning("No feature names found in selector. Skipping feature importance visualization.")
+            return
+        
+        # Get feature names from selector
+        feature_names = selector.feature_names
+        
+        # For each algorithm with a trained model
+        for alg, model in selector.models.items():
+            if model is None:
+                continue
+                
+            # Check if model has feature importances
+            if not hasattr(model, 'feature_importances_'):
+                logger.warning(f"Model for {alg} does not have feature_importances_ attribute")
+                continue
+                
+            # Extract feature importances
+            importances = model.feature_importances_
             
             # Create plot
-            plt.figure(figsize=(12, 8))
-            sns.barplot(x='Importance', y='Feature', data=importance_df)
+            plt.figure(figsize=(10, 6))
+            indices = np.argsort(importances)[::-1]
+            
+            # Limit to top 20 features or all if less
+            n_features = min(len(feature_names), 20)
+            plt.barh(range(n_features), importances[indices[:n_features]], align='center')
+            plt.yticks(range(n_features), [feature_names[i] for i in indices[:n_features]])
+            plt.xlabel('Feature Importance')
+            plt.ylabel('Feature')
             plt.title(f'Feature Importance for {alg}')
             plt.tight_layout()
+            
+            # Save plot
             plt.savefig(viz_dir / f"feature_importance_{alg}.png", dpi=300, bbox_inches='tight')
             plt.close()
-    
-    # Create correlation heatmap of features
-    try:
-        # Convert features to DataFrame
-        feature_names = list(selector.X_train[0].keys())
-        features_df = pd.DataFrame([list(f.values()) for f in selector.X_train], 
-                                  columns=feature_names)
-        
-        # Calculate correlation
-        corr = features_df.corr()
-        
-        # Create heatmap
-        plt.figure(figsize=(14, 12))
-        sns.heatmap(corr, annot=True, cmap='coolwarm', fmt=".2f", 
-                   xticklabels=feature_names, yticklabels=feature_names)
-        plt.title('Feature Correlation Matrix')
-        plt.xticks(rotation=45, ha='right')
-        plt.tight_layout()
-        plt.savefig(viz_dir / "feature_correlation.png", dpi=300, bbox_inches='tight')
-        plt.close()
+            
+        logger.info(f"Basic feature importance visualizations saved to {viz_dir}")
     except Exception as e:
-        logger.warning(f"Error creating feature correlation heatmap: {e}")
+        logger.warning(f"Error creating feature importance visualizations: {e}")
+        logger.warning(traceback.format_exc())
 
 def save_trained_selector(selector, file_path: Path) -> None:
     """
