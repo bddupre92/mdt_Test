@@ -49,6 +49,46 @@ def run_moe_validation(args: Dict[str, Any]) -> Dict[str, Any]:
         from moe_validation_runner import main as runner_main
         from moe_interactive_report import generate_interactive_report
         
+        # Check for enhanced data configuration - first from environment variable, then from args
+        enhanced_data_config = os.environ.get('ENHANCED_DATA_CONFIG') or args.get('enhanced_data_config')
+        use_enhanced_data = False
+        enhanced_config = {}
+        
+        if enhanced_data_config:
+            logger.info(f"Found enhanced data config path: {enhanced_data_config}")
+        
+        if enhanced_data_config and os.path.exists(enhanced_data_config):
+            logger.info(f"Loading enhanced data configuration from {enhanced_data_config}")
+            try:
+                # Import enhanced data support module
+                from core.enhanced_data_support import load_enhanced_data_config, load_data_pointers
+                
+                # Load enhanced data configuration
+                enhanced_config = load_enhanced_data_config(enhanced_data_config)
+                
+                if enhanced_config:
+                    # Load data pointers
+                    data_pointers_file = enhanced_config.get('data_pointers_file')
+                    if data_pointers_file and os.path.exists(data_pointers_file):
+                        data_pointers = load_data_pointers(data_pointers_file)
+                        if data_pointers and data_pointers.get('patients'):
+                            logger.info(f"Found {len(data_pointers.get('patients', []))} patients in enhanced data")
+                            use_enhanced_data = True
+                            
+                            # Set visualization directory in args
+                            args['visualization_dir'] = enhanced_config.get('visualization_dir', 
+                                                                          args.get('results_dir', 'results/moe_validation'))
+                            
+                            # Add enhanced data to args
+                            args['enhanced_data'] = {
+                                'config': enhanced_config,
+                                'data_pointers': data_pointers
+                            }
+            except ImportError as e:
+                logger.warning(f"Failed to import enhanced data support module: {e}")
+            except Exception as e:
+                logger.warning(f"Error loading enhanced data configuration: {e}")
+        
         # Process command-line arguments
         components = args.get('components', ['all'])
         # Always set interactive to True to ensure reports are generated with timestamps

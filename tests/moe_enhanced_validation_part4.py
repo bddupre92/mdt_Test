@@ -830,16 +830,18 @@ class ExplainableDriftTests:
                 
                 # Check if we have valid data for correlation
                 if len(set(feature_imp)) <= 1 or len(set(degradation)) <= 1:
-                    # Not enough variation for correlation
+                    # Not enough variation for correlation - silently handle this case
                     corr, p_value = 0, 1.0
-                    logger.warning(f"Cannot calculate correlation for {feature}: constant values")
+                    correlation_note = "(insufficient variation)"
                 else:
                     # Calculate correlation with error handling
                     try:
                         corr, p_value = pearsonr(feature_imp, degradation)
+                        correlation_note = ""
                     except Exception as e:
                         logger.warning(f"Error calculating correlation for {feature}: {e}")
                         corr, p_value = 0, 1.0
+                        correlation_note = "(calculation error)"
                 
                 # Plot scatter points
                 axes[i].scatter(feature_imp, degradation, s=100, alpha=0.7)
@@ -866,7 +868,7 @@ class ExplainableDriftTests:
                 axes[i].set_xlabel(f'{feature} Importance')
                 axes[i].set_ylabel('Performance Degradation (%)')
                 axes[i].set_title(f'Correlation between {feature} Importance and Drift Impact\n'
-                                f'r = {corr:.3f}, p-value = {p_value:.3f}')
+                                f'r = {corr:.3f}, p-value = {p_value:.3f} {correlation_note}')
                 axes[i].grid(True, linestyle='--', alpha=0.7)
             except Exception as e:
                 logger.warning(f"Error creating plot for feature {feature}: {e}")

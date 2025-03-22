@@ -29,6 +29,14 @@ env/
 .env.*
 .venv/
 .venv_minimal/
+
+# Results and Test Data
+results/
+test_data/
+*.html
+*.png
+*.csv
+*.json
 env.bak/
 venv.bak/
 .python-version
@@ -74,13 +82,13 @@ wheels/
 *.sqlite
 *.db
 
-# JSON files
-*.json
-**/*.json
+# JSON files - temporarily commented out for testing
+# *.json
+# **/*.json
 
-# CSV files
-*.csv
-**/*.csv
+# CSV files - temporarily commented out for testing
+# *.csv
+# **/*.csv
 
 # Binary files
 *.pkl

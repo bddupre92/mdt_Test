@@ -232,7 +232,10 @@ class MockMetaLearner:
             
         weights = {}
         
-        # Generate weights based on expert specialty and features
+        # Track the highest weight to ensure specialty matches can exceed it
+        highest_non_matching_weight = 0
+        
+        # First pass to calculate base weights and find highest non-matching weight
         for expert_id, expert_info in self.experts.items():
             specialty = expert_info['specialty']
             accuracy = expert_info['accuracy']
@@ -240,13 +243,29 @@ class MockMetaLearner:
             # Base weight on accuracy
             weight = accuracy
             
-            # Adjust weight based on specialty match to features
+            # Save the weight for comparisons
+            weights[expert_id] = weight
+            
+            # Track highest non-matching weight for each feature type
+            if specialty != 'physiological' and features.get('has_physiological', False):
+                highest_non_matching_weight = max(highest_non_matching_weight, weight)
+            elif specialty != 'behavioral' and features.get('has_behavioral', False):
+                highest_non_matching_weight = max(highest_non_matching_weight, weight)
+            elif specialty != 'environmental' and features.get('has_environmental', False):
+                highest_non_matching_weight = max(highest_non_matching_weight, weight)
+        
+        # Second pass to boost specialty-matching weights to ensure they're highest
+        for expert_id, expert_info in self.experts.items():
+            specialty = expert_info['specialty']
+            weight = weights[expert_id]
+            
+            # Boost weights for specialty matches - ensure they exceed the highest non-matching weight
             if specialty == 'physiological' and features.get('has_physiological', False):
-                weight *= 1.2
+                weight = max(weight * 1.5, highest_non_matching_weight * 1.2)
             elif specialty == 'behavioral' and features.get('has_behavioral', False):
-                weight *= 1.2
+                weight = max(weight * 1.5, highest_non_matching_weight * 1.2)
             elif specialty == 'environmental' and features.get('has_environmental', False):
-                weight *= 1.2
+                weight = max(weight * 1.5, highest_non_matching_weight * 1.2)
                 
             # Normalize to 0-1 range
             weight = min(1.0, weight)

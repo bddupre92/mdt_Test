@@ -316,6 +316,15 @@ def add_moe_validation_args(parser: argparse.ArgumentParser) -> None:
     confidence_group.add_argument('--confidence-thresholds', nargs='+', type=float,
                      default=[0.3, 0.5, 0.7, 0.9],
                      help="Confidence thresholds for reporting (space-separated values between 0-1)")
+    
+    # Enhanced Synthetic Data
+    enhanced_data_group = parser.add_argument_group('Enhanced Synthetic Data')
+    enhanced_data_group.add_argument('--enhanced-data-config', type=str,
+                        help="Path to enhanced synthetic data configuration file")
+    enhanced_data_group.add_argument('--include-drift-visualizations', action='store_true',
+                        help="Include drift visualizations from enhanced synthetic data in reports")
+    enhanced_data_group.add_argument('--use-enhanced-data-for-validation', action='store_true',
+                        help="Use enhanced synthetic data for MoE validation test cases")
 
 def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
     """
