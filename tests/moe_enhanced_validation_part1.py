@@ -355,11 +355,11 @@ class MockMetaLearner:
             
             # Adjust weight based on specialty match to features
             if specialty == 'physiological' and features.get('has_physiological', False):
-                weight *= 1.2
+                weight *= 2.5  # Significantly increase weight for physiological experts
             elif specialty == 'behavioral' and features.get('has_behavioral', False):
-                weight *= 1.2
+                weight *= 1.5
             elif specialty == 'environmental' and features.get('has_environmental', False):
-                weight *= 1.2
+                weight *= 1.5
                 
             # Normalize to 0-1 range
             weight = min(1.0, weight)
