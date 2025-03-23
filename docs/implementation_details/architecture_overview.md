@@ -6,13 +6,13 @@
 
 | Component | Files | Description |
 |-----------|-------|-------------|
-| **Data Preprocessing** | `data_integration/clinical_data_validator.py` | Validates and preprocesses clinical data, handles datetime features, performs structure validation and quality checks |
-| **Synthetic Data Generation** | `data_integration/synthetic_data_generator.py` | Generates synthetic patient data with various drift patterns for testing and validation |
-| **Real-Synthetic Comparison** | `data_integration/real_synthetic_comparator.py` | Compares real clinical data with synthetic data, computes similarity metrics and visualizations |
-| **MoE Framework** | `moe/moe_model.py`, `moe/experts/*`, `moe/gating/*` | Core MoE implementation with expert models and gating network |
-| **Explainability** | `explainability/shap_explainer.py` | SHAP-based feature importance analysis and visualization |
-| **Validation Framework** | `cli/real_data_commands.py`, `direct_validation_test.py` | Command-line interface and direct test script for comprehensive validation |
-| **Interactive Reporting** | `tests/moe_interactive_report.py`, `tests/*_report.py` | Generates interactive HTML reports with comprehensive visualizations |
+| **Data Preprocessing** | `data_integration/clinical_data_validator.py`, `data_integration/clinical_data_adapter.py` | Validates and preprocesses clinical data, handles datetime features, performs structure validation and quality checks |
+| **Synthetic Data Generation** | `utils/synthetic_patient_data.py`, `utils/enhanced_synthetic_data.py` | Generates synthetic patient data with various drift patterns (sudden, gradual, recurring) for testing and validation |
+| **Real-Synthetic Comparison** | `data_integration/real_synthetic_comparator.py`, `core/enhanced_data_support.py` | Compares real clinical data with synthetic data, computes similarity metrics and visualizations |
+| **MoE Framework** | `moe/moe_model.py`, `moe/experts/*`, `moe/gating/*`, `moe/integration.py` | Core MoE implementation with expert models (physiological, environmental, behavioral, medication), gating network, and integration layer |
+| **Explainability** | `explainability/explainer_factory.py`, `explainability/shap_explainer.py`, `core/confidence_metrics.py` | SHAP-based feature importance analysis, confidence metrics, and visualization components |
+| **Validation Framework** | `cli/real_data_commands.py`, `tests/test_real_data_validation.py`, `tests/moe_validation_runner.py` | Command-line interface and test scripts for comprehensive validation with both synthetic and real data |
+| **Interactive Reporting** | `tests/moe_interactive_report.py`, `tests/enhanced_data_report.py`, `tests/expert_performance_report.py`, `tests/model_evaluation_report.py`, `tests/clinical_metrics_report.py`, `tests/real_data_validation_report.py` | Generates interactive HTML reports with comprehensive visualizations for different aspects of the system |
 
 ### Data Flow
 
@@ -47,6 +47,50 @@
    - Feature importance rankings
    - Data quality assessments
    - Real vs. synthetic data comparisons
+
+### Implementation Steps
+
+1. **Data Integration Layer**
+   - Implement clinical data validation (`data_integration/clinical_data_validator.py`)
+   - Create synthetic data generation with drift simulation (`utils/synthetic_patient_data.py`, `utils/enhanced_synthetic_data.py`)
+   - Build real-synthetic comparison tools (`data_integration/real_synthetic_comparator.py`, `core/enhanced_data_support.py`)
+   - Develop data preparation utilities (`prepare_enhanced_validation.py`)
+
+2. **MoE Core Framework**
+   - Develop expert models for different data modalities (`moe/experts/*`)
+     - Physiological data experts
+     - Environmental data experts
+     - Behavioral data experts
+     - Medication response experts
+   - Implement gating network for expert weighting (`moe/gating/*`)
+     - Profile-specific expert weighting
+     - Adaptive thresholds based on patient profiles
+   - Create integration layer for combined predictions (`moe/integration.py`)
+   - Implement Meta-Optimizer and Meta-Learner integration (`meta/meta_optimizer.py`, `meta/meta_learner.py`)
+
+3. **Explainability Components**
+   - Implement modular explainability framework (`explainability/explainer_factory.py`)
+   - Create multiple explainer implementations:
+     - SHAP-based explainer (`explainability/shap_explainer.py`)
+     - LIME-based explainer
+     - Feature importance explainer
+   - Develop confidence metrics for predictions (`core/confidence_metrics.py`)
+   - Implement drift explanation components
+     - Feature importance drift visualization
+     - Statistical distribution analysis
+     - Temporal feature importance tracking
+
+4. **Validation Framework**
+   - Build comprehensive test suite (`tests/test_real_data_validation.py`)
+   - Implement command-line interface for validation (`cli/real_data_commands.py`)
+   - Create validation runner (`tests/moe_validation_runner.py`)
+   - Develop interactive reporting system with multiple specialized reports:
+     - Enhanced data report (`tests/enhanced_data_report.py`)
+     - Expert performance report (`tests/expert_performance_report.py`)
+     - Model evaluation report (`tests/model_evaluation_report.py`)
+     - Clinical metrics report (`tests/clinical_metrics_report.py`)
+     - Real data validation report (`tests/real_data_validation_report.py`)
+     - Main interactive report (`tests/moe_interactive_report.py`)
 
 ## Implementation Details
 
@@ -98,37 +142,69 @@ The system is designed for flexible deployment:
 
 ### MoE Validation Framework
 
-The MoE validation framework can be run using the following command:
+The MoE validation framework can be run using the following commands, depending on your specific needs:
+
+#### 1. Running with Synthetic Data
+
+To run the validation framework with synthetic data, use:
 
 ```bash
-python main_v2.py moe_validation [options]
+python -m tests.moe_validation_runner [options]
 ```
 
-#### Available Options
+**Available Options:**
 
 | Option | Description |
 |--------|-------------|
-| `--components` | Components to validate. Choose from: meta_optimizer, meta_learner, drift, explainability, gating, integrated, explain_drift, all |
+| `--output_dir` | Directory to save results (default: ./output/moe_validation) |
+| `--drift_type` | Type of drift to simulate (sudden, gradual, recurring, none) |
 | `--interactive` | Generate an interactive HTML report |
-| `--results-dir` | Directory to save results (default: ./results/moe_validation) |
-| `--explainers` | Explainers to use. Choose from: shap, lime, feature_importance, optimizer_explainer, all |
-| `--enable-continuous-explain` | Enable continuous explainability during validation |
+| `--explainers` | Explainers to use (shap, lime, feature_importance, all) |
 
-#### Example Commands
+**Example Commands:**
 
-**Basic validation with all components:**
 ```bash
-python main_v2.py moe_validation --components all --interactive
+# Run with sudden drift and generate interactive report
+python -m tests.moe_validation_runner --drift_type sudden --output_dir ./output/moe_validation --interactive
+
+# Run with gradual drift and all explainers
+python -m tests.moe_validation_runner --drift_type gradual --explainers all --output_dir ./output/custom_results
 ```
 
-**Validation with specific components:**
+#### 2. Running with Real Data
+
+To validate the framework with real clinical data, use:
+
 ```bash
-python main_v2.py moe_validation --components meta_optimizer meta_learner --interactive
+python -m tests.test_real_data_validation [options]
 ```
 
-**Validation with custom results directory:**
+Or use the CLI command interface:
+
 ```bash
-python main_v2.py moe_validation --components all --results-dir "./results/moe_validation_$(date +%Y%m%d_%H%M%S)" --interactive
+python -m cli.real_data_commands --clinical_data [data_path] [options]
+```
+
+**Available Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--clinical_data` | Path to real clinical data file |
+| `--data_format` | Format of the data file (csv, json, excel) |
+| `--config` | Path to configuration file |
+| `--target_column` | Name of the target column in the data |
+| `--output_dir` | Directory to save results |
+| `--synthetic_compare` | Enable comparison with synthetic data |
+| `--drift_type` | Type of drift to simulate in synthetic comparison |
+
+**Example Commands:**
+
+```bash
+# Run validation with real clinical data
+python -m cli.real_data_commands --clinical_data ./data/clinical_data.csv --data_format csv --target_column migraine_severity --output_dir ./output/real_data_validation
+
+# Run validation with comparison to synthetic data
+python -m cli.real_data_commands --clinical_data ./data/clinical_data.csv --synthetic_compare --drift_type sudden
 ```
 
 ### Visualizing Results
