@@ -1,0 +1,165 @@
+{
+  "version": 19,
+  "core_features": [
+    "sleep_hours",
+    "stress_level",
+    "weather_pressure",
+    "heart_rate",
+    "hormonal_level"
+  ],
+  "target": "migraine_occurred",
+  "optional_features": [
+    "screen_time_hours",
+    "hydration_ml",
+    "caffeine_mg",
+    "weight_kg",
+    "activity_minutes",
+    "patient_id",
+    "date",
+    "migraine_probability"
+  ],
+  "derived_features": {
+    "stress_per_sleep": "df['stress_level']/df['sleep_hours']",
+    "hydration_per_kg": "df['hydration_ml']/(df['weight_kg']+0.001)",
+    "stress_per_activity": "df['stress_level']/(df['activity_minutes']+0.1)",
+    "hydration_efficiency": "df['hydration_ml']/df['sleep_hours']",
+    "stress_activity_ratio": "df['stress_level']/df['activity_minutes']"
+  },
+  "transformations": {},
+  "history": [
+    {
+      "version": 2,
+      "action": "add_columns",
+      "columns": [
+        "screen_time_hours",
+        "hydration_ml",
+        "caffeine_mg",
+        "weight_kg",
+        "activity_minutes"
+      ],
+      "timestamp": "2025-03-05T11:27:43.104111"
+    },
+    {
+      "version": 3,
+      "action": "add_derived_feature",
+      "feature": "stress_per_sleep",
+      "formula": "df['stress_level']/df['sleep_hours']",
+      "timestamp": "2025-03-05T11:27:44.616577"
+    },
+    {
+      "version": 4,
+      "action": "add_derived_feature",
+      "feature": "hydration_per_kg",
+      "formula": "df['hydration_ml']/(df['weight_kg']+0.001)",
+      "timestamp": "2025-03-05T11:27:44.616998"
+    },
+    {
+      "version": 5,
+      "action": "add_derived_feature",
+      "feature": "stress_per_sleep",
+      "formula": "df['stress_level']/df['sleep_hours']",
+      "timestamp": "2025-03-05T12:40:28.148531"
+    },
+    {
+      "version": 6,
+      "action": "add_derived_feature",
+      "feature": "hydration_per_kg",
+      "formula": "df['hydration_ml']/(df['weight_kg']+0.001)",
+      "timestamp": "2025-03-05T12:40:28.148844"
+    },
+    {
+      "version": 7,
+      "action": "add_derived_feature",
+      "feature": "stress_per_sleep",
+      "formula": "df['stress_level']/df['sleep_hours']",
+      "timestamp": "2025-03-05T12:45:04.250187"
+    },
+    {
+      "version": 8,
+      "action": "add_derived_feature",
+      "feature": "hydration_per_kg",
+      "formula": "df['hydration_ml']/(df['weight_kg']+0.001)",
+      "timestamp": "2025-03-05T12:45:04.250524"
+    },
+    {
+      "version": 9,
+      "action": "add_derived_feature",
+      "feature": "stress_per_sleep",
+      "formula": "df['stress_level']/df['sleep_hours']",
+      "timestamp": "2025-03-05T12:46:22.722925"
+    },
+    {
+      "version": 10,
+      "action": "add_derived_feature",
+      "feature": "hydration_per_kg",
+      "formula": "df['hydration_ml']/(df['weight_kg']+0.001)",
+      "timestamp": "2025-03-05T12:46:22.723234"
+    },
+    {
+      "version": 11,
+      "action": "add_derived_feature",
+      "feature": "stress_per_sleep",
+      "formula": "df['stress_level']/df['sleep_hours']",
+      "timestamp": "2025-03-05T12:47:16.349598"
+    },
+    {
+      "version": 12,
+      "action": "add_derived_feature",
+      "feature": "hydration_per_kg",
+      "formula": "df['hydration_ml']/(df['weight_kg']+0.001)",
+      "timestamp": "2025-03-05T12:47:16.349944"
+    },
+    {
+      "version": 13,
+      "action": "add_derived_feature",
+      "feature": "stress_per_sleep",
+      "formula": "df['stress_level']/df['sleep_hours']",
+      "timestamp": "2025-03-05T12:58:31.716392"
+    },
+    {
+      "version": 14,
+      "action": "add_derived_feature",
+      "feature": "hydration_per_kg",
+      "formula": "df['hydration_ml']/(df['weight_kg']+0.001)",
+      "timestamp": "2025-03-05T12:58:31.716722"
+    },
+    {
+      "version": 15,
+      "action": "add_columns",
+      "columns": [
+        "patient_id",
+        "date",
+        "migraine_probability"
+      ],
+      "timestamp": "2025-03-05T13:01:25.572929"
+    },
+    {
+      "version": 16,
+      "action": "add_derived_feature",
+      "feature": "stress_per_activity",
+      "formula": "df['stress_level']/(df['activity_minutes']+0.1)",
+      "timestamp": "2025-03-05T13:01:25.573175"
+    },
+    {
+      "version": 17,
+      "action": "add_derived_feature",
+      "feature": "hydration_efficiency",
+      "formula": "df['hydration_ml']/df['sleep_hours']",
+      "timestamp": "2025-03-05T13:01:25.573339"
+    },
+    {
+      "version": 18,
+      "action": "add_derived_feature",
+      "feature": "stress_per_activity",
+      "formula": "df['stress_level']/(df['activity_minutes']+0.1)",
+      "timestamp": "2025-03-05T13:01:46.515214"
+    },
+    {
+      "version": 19,
+      "action": "add_derived_feature",
+      "feature": "stress_activity_ratio",
+      "formula": "df['stress_level']/df['activity_minutes']",
+      "timestamp": "2025-03-05T13:02:32.647177"
+    }
+  ]
+}

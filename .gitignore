@@ -26,6 +26,24 @@ venv_migraine/
 ENV/
 env/
 .env
+.env.*
+.venv/
+.venv_minimal/
+
+# Results and Test Data
+results/
+test_data/
+*.html
+*.png
+*.csv
+*.json
+env.bak/
+venv.bak/
+.python-version
+pyvenv.cfg
+pip-log.txt
+pip-delete-this-directory.txt
+pipenv-*.log
 
 # IDE
 .idea/
@@ -64,13 +82,50 @@ wheels/
 *.sqlite
 *.db
 
+# JSON files - temporarily commented out for testing
+# *.json
+# **/*.json
+
+# CSV files - temporarily commented out for testing
+# *.csv
+# **/*.csv
+
+# Binary files
+*.pkl
+*.joblib
+*.bin
+*.model
+*.pb
+
+# Text output files
+*.txt
+**/*.txt
+
+# MLflow
+mlruns/
+
 # Results and output
-results/
+# results/  # Temporarily allowing access to validation reports
 plots/
+
+# Image files
 *.png
+**/*.png
 *.jpg
+**/*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.ico
 *.pdf
+
+# HTML files
 *.html
+# Allow specific HTML files and directories that should be tracked
+!app/templates/**/*.html
+!blast_radius_analysis/*.html
+!docs/**/*.html
 
 # OS specific
 .DS_Store
@@ -80,3 +135,29 @@ plots/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Local development
+*.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Cache directories
+.cache/
+.mypy_cache/
+.dmypy_cache/
+.dmypy.json
+dmypy.json
+
+# Explainability artifacts
+explainability/temp/
+*.shap
+*.lime
+
+# Visualization artifacts
+diagram.svg
+diagram-*.svg
+*.dot
+graph_cache/

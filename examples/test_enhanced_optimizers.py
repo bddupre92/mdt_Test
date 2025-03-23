@@ -17,6 +17,7 @@ from optimizers.gwo import GreyWolfOptimizer
 from optimizers.es import EvolutionStrategyOptimizer
 from optimizers.aco import AntColonyOptimizer
 from meta.meta_optimizer import MetaOptimizer
+from utils.plot_utils import save_plot
 
 # Test functions
 def rosenbrock(x: np.ndarray) -> float:
@@ -120,7 +121,7 @@ class OptimizationExperiment:
         plt.title(f'{func_name} - {optimizer_name} Convergence')
         plt.legend()
         plt.grid(True)
-        plt.savefig(self.results_dir / f'{func_name}_{optimizer_name}_run{run+1}.png')
+        save_plot(plt.gcf(), f'{func_name}_{optimizer_name}_run{run+1}.png', plot_type='benchmarks')
         plt.close()
         
         # Update meta-optimizer

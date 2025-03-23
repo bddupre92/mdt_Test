@@ -15,16 +15,6 @@ from app.core.data.drift import DriftDetector
 from app.core.models.database import DiaryEntry, Prediction, User
 
 class TestEnvironment:
-    def __init__(self, data_dir: Path):
-        """Initialize test environment."""
-        self.data_dir = data_dir
-        self.test_generator = TestDataGenerator(seed=42)
-        self.drift_detector = DriftDetector()
-        
-        # Create directories
-        self.data_dir.mkdir(exist_ok=True)
-        (self.data_dir / 'results').mkdir(exist_ok=True)
-    
     def generate_patient_data(self, n_days: int, include_drift: bool = False) -> pd.DataFrame:
         """Generate patient data."""
         return self.test_generator.generate_time_series(

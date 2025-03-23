@@ -1,0 +1,13 @@
+{
+  "name": "dataset-test",
+  "version": "1.0.0",
+  "description": "Test script for dataset functions",
+  "main": "test-datasets.js",
+  "type": "module",
+  "scripts": {
+    "test": "node test-datasets.js"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.0"
+  }
+} 

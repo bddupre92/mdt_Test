@@ -1,0 +1,86 @@
+{
+  "summary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "errors": 0,
+    "pass_rate": 1.0
+  },
+  "results": {
+    "ECG_adapter_small_data": {
+      "status": "pass",
+      "metrics": {
+        "execution_time": 0.0125441940035671,
+        "memory_used": 0.0
+      },
+      "performance": {
+        "mean_execution_time": 0.0125441940035671,
+        "std_execution_time": 1.100566453890704e-05,
+        "min_execution_time": 0.012531166008557193,
+        "max_execution_time": 0.012558082991745323,
+        "throughput": 79.71815484642835,
+        "coefficient_variation": 0.0008773512699004369,
+        "runs": 3,
+        "memory_before_mb": 279.65625,
+        "memory_after_mb": 279.65625,
+        "memory_used_mb": 0.0,
+        "memory_efficiency": Infinity,
+        "execution_time": 0.100285
+      },
+      "details": {
+        "data_size": 1000,
+        "sampling_rate": 250
+      }
+    },
+    "ECG_adapter_medium_data": {
+      "status": "pass",
+      "metrics": {
+        "execution_time": 0.10356143066504349,
+        "memory_used": 0.0
+      },
+      "performance": {
+        "mean_execution_time": 0.10356143066504349,
+        "std_execution_time": 0.002154505884858219,
+        "min_execution_time": 0.10051450000901241,
+        "max_execution_time": 0.10508679199847393,
+        "throughput": 9.656104532143583,
+        "coefficient_variation": 0.02080413403930947,
+        "runs": 3,
+        "memory_before_mb": 279.671875,
+        "memory_after_mb": 279.671875,
+        "memory_used_mb": 0.0,
+        "memory_efficiency": Infinity,
+        "execution_time": 0.571579
+      },
+      "details": {
+        "data_size": 10000,
+        "sampling_rate": 250
+      }
+    },
+    "ECG_adapter_large_data": {
+      "status": "pass",
+      "metrics": {
+        "execution_time": 0.5050655556648659,
+        "memory_used": 0.0
+      },
+      "performance": {
+        "mean_execution_time": 0.5050655556648659,
+        "std_execution_time": 4.997566711169715e-06,
+        "min_execution_time": 0.5050585830031196,
+        "max_execution_time": 0.5050700419960776,
+        "throughput": 1.9799409973297522,
+        "coefficient_variation": 9.894887218335336e-06,
+        "runs": 3,
+        "memory_before_mb": 279.671875,
+        "memory_after_mb": 279.671875,
+        "memory_used_mb": 0.0,
+        "memory_efficiency": Infinity,
+        "execution_time": 2.577638
+      },
+      "details": {
+        "data_size": 50000,
+        "sampling_rate": 250
+      }
+    }
+  }
+}

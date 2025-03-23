@@ -1,0 +1,26 @@
+{
+  "benchmark_id": "sphere_2d_run0",
+  "optimizer_id": "AntColonyAdapter",
+  "params": {
+    "dimension": 2,
+    "max_evaluations": 1000,
+    "bounds": [
+      -5.0,
+      5.0
+    ],
+    "run": 0
+  },
+  "runtime": 0.01517486572265625,
+  "function_evaluations": 1000,
+  "best_fitness": 0.6925207756232693,
+  "best_position": [
+    -0.7894736842105265,
+    -0.2631578947368425
+  ],
+  "convergence": [
+    0.6925207756232693
+  ],
+  "success": true,
+  "error": null,
+  "timestamp": "2025-03-14T22:42:55.952203"
+}

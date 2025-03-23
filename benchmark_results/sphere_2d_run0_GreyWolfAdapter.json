@@ -1,0 +1,26 @@
+{
+  "benchmark_id": "sphere_2d_run0",
+  "optimizer_id": "GreyWolfAdapter",
+  "params": {
+    "dimension": 2,
+    "max_evaluations": 1000,
+    "bounds": [
+      -5.0,
+      5.0
+    ],
+    "run": 0
+  },
+  "runtime": 0.011487245559692383,
+  "function_evaluations": 1000,
+  "best_fitness": 2.2855576362827772e-26,
+  "best_position": [
+    -1.3059441997710482e-13,
+    -7.616215486494155e-14
+  ],
+  "convergence": [
+    2.2855576362827772e-26
+  ],
+  "success": true,
+  "error": null,
+  "timestamp": "2025-03-14T22:42:55.963864"
+}

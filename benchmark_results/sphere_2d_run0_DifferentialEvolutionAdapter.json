@@ -1,0 +1,26 @@
+{
+  "benchmark_id": "sphere_2d_run0",
+  "optimizer_id": "DifferentialEvolutionAdapter",
+  "params": {
+    "dimension": 2,
+    "max_evaluations": 1000,
+    "bounds": [
+      -5.0,
+      5.0
+    ],
+    "run": 0
+  },
+  "runtime": 0.020941972732543945,
+  "function_evaluations": 1000,
+  "best_fitness": 9.43436124638855e-05,
+  "best_position": [
+    0.008784224617780514,
+    0.004144998230188317
+  ],
+  "convergence": [
+    9.43436124638855e-05
+  ],
+  "success": true,
+  "error": null,
+  "timestamp": "2025-03-14T22:42:55.931926"
+}

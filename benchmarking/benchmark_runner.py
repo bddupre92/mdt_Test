@@ -19,10 +19,10 @@ from pymoo.algorithms.soo.nonconvex.cmaes import CMAES
 from pymoo.optimize import minimize
 
 from benchmarking.test_functions import TEST_FUNCTIONS, MLTestFunctions
-from optimizers.base import BaseOptimizer
+from optimizers.base_optimizer import BaseOptimizer
 from optimizers.aco import AntColonyOptimizer
 from optimizers.gwo import GreyWolfOptimizer
-from optimizers.es import EvolutionStrategy
+from optimizers.es import EvolutionStrategyOptimizer as EvolutionStrategy
 from optimizers.de import DifferentialEvolutionOptimizer
 from meta.meta_optimizer import MetaOptimizer
 

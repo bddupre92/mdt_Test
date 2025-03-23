@@ -1,23 +1,19 @@
-"""
-Database configuration.
-"""
-from typing import Generator
-from sqlalchemy import create_engine, MetaData
-from sqlalchemy.orm import declarative_base, Session, sessionmaker
+"""Database configuration for the application."""
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
-from app.core.config.settings import Settings
+SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 
-# Create a new MetaData instance
-metadata = MetaData()
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Create Base with the new MetaData
 Base = declarative_base()
 
-def get_db() -> Generator[Session, None, None]:
+def get_db():
     """Get database session."""
-    settings = Settings()
-    engine = create_engine(settings.DATABASE_URL or "sqlite:///./test.db")
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionLocal()
     try:
         yield db

@@ -133,6 +133,33 @@ class SelectionTracker:
             
         return correlations
         
+    def update_correlations(self, problem_type: str, optimizer_states: Dict[str, Any]) -> None:
+        """
+        Update correlations between optimizer states and performance.
+        
+        Args:
+            problem_type: Type of problem
+            optimizer_states: Dictionary of optimizer states
+        """
+        # Extract state metrics for correlation analysis
+        for optimizer, state in optimizer_states.items():
+            state_dict = state.to_dict() if hasattr(state, 'to_dict') else state
+            
+            # Record the state metrics for this optimizer
+            if problem_type not in self.selections:
+                self.selections[problem_type] = []
+                
+            # Find the last entry for this optimizer if it exists
+            for entry in reversed(self.selections[problem_type]):
+                if entry['optimizer'] == optimizer:
+                    # Update with state metrics
+                    entry['state_metrics'] = state_dict
+                    break
+        
+        # Save updated data
+        if self.tracker_file:
+            self.save_data()
+            
     def save_data(self) -> None:
         """Save selection data to file."""
         if self.tracker_file:

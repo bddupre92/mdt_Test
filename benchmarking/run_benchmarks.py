@@ -14,54 +14,74 @@ import seaborn as sns
 from benchmark_runner import BenchmarkRunner
 from optimizers.aco import AntColonyOptimizer
 from optimizers.gwo import GreyWolfOptimizer
-from optimizers.es import EvolutionStrategy
+from optimizers.es import EvolutionStrategyOptimizer
 from optimizers.de import DifferentialEvolutionOptimizer
 from data.generate_synthetic import generate_synthetic_data
 from data.preprocessing import preprocess_data
 from data.domain_knowledge import add_migraine_features
+from utils.plot_utils import save_plot
 
 def plot_convergence(results_df, save_path='benchmark_results'):
     """Plot convergence curves for each optimizer"""
-    os.makedirs(save_path, exist_ok=True)
-    
+    # Create figure
     g = sns.FacetGrid(results_df, col="function", row="dimension", hue="optimizer")
     g.map(plt.plot, "evaluations", "best_score")
     g.add_legend()
-    plt.savefig(f"{save_path}/convergence.png")
+    
+    # Save figure using save_plot
+    fig = plt.gcf()
+    filename = f"{os.path.basename(save_path)}_convergence.png"
+    save_plot(fig, filename, plot_type='benchmarks')
     plt.close()
 
 def plot_boxplots(results_df, save_path='benchmark_results'):
     """Plot boxplots of final scores"""
-    os.makedirs(save_path, exist_ok=True)
-    
+    # Create figure
     plt.figure(figsize=(12, 6))
     sns.boxplot(data=results_df, x="optimizer", y="best_score", hue="function")
     plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.savefig(f"{save_path}/scores_boxplot.png")
+    
+    # Save figure using save_plot
+    fig = plt.gcf()
+    filename = f"{os.path.basename(save_path)}_boxplot.png"
+    save_plot(fig, filename, plot_type='benchmarks')
     plt.close()
 
 def main():
-    # Define optimizers
-    optimizers = {
-        'ACO': AntColonyOptimizer,
-        'GWO': GreyWolfOptimizer,
-        'ES': EvolutionStrategy,
-        'DE': DifferentialEvolutionOptimizer
-    }
+    # Define optimizers with default parameters for 2D
+    dim = 2
+    bounds = [(-5.0, 5.0)] * dim
     
-    # 1. Run theoretical benchmarks
+    optimizers = [
+        AntColonyOptimizer(dim=dim, bounds=bounds),
+        GreyWolfOptimizer(dim=dim, bounds=bounds),
+        EvolutionStrategyOptimizer(dim=dim, bounds=bounds),
+        DifferentialEvolutionOptimizer(dim=dim, bounds=bounds)
+    ]
+    
+    # Create benchmark runner
+    runner = BenchmarkRunner(
+        optimizers=optimizers,
+        n_runs=5,  # Use fewer runs for testing
+        max_evaluations=1000  # Use fewer evaluations for testing
+    )
+    
+    # Run theoretical benchmarks
     print("Running theoretical benchmarks...")
-    runner = BenchmarkRunner(optimizers, dimensions=[2, 10, 30], n_trials=30)
-    results_df, stats = runner.run_benchmarks()
+    
+    # Run benchmarks
+    results = runner.run_theoretical_benchmarks()
     
     # Save results
-    results_df.to_csv('benchmark_results/theoretical_results.csv')
-    stats.to_csv('benchmark_results/theoretical_stats.csv')
+    os.makedirs('results/benchmarks', exist_ok=True)
+    results.to_csv('results/benchmarks/benchmark_results.csv', index=False)
     
-    # Generate plots
-    plot_convergence(results_df)
-    plot_boxplots(results_df)
+    # Plot results
+    plot_convergence(results, 'results/benchmarks')
+    plot_boxplots(results, 'results/benchmarks')
+    
+    print("Benchmarks completed. Results saved to results/benchmarks/")
     
     # 2. Run ML benchmarks with larger synthetic dataset
     print("\nGenerating larger synthetic dataset...")
@@ -96,7 +116,7 @@ def main():
     # Print summary
     print("\nResults Summary:")
     print("\nTheoretical Benchmarks:")
-    print(stats.to_string())
+    print(results.to_string())
     
     print("\nML Benchmarks:")
     print(ml_results.to_string())

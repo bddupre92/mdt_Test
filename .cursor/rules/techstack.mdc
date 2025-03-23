@@ -1,0 +1,15 @@
+---
+description: This is the projects tech stack
+globs: 
+alwaysApply: true
+---
+
+# Your rule content
+
+- Python for the backend
+- html/js for the frontend
+- SQL Databawse is preferred, rarely use JSON unless absolutely necessary
+- Separate databases for dev, test, prod
+- Elasticsearch for search, using elastic.co hostin
+- Elastic.co will have dev and prod indexed
+- Python Tests
