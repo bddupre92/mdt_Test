@@ -104,133 +104,148 @@ class BehavioralExpert(BaseExpert):
             'domain': 'behavioral'
         })
     
-    def preprocess_data(self, data) -> pd.DataFrame:
+    def preprocess_data(self, X):
         """
-        Preprocess the input data for behavioral analysis.
+        Preprocess behavioral data with robust error handling.
         
         Args:
-            data: Input data containing behavioral factors (pandas DataFrame or numpy array)
+            X: Input features DataFrame
             
         Returns:
-            Preprocessed data with extracted behavioral features
+            Preprocessed DataFrame
         """
-        # Check if the input data is a pandas DataFrame or a numpy array
-        if isinstance(data, np.ndarray):
-            # For numpy arrays during optimization, just return the array as is
-            # This is a simplified approach for use during optimization
-            return data
-        
-        # For pandas DataFrames, apply the full preprocessing pipeline
-        # Create a copy of the input data
-        processed_data = data.copy()
-        
-        # Extract time-based features
-        if isinstance(processed_data, pd.DataFrame) and self.timestamp_col in processed_data.columns:
-            # Convert timestamp to datetime if it's not already
-            if not pd.api.types.is_datetime64_any_dtype(processed_data[self.timestamp_col]):
-                processed_data[self.timestamp_col] = pd.to_datetime(processed_data[self.timestamp_col])
+        try:
+            X = X.copy()
             
-            # Extract day of week, hour of day
-            processed_data['day_of_week'] = processed_data[self.timestamp_col].dt.dayofweek
-            processed_data['is_weekend'] = processed_data['day_of_week'].isin([5, 6]).astype(int)
-            processed_data['hour_of_day'] = processed_data[self.timestamp_col].dt.hour
+            # Add missing behavioral columns with default values
+            default_columns = {
+                'sleep_duration': 7.0,  # hours
+                'sleep_quality': 'medium',
+                'activity_level': 'moderate',
+                'stress_level': 'medium',
+                'mood': 'neutral',
+                'social_interaction': 'moderate'
+            }
+            
+            for col, default_val in default_columns.items():
+                if col not in X.columns:
+                    logger.info(f"Adding missing column {col} with default value {default_val}")
+                    X[col] = default_val
+            
+            # Handle categorical columns
+            categorical_mappings = {
+                'sleep_quality': {'poor': 0, 'medium': 0.5, 'good': 1.0, 'unknown': 0.5},
+                'activity_level': {'sedentary': 0, 'light': 0.25, 'moderate': 0.5, 'vigorous': 1.0, 'unknown': 0.5},
+                'stress_level': {'low': 0, 'medium': 0.5, 'high': 1.0, 'unknown': 0.5},
+                'mood': {'negative': 0, 'neutral': 0.5, 'positive': 1.0, 'unknown': 0.5},
+                'social_interaction': {'low': 0, 'moderate': 0.5, 'high': 1.0, 'unknown': 0.5}
+            }
+            
+            for col, mapping in categorical_mappings.items():
+                if col in X.columns:
+                    try:
+                        # Convert to lowercase and replace unknown values
+                        X[col] = X[col].astype(str).str.lower()
+                        X[col] = X[col].replace(['nan', 'none', 'null', ''], 'unknown')
+                        
+                        # Map categories to numeric values
+                        X[col] = X[col].map(mapping)
+                        
+                        # Fill any remaining unknown values with median
+                        median = X[col].median()
+                        if pd.isna(median):
+                            median = 0.5  # Default to middle value
+                        X[col] = X[col].fillna(median)
+                        
+                        logger.info(f"Processed {col}: unique values = {X[col].unique()}")
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing {col}: {str(e)}")
+                        X[col] = mapping.get('unknown', 0.5)
+            
+            # Handle numeric columns
+            numeric_columns = {
+                'sleep_duration': (0, 24),  # hours
+                'physical_activity_minutes': (0, 1440),  # minutes per day
+                'screen_time': (0, 1440),  # minutes per day
+                'meditation_minutes': (0, 480),  # minutes per day
+                'water_intake': (0, 5000)  # ml per day
+            }
+            
+            for col, (min_val, max_val) in numeric_columns.items():
+                if col in X.columns:
+                    try:
+                        # Convert to numeric, coercing errors to NaN
+                        X[col] = pd.to_numeric(X[col], errors='coerce')
+                        
+                        # Fill missing values with median
+                        median = X[col].median()
+                        if pd.isna(median):
+                            median = (min_val + max_val) / 2  # Use middle of range
+                        X[col] = X[col].fillna(median)
+                        
+                        # Clip to reasonable ranges
+                        X[col] = X[col].clip(min_val, max_val)
+                        
+                        logger.info(f"Processed {col}: range [{X[col].min():.1f}, {X[col].max():.1f}]")
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing {col}: {str(e)}")
+                        X[col] = (min_val + max_val) / 2
+            
+            # Extract time-based features if timestamp is available
+            if 'timestamp' in X.columns:
+                try:
+                    time_features = self._extract_time_features(X['timestamp'])
+                    X = pd.concat([X, time_features], axis=1)
+                    X = X.drop('timestamp', axis=1)
+                except Exception as e:
+                    logger.error(f"Error extracting time features: {str(e)}")
+            
+            # Store feature columns for importance calculation
+            self.feature_columns = list(X.columns)
+            
+            return X
+            
+        except Exception as e:
+            logger.error(f"Error in preprocess_data: {str(e)}")
+            return X
+    
+    def _extract_time_features(self, timestamp_series):
+        """Extract time-based features from timestamp."""
+        try:
+            # Convert to datetime if needed
+            if not pd.api.types.is_datetime64_any_dtype(timestamp_series):
+                timestamp_series = pd.to_datetime(timestamp_series)
+            
+            # Extract basic time features
+            time_features = pd.DataFrame()
+            time_features['hour'] = timestamp_series.dt.hour
+            time_features['day_of_week'] = timestamp_series.dt.dayofweek
             
             # Create time of day categories
-            conditions = [
-                (processed_data['hour_of_day'] >= 5) & (processed_data['hour_of_day'] < 12),
-                (processed_data['hour_of_day'] >= 12) & (processed_data['hour_of_day'] < 17),
-                (processed_data['hour_of_day'] >= 17) & (processed_data['hour_of_day'] < 22),
-                (processed_data['hour_of_day'] >= 22) | (processed_data['hour_of_day'] < 5)
-            ]
-            categories = ['morning', 'afternoon', 'evening', 'night']
-            processed_data['time_of_day'] = np.select(conditions, categories, default='unknown')
+            def get_time_of_day(hour):
+                if 5 <= hour < 12:
+                    return 'morning'
+                elif 12 <= hour < 17:
+                    return 'afternoon'
+                elif 17 <= hour < 22:
+                    return 'evening'
+                else:
+                    return 'night'
+            
+            time_features['time_of_day'] = time_features['hour'].apply(get_time_of_day)
             
             # One-hot encode time of day
-            for category in categories:
-                processed_data[f'time_of_day_{category}'] = (processed_data['time_of_day'] == category).astype(int)
-        
-        # Process sleep features
-        if self.include_sleep:
-            sleep_cols = [col for col in self.behavior_cols if 'sleep' in col.lower()]
-            if sleep_cols:
-                # Calculate sleep quality score if multiple sleep metrics are available
-                if len(sleep_cols) > 1:
-                    # Normalize sleep columns to 0-1 range
-                    sleep_normalized = processed_data[sleep_cols].copy()
-                    for col in sleep_cols:
-                        if processed_data[col].max() > processed_data[col].min():
-                            sleep_normalized[col] = (processed_data[col] - processed_data[col].min()) / (processed_data[col].max() - processed_data[col].min())
-                    
-                    # Calculate sleep quality score (average of normalized metrics)
-                    processed_data['sleep_quality_score'] = sleep_normalized.mean(axis=1)
-                
-                # Calculate sleep consistency if timestamp is available
-                if self.timestamp_col in processed_data.columns and self.patient_id_col in processed_data.columns:
-                    # Group by patient
-                    for patient_id, patient_data in processed_data.groupby(self.patient_id_col):
-                        if 'sleep_duration' in processed_data.columns:
-                            # Calculate rolling mean and std of sleep duration
-                            sleep_mean = patient_data['sleep_duration'].rolling(window=7, min_periods=1).mean()
-                            sleep_std = patient_data['sleep_duration'].rolling(window=7, min_periods=1).std()
-                            
-                            # Calculate sleep consistency (1 - normalized std)
-                            sleep_consistency = 1 - (sleep_std / sleep_mean).fillna(0).clip(0, 1)
-                            
-                            # Add to processed data
-                            processed_data.loc[patient_data.index, 'sleep_consistency'] = sleep_consistency
-        
-        # Process activity features
-        if self.include_activity:
-            activity_cols = [col for col in self.behavior_cols if 'activity' in col.lower() or 'exercise' in col.lower()]
-            if activity_cols:
-                # Calculate activity level score if multiple activity metrics are available
-                if len(activity_cols) > 1:
-                    # Normalize activity columns to 0-1 range
-                    activity_normalized = processed_data[activity_cols].copy()
-                    for col in activity_cols:
-                        if processed_data[col].max() > processed_data[col].min():
-                            activity_normalized[col] = (processed_data[col] - processed_data[col].min()) / (processed_data[col].max() - processed_data[col].min())
-                    
-                    # Calculate activity level score (average of normalized metrics)
-                    processed_data['activity_level_score'] = activity_normalized.mean(axis=1)
-                
-                # Calculate activity consistency if timestamp is available
-                if self.timestamp_col in processed_data.columns and self.patient_id_col in processed_data.columns:
-                    for patient_id, patient_data in processed_data.groupby(self.patient_id_col):
-                        if activity_cols:
-                            # Use the first activity column for consistency calculation
-                            activity_col = activity_cols[0]
-                            
-                            # Calculate rolling mean and std of activity
-                            activity_mean = patient_data[activity_col].rolling(window=7, min_periods=1).mean()
-                            activity_std = patient_data[activity_col].rolling(window=7, min_periods=1).std()
-                            
-                            # Calculate activity consistency (1 - normalized std)
-                            activity_consistency = 1 - (activity_std / activity_mean).fillna(0).clip(0, 1)
-                            
-                            # Add to processed data
-                            processed_data.loc[patient_data.index, 'activity_consistency'] = activity_consistency
-        
-        # Process stress features
-        if self.include_stress:
-            stress_cols = [col for col in self.behavior_cols if 'stress' in col.lower() or 'anxiety' in col.lower()]
-            if stress_cols:
-                # Calculate stress level score if multiple stress metrics are available
-                if len(stress_cols) > 1:
-                    # Normalize stress columns to 0-1 range
-                    stress_normalized = processed_data[stress_cols].copy()
-                    for col in stress_cols:
-                        if processed_data[col].max() > processed_data[col].min():
-                            stress_normalized[col] = (processed_data[col] - processed_data[col].min()) / (processed_data[col].max() - processed_data[col].min())
-                    
-                    # Calculate stress level score (average of normalized metrics)
-                    processed_data['stress_level_score'] = stress_normalized.mean(axis=1)
-        
-        # Log the preprocessing results
-        logger.info(f"Preprocessed data shape: {processed_data.shape}")
-        logger.info(f"Added features: {set(processed_data.columns) - set(data.columns)}")
-        
-        return processed_data
+            time_of_day_dummies = pd.get_dummies(time_features['time_of_day'], prefix='time_of_day')
+            time_features = pd.concat([time_features, time_of_day_dummies], axis=1)
+            time_features = time_features.drop('time_of_day', axis=1)
+            
+            return time_features
+            
+        except Exception as e:
+            logger.error(f"Error extracting time features: {str(e)}")
+            return pd.DataFrame()
     
     def extract_features(self, data) -> Tuple[np.ndarray, List[str]]:
         """
@@ -261,12 +276,12 @@ class BehavioralExpert(BaseExpert):
         
         # Include activity features if available
         if self.include_activity:
-            activity_cols = [col for col in data.columns if 'activity' in col.lower() or 'exercise' in col.lower()]
+            activity_cols = [col for col in data.columns if 'activity' in col.lower()]
             feature_cols.extend(activity_cols)
         
         # Include stress features if available
         if self.include_stress:
-            stress_cols = [col for col in data.columns if 'stress' in col.lower() or 'anxiety' in col.lower()]
+            stress_cols = [col for col in data.columns if 'stress' in col.lower()]
             feature_cols.extend(stress_cols)
         
         # Include time-based features if available
@@ -496,88 +511,84 @@ class BehavioralExpert(BaseExpert):
         # Default confidence calculation
         return super()._calculate_confidence(X, predictions, **kwargs)
     
-    def optimize_feature_selection(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> None:
+    def optimize_feature_selection(self, X, y):
         """
         Optimize feature selection using Ant Colony Optimization.
         
         Args:
-            X: Feature data
-            y: Target data
-            **kwargs: Additional keyword arguments
-        """
-        logger.info(f"Optimizing feature selection for {self.name} using Ant Colony Optimization")
-        
-        # Extract all potential features
-        _, all_features = self.extract_features(X)
-        
-        # Define fitness function for feature subset evaluation
-        def fitness_function(feature_mask):
-            # Convert binary mask to feature indices
-            selected_indices = np.where(feature_mask == 1)[0]
+            X: Training features DataFrame
+            y: Target values
             
-            # Skip if no features are selected
-            if len(selected_indices) == 0:
-                return -np.inf
+        Returns:
+            List of selected feature names
+        """
+        try:
+            # Get all feature names
+            feature_names = list(X.columns)
+            n_features = len(feature_names)
+            
+            # Define bounds for binary feature selection
+            bounds = [(0, 1) for _ in range(n_features)]
+            
+            # Define fitness function for feature subset evaluation
+            def fitness_function(solution):
+                try:
+                    # Convert continuous ACO solution to binary
+                    binary_solution = [1 if x > 0.5 else 0 for x in solution]
+                    
+                    # If no features selected, return worst score
+                    if sum(binary_solution) == 0:
+                        return float('inf')
+                    
+                    # Get selected feature indices and names
+                    selected_indices = [i for i, x in enumerate(binary_solution) if x == 1]
+                    selected_features = [feature_names[i] for i in selected_indices]
+                    
+                    # Create model with selected features
+                    X_selected = X[selected_features]
+                    
+                    # Evaluate using cross-validation
+                    model = self._create_model()
+                    scores = cross_val_score(model, X_selected, y, cv=3, scoring='neg_mean_squared_error')
+                    mse = -np.mean(scores)
+                    
+                    # Add penalty for number of features to encourage parsimony
+                    n_selected = len(selected_features)
+                    penalty = 0.1 * n_selected / n_features
+                    
+                    return mse + penalty
+                    
+                except Exception as e:
+                    logger.error(f"Error in feature selection fitness function: {str(e)}")
+                    return float('inf')
+            
+            # Initialize optimizer
+            optimizer = AntColonyAdapter(
+                fitness_function=fitness_function,
+                bounds=bounds,
+                population_size=20,  # number of ants
+                max_iterations=20,
+                alpha=1.0,  # pheromone importance
+                beta=2.0,   # heuristic importance
+                evaporation_rate=0.1
+            )
+            
+            # Run optimization
+            best_solution, best_fitness = optimizer.optimize()
+            
+            # Convert continuous solution to binary
+            binary_solution = [1 if x > 0.5 else 0 for x in best_solution]
             
             # Get selected feature names
-            selected_features = [all_features[i] for i in selected_indices]
+            selected_features = [name for name, selected in zip(feature_names, binary_solution) if selected]
             
-            # Extract selected features
-            X_selected = X[selected_features]
+            # Log results
+            logger.info(f"Selected {len(selected_features)} features: {selected_features}")
+            logger.info(f"Feature selection fitness score: {best_fitness}")
             
-            # Scale features
-            X_scaled = StandardScaler().fit_transform(X_selected)
+            return selected_features
             
-            # Create model
-            model = ExtraTreesRegressor(
-                n_estimators=50,  # Use fewer estimators for faster evaluation
-                max_depth=5,
-                random_state=42
-            )
-            
-            # Perform cross-validation
-            cv_scores = cross_val_score(
-                model, X_scaled, y, 
-                cv=5, 
-                scoring='neg_mean_squared_error'
-            )
-            
-            # Calculate fitness (negative MSE with penalty for too many features)
-            mse = -np.mean(cv_scores)
-            n_features_penalty = 0.001 * len(selected_indices)  # Small penalty for each feature
-            
-            # Return negative fitness (ACO minimizes)
-            return mse + n_features_penalty
-        
-        # Initialize optimizer using the adapter
-        self.optimizer = AntColonyAdapter(
-            fitness_function=fitness_function,
-            bounds=[(0, 1) for _ in range(len(all_features))],  # Binary feature selection bounds
-            population_size=10,  # Equivalent to n_ants
-            max_iterations=20,
-            alpha=1.0,  # Pheromone importance
-            beta=2.0,   # Heuristic importance
-            evaporation_rate=0.1,
-            random_seed=42
-        )
-        
-        # Run optimization
-        best_mask, best_fitness = self.optimizer.optimize()
-        
-        # Convert binary mask to feature names
-        selected_indices = np.where(best_mask == 1)[0]
-        self.selected_features = [all_features[i] for i in selected_indices]
-        
-        # Log optimization results
-        logger.info(f"Selected {len(self.selected_features)} features out of {len(all_features)}")
-        logger.info(f"Selected features: {self.selected_features}")
-        logger.info(f"Best fitness (MSE with penalty): {best_fitness}")
-        
-        # Store optimization results in metadata
-        self.metadata['optimization_results'] = {
-            'n_features_total': len(all_features),
-            'n_features_selected': len(self.selected_features),
-            'selected_features': self.selected_features,
-            'best_fitness': float(best_fitness),
-            'optimizer': 'AntColonyOptimizer'
-        }
+        except Exception as e:
+            logger.error(f"Error in feature selection optimization: {str(e)}")
+            # Return all features if optimization fails
+            return list(X.columns)

@@ -7,6 +7,7 @@ with the integration layer, event system, and state management functionality.
 
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
+import os
 
 import numpy as np
 
@@ -32,49 +33,43 @@ class IntegrationConnector:
     
     def __init__(
         self,
-        integration_layer: Optional[IntegrationLayer] = None,
-        event_manager: Optional[EventManager] = None,
-        state_manager: Optional[StateManager] = None,
+        integration_layer=None,
+        event_manager=None,
+        state_manager=None,
         config: Optional[Dict[str, Any]] = None
     ):
-        """
-        Initialize the integration connector.
+        """Initialize the integration connector.
         
         Args:
-            integration_layer: Integration strategy to use (defaults to WeightedAverageIntegration)
-            event_manager: Event system manager (created if not provided)
-            state_manager: State management system (created if not provided)
-            config: Configuration dictionary
+            integration_layer: Optional custom integration layer
+            event_manager: Optional custom event manager
+            state_manager: Optional custom state manager
+            config: Optional configuration dictionary
         """
         self.config = config or {}
         
-        # Initialize components if not provided
-        integration_config = self.config.get('integration', {})
-        
-        # If integration_layer is provided, use it. Otherwise, create one based on config.
-        if integration_layer:
-            self.integration_layer = integration_layer
+        # Initialize event manager if not provided
+        if event_manager is None:
+            self.event_manager = EventManager()
         else:
-            # Remove the 'method' parameter as it's used for selection, not configuration
-            config_copy = integration_config.copy()
-            config_copy.pop('method', None)
-            self.integration_layer = WeightedAverageIntegration(config=config_copy)
-        
-        self.event_manager = event_manager or EventManager()
-        
-        # Initialize state manager if not provided
-        if state_manager:
-            self.state_manager = state_manager
-        else:
-            # Create a properly formatted config for the state manager
-            state_config = self.config.get('state_management', {})
+            self.event_manager = event_manager
             
-            # Convert checkpoint_dir to base_dir if needed
-            if 'checkpoint_dir' in state_config and 'base_dir' not in state_config:
-                state_config = state_config.copy()
-                state_config['base_dir'] = state_config.pop('checkpoint_dir')
-                
-            self.state_manager = FileSystemStateManager(config=state_config)
+        # Initialize state manager if not provided
+        if state_manager is None:
+            state_config = self.config.get('state_management', {})
+            base_dir = state_config.get('checkpoint_dir', os.path.join(os.getcwd(), 'checkpoints'))
+            self.state_manager = FileSystemStateManager(base_dir=base_dir)
+        else:
+            self.state_manager = state_manager
+            
+        # Initialize integration layer if not provided
+        if integration_layer is None:
+            integration_config = self.config.get('integration', {})
+            self.integration_layer = WeightedAverageIntegration(
+                config=integration_config
+            )
+        else:
+            self.integration_layer = integration_layer
         
         # Register for relevant events
         self._register_event_handlers()

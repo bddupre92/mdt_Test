@@ -60,62 +60,23 @@ def load_workflow_data(tracker_output_dir: str) -> List[WorkflowExecution]:
     
     return workflows
 
-def render_workflow_dashboard(tracker_output_dir: str = "./.workflow_tracking"):
+def render_workflow_dashboard(tracking_dir: str):
     """
-    Render a Streamlit dashboard for visualizing workflow executions.
+    Render the MoE workflow dashboard.
     
     Args:
-        tracker_output_dir: Directory containing workflow data
+        tracking_dir: Directory containing workflow tracking data
     """
-    st.set_page_config(
-        page_title="MoE Framework Workflow Dashboard",
-        page_icon="📊",
-        layout="wide"
-    )
+    # Skip page config as it's now handled in the main dashboard script
     
-    # Custom CSS to improve dashboard appearance
-    st.markdown("""
-    <style>
-    .stApp {
-        max-width: 100%;
-    }
-    .node-details {
-        background-color: #f0f2f6;
-        border-radius: 5px;
-        padding: 10px;
-        margin-bottom: 10px;
-    }
-    .component-label {
-        font-weight: bold;
-        color: #0068c9;
-    }
-    .event-label {
-        font-style: italic;
-        color: #83c9ff;
-    }
-    .title-container {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Dashboard title
-    st.markdown(
-        """
-        <div class="title-container">
-            <h1>MoE Framework Workflow Visualization</h1>
-        </div>
-        """, 
-        unsafe_allow_html=True
-    )
+    # Display header
+    st.title("MoE Framework Workflow Dashboard")
     
     # Load workflow data
-    workflows = load_workflow_data(tracker_output_dir)
+    workflows = load_workflow_data(tracking_dir)
     
     if not workflows:
-        st.warning(f"No workflow data found in {tracker_output_dir}. Run some MoE pipelines with tracking enabled to see visualizations.")
+        st.warning(f"No workflow data found in {tracking_dir}. Run some MoE pipelines with tracking enabled to see visualizations.")
         st.info("Showing a static framework overview instead.")
         
         # Show static framework overview

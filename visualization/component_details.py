@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union, Any
+import logging
 
 # Try to import from local modules
 try:
@@ -38,6 +39,12 @@ except ImportError:
     
     def visualize_moe_integration(*args, **kwargs):
         return None
+
+# Import data utilities
+from visualization.data_utils import load_component_data
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 def load_workflow_data(workflow_id: str = None) -> Dict:
     """
@@ -558,860 +565,862 @@ def render_feature_extraction_details(workflow_data: Dict):
 
 # Add more component render functions here for other pipeline components
 
-def render_component_details(component_name, component_data):
+def render_component_details(component_name: str):
     """
     Render detailed visualizations for a specific pipeline component.
     
     Args:
-        component_name (str): Name of the component to visualize
-        component_data (dict): Data for the component to visualize
+        component_name: Name of the component to display
     """
-    st.markdown(f"## {component_name.replace('_', ' ').title()} Details")
+    # Get data for this component
+    pipeline_id = st.session_state.get('pipeline_id', None)
+    component_data = load_component_data(component_name, pipeline_id)
     
-    # Add tabs for different types of information
-    tabs = st.tabs(["Metrics", "Visualizations", "Data Flow"])
+    # Create tabs for different views
+    overview_tab, metrics_tab, data_tab = st.tabs(["Overview", "Metrics", "Data Flow"])
     
-    # First tab: Metrics
-    with tabs[0]:
+    with overview_tab:
+        render_component_overview(component_name, component_data)
+    
+    with metrics_tab:
         render_component_metrics(component_name, component_data)
     
-    # Second tab: Visualizations
-    with tabs[1]:
-        # Render component-specific visualizations based on component type
-        if component_name == "data_preprocessing":
-            render_data_preprocessing_visualization(component_data)
-        elif component_name == "feature_extraction":
-            render_feature_extraction_visualization(component_data)
-        elif component_name == "missing_data_handling":
-            render_missing_data_visualization(component_data)
-        elif component_name == "expert_training":
-            render_expert_training_visualization(component_data)
-        elif component_name == "gating_network":
-            render_gating_network_visualization(component_data)
-        elif component_name == "moe_integration":
-            render_moe_integration_visualization(component_data)
-        elif component_name == "output_generation":
-            render_output_visualization(component_data)
-        else:
-            st.info(f"No specific visualizations available for {component_name}.")
-    
-    # Third tab: Data Flow
-    with tabs[2]:
-        # Show input and output data
-        if component_data:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("### Input Data")
-                input_data = component_data.get("input", None)
-                if isinstance(input_data, pd.DataFrame):
-                    st.dataframe(input_data.head())
-                elif isinstance(input_data, dict):
-                    st.json(input_data)
-                elif input_data is not None:
-                    st.write(input_data)
-                else:
-                    st.info("No input data available.")
-            
-            with col2:
-                st.markdown("### Output Data")
-                output_data = component_data.get("output", None)
-                if isinstance(output_data, pd.DataFrame):
-                    st.dataframe(output_data.head())
-                elif isinstance(output_data, dict):
-                    st.json(output_data)
-                elif output_data is not None:
-                    st.write(output_data)
-                else:
-                    st.info("No output data available.")
-        else:
-            st.info("No data flow information available for this component.")
+    with data_tab:
+        render_component_data_flow(component_name, component_data)
 
-def render_component_metrics(component_name: str, component_data: dict = None):
+def render_component_overview(component_name: str, component_data: Dict[str, Any]):
     """
-    Render metrics for a specific pipeline component.
+    Render overview information for a component.
     
     Args:
         component_name: Name of the component
-        component_data: Component data if available
+        component_data: Data for this component
     """
-    st.subheader(f"{component_name} Metrics")
-    
-    if component_data is None:
-        st.info("No metrics data available for this component. Run the pipeline first.")
-        return
+    # Component descriptions
+    descriptions = {
+        "data_preprocessing": """
+            The **Data Preprocessing** component cleans and transforms raw input data into a format suitable for
+            the pipeline. This includes:
+            
+            - Converting data types
+            - Handling missing values
+            - Removing outliers
+            - Normalizing numerical features
+            - Encoding categorical variables
+        """,
         
-    # Check if we're in demo mode and need to generate sample metrics
-    if st.session_state.get('demo_mode') and not component_data.get('metrics'):
-        if st.button("Generate Sample Metrics"):
-            st.session_state['generating_metrics'] = True
-            with st.spinner(f"Generating sample metrics for {component_name}..."):
-                sample_metrics = generate_sample_metrics(component_name)
-                if component_data:
-                    component_data['metrics'] = sample_metrics
-                else:
-                    component_data = {'metrics': sample_metrics}
-                st.session_state['component_data'] = component_data
-                # Use the new st.rerun() instead of the deprecated experimental_rerun
-                st.rerun()
-        return
+        "feature_extraction": """
+            The **Feature Extraction** component identifies and extracts relevant features from the
+            preprocessed data. This includes:
+            
+            - Selecting important features
+            - Dimensionality reduction
+            - Creating composite features
+            - Scaling and transforming features
+        """,
+        
+        "missing_data_handling": """
+            The **Missing Data Handling** component applies specialized techniques to address
+            missing values in the dataset. This includes:
+            
+            - Identifying missing data patterns
+            - Applying imputation strategies
+            - Validating imputed values
+            - Providing quality metrics for missing data treatment
+        """,
+        
+        "expert_training": """
+            The **Expert Training** component trains the specialized expert models that form
+            the basis of the Mixture of Experts architecture. This includes:
+            
+            - Optimizing hyperparameters for each expert
+            - Training each expert on its specialized domain
+            - Evaluating expert performance
+            - Determining feature importance for each expert
+        """,
+        
+        "gating_network": """
+            The **Gating Network** determines how inputs should be routed to different experts.
+            This includes:
+            
+            - Learning the appropriate weights for each expert
+            - Determining confidence in expert predictions
+            - Optimizing the routing mechanism
+            - Providing a basis for the ensemble
+        """,
+        
+        "moe_integration": """
+            The **MoE Integration** component combines the outputs from multiple experts into
+            a coherent prediction. This includes:
+            
+            - Weighting expert predictions
+            - Combining predictions via ensemble methods
+            - Adjusting confidence based on expert agreement
+            - Providing a unified output
+        """,
+        
+        "output_generation": """
+            The **Output Generation** component produces the final output of the pipeline,
+            formatting predictions and providing explanations. This includes:
+            
+            - Formatting predictions for consumption
+            - Generating confidence intervals
+            - Providing feature importance information
+            - Creating visualizations and explanations
+        """
+    }
+    
+    # Display component description
+    st.markdown(f"## {component_name.replace('_', ' ').title()}")
+    st.markdown(descriptions.get(component_name, "No description available for this component."))
+    
+    # Display execution statistics if available
+    if "execution_time" in component_data:
+        st.markdown(f"**Execution Time:** {component_data['execution_time']:.2f} seconds")
+    
+    # Display component-specific visualizations
+    if component_name == "data_preprocessing":
+        render_data_preprocessing_overview(component_data)
+    elif component_name == "feature_extraction":
+        render_feature_extraction_overview(component_data)
+    elif component_name == "missing_data_handling":
+        render_missing_data_overview(component_data)
+    elif component_name == "expert_training":
+        render_expert_training_overview(component_data)
+    elif component_name == "gating_network":
+        render_gating_network_overview(component_data)
+    elif component_name == "moe_integration":
+        render_moe_integration_overview(component_data)
+    elif component_name == "output_generation":
+        render_output_generation_overview(component_data)
 
-    # We have metrics data, display it
-    metrics = component_data["metrics"]
+def render_component_metrics(component_name: str, component_data: Dict[str, Any]):
+    """
+    Render metrics for a component.
     
-    if isinstance(metrics, dict) and metrics:
-        # Create columns for metric cards
-        cols = st.columns(3)
+    Args:
+        component_name: Name of the component
+        component_data: Data for this component
+    """
+    st.markdown(f"## Performance Metrics")
+    
+    # Display metrics if available
+    if "metrics" in component_data and component_data["metrics"]:
+        metrics = component_data["metrics"]
         
-        # Display key metrics as cards
-        for i, (metric_name, metric_value) in enumerate(metrics.items()):
-            with cols[i % 3]:
-                st.metric(
-                    label=metric_name.replace("_", " ").title(),
-                    value=metric_value if isinstance(metric_value, (str, int)) else f"{metric_value:.4f}" if isinstance(metric_value, float) else str(metric_value)
-                )
+        # Convert metrics to a DataFrame for display
+        metrics_df = pd.DataFrame(
+            {"Metric": list(metrics.keys()), "Value": list(metrics.values())}
+        )
         
-        # Create a detailed metrics table
-        st.markdown("#### Detailed Metrics")
+        # Convert values to strings to avoid serialization issues
+        metrics_df["Value"] = metrics_df["Value"].apply(lambda x: str(x))
         
-        # Convert all values to strings for displaying in the dataframe
-        # This prevents PyArrow conversion issues with mixed types
-        metrics_str = {k: str(v) for k, v in metrics.items()}
+        st.dataframe(metrics_df, hide_index=True, use_container_width=True)
         
-        metrics_df = pd.DataFrame({
-            "Metric": list(metrics_str.keys()),
-            "Value": list(metrics_str.values())
-        })
-        st.dataframe(metrics_df, hide_index=True)
-        
-        # If we have numeric metrics, create visualizations
-        numeric_metrics = {k: v for k, v in metrics.items() 
-                         if isinstance(v, (int, float)) and not isinstance(v, bool)}
+        # Create visualization for numeric metrics
+        numeric_metrics = {}
+        for k, v in metrics.items():
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                numeric_metrics[k] = v
         
         if numeric_metrics:
-            # Create bar chart for visualization
-            st.markdown("#### Metrics Visualization")
-            
             fig = px.bar(
                 x=list(numeric_metrics.keys()),
                 y=list(numeric_metrics.values()),
-                labels={"x": "Metric", "y": "Value"},
-                title=f"Performance Metrics for {component_name.replace('_', ' ').title()}"
+                title=f"Metrics for {component_name.replace('_', ' ').title()}",
+                labels={"x": "Metric", "y": "Value"}
             )
-            
             st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info(f"No detailed metrics found for {component_name}.")
+        st.info("No metrics available for this component.")
 
-def render_data_preprocessing_visualization(component_data):
-    """Render visualizations for data preprocessing component."""
-    if not component_data or "input" not in component_data or "output" not in component_data:
-        st.info("No preprocessing data available to visualize.")
-        return
+def render_component_data_flow(component_name: str, component_data: Dict[str, Any]):
+    """
+    Render data flow visualizations for a component.
     
-    # Get input and output data
-    input_data = component_data.get("input", {})
-    output_data = component_data.get("output", {})
+    Args:
+        component_name: Name of the component
+        component_data: Data for this component
+    """
+    st.markdown(f"## Data Flow")
     
-    # Basic data stats comparison
-    if isinstance(input_data, pd.DataFrame) and isinstance(output_data, pd.DataFrame):
-        st.markdown("#### Data Statistics Comparison")
+    # Generate sample data for demonstration
+    if 'sample_data' not in st.session_state:
+        # Generate sample data
+        np.random.seed(42)
+        n_samples = 5
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Input Data Stats**")
-            st.dataframe(input_data.describe())
-        
-        with col2:
-            st.markdown("**Output Data Stats**")
-            st.dataframe(output_data.describe())
-        
-        # Distribution visualization for numeric columns
-        st.markdown("#### Data Distributions")
-        
-        # Select a column to visualize
-        numeric_columns = input_data.select_dtypes(include=[np.number]).columns.tolist()
-        if numeric_columns:
-            selected_column = st.selectbox("Select column to visualize:", numeric_columns)
-            
-            # Create histogram comparing before/after
-            fig = go.Figure()
-            fig.add_trace(go.Histogram(
-                x=input_data[selected_column], 
-                name="Before Processing",
-                opacity=0.7
-            ))
-            fig.add_trace(go.Histogram(
-                x=output_data[selected_column] if selected_column in output_data.columns else None, 
-                name="After Processing",
-                opacity=0.7
-            ))
-            fig.update_layout(
-                barmode="overlay",
-                title=f"Distribution of {selected_column} Before/After Processing",
-                xaxis_title=selected_column,
-                yaxis_title="Frequency"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    # Missing values visualization
-    st.markdown("#### Missing Values")
-    
-    if isinstance(input_data, pd.DataFrame):
-        # Calculate missing values before/after
-        missing_before = input_data.isnull().sum()
-        missing_after = output_data.isnull().sum() if isinstance(output_data, pd.DataFrame) else pd.Series()
-        
-        # Create comparison dataframe
-        missing_df = pd.DataFrame({
-            "Missing Before": missing_before,
-            "Missing After": missing_after.reindex(missing_before.index, fill_value=0)
-        }).sort_values("Missing Before", ascending=False)
-        
-        # Filter to columns that had missing values
-        missing_df = missing_df[missing_df["Missing Before"] > 0]
-        
-        if not missing_df.empty:
-            # Create bar chart
-            fig = go.Figure()
-            fig.add_trace(go.Bar(
-                y=missing_df.index,
-                x=missing_df["Missing Before"],
-                name="Before Processing",
-                orientation="h"
-            ))
-            fig.add_trace(go.Bar(
-                y=missing_df.index,
-                x=missing_df["Missing After"],
-                name="After Processing",
-                orientation="h"
-            ))
-            fig.update_layout(
-                barmode="group",
-                title="Missing Values Before/After Processing",
-                xaxis_title="Count",
-                yaxis_title="Column"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No missing values found in the input data.")
-
-def render_feature_extraction_visualization(component_data):
-    """Render visualizations for feature extraction component."""
-    if not component_data:
-        st.info("No feature extraction data available to visualize.")
-        return
-    
-    # Get output data
-    output_data = component_data.get("output", {})
-    
-    # Feature importance visualization
-    st.markdown("#### Feature Importance")
-    
-    # Check if feature importances are available
-    feature_importances = component_data.get("feature_importances", {})
-    
-    if feature_importances:
-        # Convert to DataFrame
-        if isinstance(feature_importances, dict):
-            importance_df = pd.DataFrame({
-                "Feature": list(feature_importances.keys()),
-                "Importance": list(feature_importances.values())
-            })
-        else:
-            importance_df = pd.DataFrame(feature_importances)
-        
-        # Sort by importance
-        importance_df = importance_df.sort_values("Importance", ascending=False)
-        
-        # Create bar chart
-        fig = go.Figure(go.Bar(
-            x=importance_df["Importance"],
-            y=importance_df["Feature"],
-            orientation="h"
-        ))
-        fig.update_layout(
-            title="Feature Importance",
-            yaxis=dict(autorange="reversed")
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    elif isinstance(output_data, pd.DataFrame):
-        st.info("No explicit feature importance data available. Showing extracted features.")
-        
-        # Show extracted features
-        st.dataframe(output_data.head())
-    else:
-        st.info("No feature importance or extracted feature data available.")
-    
-    # Feature correlation heatmap
-    st.markdown("#### Feature Correlations")
-    
-    if isinstance(output_data, pd.DataFrame):
-        # Calculate correlations
-        numeric_data = output_data.select_dtypes(include=[np.number])
-        
-        if not numeric_data.empty:
-            corr = numeric_data.corr()
-            
-            # Create heatmap
-            fig = px.imshow(
-                corr,
-                labels=dict(color="Correlation"),
-                x=corr.columns,
-                y=corr.columns,
-                color_continuous_scale="RdBu_r",
-                zmin=-1, zmax=1,
-                width=600, height=600
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No numeric features available for correlation analysis.")
-    else:
-        st.info("No feature data available for correlation analysis.")
-
-def render_missing_data_visualization(component_data):
-    """Render visualizations for missing data handling component."""
-    if not component_data:
-        st.info("No missing data handling results available to visualize.")
-        return
-    
-    # Get input and output data
-    input_data = component_data.get("input", {})
-    output_data = component_data.get("output", {})
-    
-    # Missing data patterns visualization
-    st.markdown("#### Missing Data Patterns")
-    
-    if isinstance(input_data, pd.DataFrame):
-        # Create missing data mask
-        missing_mask = input_data.isnull()
-        
-        # Visualize only columns with missing values
-        columns_with_missing = missing_mask.columns[missing_mask.any()].tolist()
-        
-        if columns_with_missing:
-            # Take a sample if there are too many rows
-            if len(input_data) > 20:
-                missing_sample = missing_mask[columns_with_missing].head(20)
-            else:
-                missing_sample = missing_mask[columns_with_missing]
-            
-            # Create heatmap
-            fig = px.imshow(
-                missing_sample.T,
-                labels=dict(x="Sample", y="Feature", color="Missing"),
-                color_continuous_scale=["white", "red"],
-                title="Missing Data Patterns (Red = Missing)"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No missing values found in the input data.")
-    
-    # Imputation accuracy visualization
-    st.markdown("#### Imputation Metrics")
-    
-    # Check for imputation metrics
-    imputation_metrics = component_data.get("metrics", {})
-    
-    if imputation_metrics:
-        # Create metrics display
-        metrics_to_show = {}
-        for k, v in imputation_metrics.items():
-            if any(term in k.lower() for term in ["accuracy", "error", "score", "imputation"]):
-                metrics_to_show[k] = v
-        
-        if metrics_to_show:
-            metrics_df = pd.DataFrame({
-                "Metric": list(metrics_to_show.keys()),
-                "Value": list(metrics_to_show.values())
-            })
-            st.dataframe(metrics_df, hide_index=True)
-        else:
-            st.info("No specific imputation accuracy metrics available.")
-    
-    # Imputation method comparison
-    st.markdown("#### Imputation Method Comparison")
-    
-    # Check for imputation method data
-    imputation_methods = component_data.get("imputation_methods", {})
-    
-    if imputation_methods:
-        # Create bar chart
-        method_df = pd.DataFrame({
-            "Method": list(imputation_methods.keys()),
-            "Accuracy": list(imputation_methods.values())
+        sample_data = pd.DataFrame({
+            'Feature 1': np.random.randn(n_samples),
+            'Feature 2': np.random.randn(n_samples),
+            'Feature 3': np.random.randn(n_samples),
+            'Feature 4': np.random.randn(n_samples)
         })
         
-        fig = go.Figure(go.Bar(
-            x=method_df["Method"],
-            y=method_df["Accuracy"],
-            text=[f"{val:.2f}" for val in method_df["Accuracy"]],
-            textposition="auto"
-        ))
-        fig.update_layout(
-            title="Imputation Method Accuracy Comparison",
-            yaxis=dict(title="Accuracy")
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No imputation method comparison data available.")
+        st.session_state.sample_data = sample_data
+    
+    # Get sample data
+    sample_data = st.session_state.sample_data
+    
+    # Display input data
+    st.markdown("### Input Data Sample")
+    st.dataframe(sample_data, use_container_width=True)
+    
+    # Display output data based on component
+    st.markdown("### Output Data Sample")
+    output_data = transform_sample_data(sample_data, component_name)
+    st.dataframe(output_data, use_container_width=True)
+    
+    # Display data transformation visualization based on component
+    st.markdown("### Data Transformation")
+    
+    if component_name == "data_preprocessing":
+        render_data_preprocessing_flow(sample_data, output_data)
+    elif component_name == "feature_extraction":
+        render_feature_extraction_flow(sample_data, output_data)
+    elif component_name == "missing_data_handling":
+        render_missing_data_flow(sample_data, output_data)
+    elif component_name == "expert_training":
+        render_expert_training_flow(sample_data, output_data)
+    elif component_name == "gating_network":
+        render_gating_network_flow(sample_data, output_data)
+    elif component_name == "moe_integration":
+        render_moe_integration_flow(sample_data, output_data)
+    elif component_name == "output_generation":
+        render_output_generation_flow(sample_data, output_data)
 
-def render_expert_training_visualization(component_data):
-    """Render visualizations for expert training component."""
-    if not component_data:
-        st.info("No expert training data available to visualize.")
-        return
+def transform_sample_data(data: pd.DataFrame, component_name: str) -> pd.DataFrame:
+    """
+    Transform sample data based on the component.
     
-    # Extract training history data
-    training_history = component_data.get("training_history", {})
-    
-    if training_history:
-        st.markdown("#### Training History")
+    Args:
+        data: Input sample data
+        component_name: Name of the component
         
-        # Expert selection dropdown
-        expert_keys = list(training_history.keys())
-        selected_expert = st.selectbox("Select expert:", expert_keys)
-        
-        if selected_expert in training_history:
-            expert_data = training_history[selected_expert]
-            
-            # Create line chart with training and validation metrics
-            fig = go.Figure()
-            
-            if "train_loss" in expert_data and "epochs" in expert_data:
-                fig.add_trace(go.Scatter(
-                    x=expert_data["epochs"],
-                    y=expert_data["train_loss"],
-                    mode="lines",
-                    name="Training Loss"
-                ))
-            
-            if "val_loss" in expert_data and "epochs" in expert_data:
-                fig.add_trace(go.Scatter(
-                    x=expert_data["epochs"],
-                    y=expert_data["val_loss"],
-                    mode="lines",
-                    line=dict(dash="dash"),
-                    name="Validation Loss"
-                ))
-            
-            # Add accuracy curves if available
-            if "train_accuracy" in expert_data and "epochs" in expert_data:
-                fig.add_trace(go.Scatter(
-                    x=expert_data["epochs"],
-                    y=expert_data["train_accuracy"],
-                    mode="lines",
-                    name="Training Accuracy",
-                    yaxis="y2"
-                ))
-            
-            if "val_accuracy" in expert_data and "epochs" in expert_data:
-                fig.add_trace(go.Scatter(
-                    x=expert_data["epochs"],
-                    y=expert_data["val_accuracy"],
-                    mode="lines",
-                    line=dict(dash="dash"),
-                    name="Validation Accuracy",
-                    yaxis="y2"
-                ))
-            
-            fig.update_layout(
-                title=f"Training History for {selected_expert}",
-                xaxis_title="Epoch",
-                yaxis=dict(
-                    title="Loss",
-                    side="left"
-                ),
-                yaxis2=dict(
-                    title="Accuracy",
-                    side="right",
-                    overlaying="y",
-                    rangemode="tozero",
-                    range=[0, 1]
-                ),
-                legend=dict(x=0.01, y=0.99, bordercolor="Black", borderwidth=1)
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
+    Returns:
+        Transformed sample data
+    """
+    if component_name == "data_preprocessing":
+        # Add preprocessing indicators
+        output = data.copy()
+        output["Normalized"] = True
+        output["Outlier_Removed"] = [False, False, True, False, False]
+        return output
     
-    # Expert metrics comparison
-    st.markdown("#### Expert Performance Comparison")
+    elif component_name == "feature_extraction":
+        # Replace with extracted features
+        return pd.DataFrame({
+            "Extracted_Feature_1": data["Feature 1"] * 0.8 + data["Feature 2"] * 0.2,
+            "Extracted_Feature_2": data["Feature 3"] * 0.7 + data["Feature 4"] * 0.3,
+            "Extracted_Feature_3": data["Feature 1"] * 0.1 + data["Feature 4"] * 0.9
+        })
     
-    expert_metrics = component_data.get("expert_metrics", {})
+    elif component_name == "missing_data_handling":
+        # Add missing value indicators
+        output = data.copy()
+        output.iloc[1, 2] = np.nan  # Introduce a missing value
+        output.iloc[3, 0] = np.nan  # Introduce another missing value
+        output["Missing_Values_Count"] = output.isna().sum(axis=1)
+        output["Imputed"] = [False, True, False, True, False]
+        return output
     
-    if expert_metrics:
-        # Create comparison dataframe
-        metrics_to_compare = ["accuracy", "precision", "recall", "f1_score"]
-        comparison_data = {}
+    elif component_name == "expert_training":
+        # Add predictions and confidence for each expert
+        return pd.DataFrame({
+            "Physiological_Prediction": data["Feature 1"] * 1.2,
+            "Physiological_Confidence": np.random.uniform(0.7, 0.95, len(data)),
+            "Behavioral_Prediction": data["Feature 2"] * 0.8,
+            "Behavioral_Confidence": np.random.uniform(0.6, 0.9, len(data)),
+            "Environmental_Prediction": data["Feature 3"] * 1.1,
+            "Environmental_Confidence": np.random.uniform(0.5, 0.85, len(data))
+        })
+    
+    elif component_name == "gating_network":
+        # Add expert weights
+        return pd.DataFrame({
+            "Physiological_Weight": np.random.uniform(0.2, 0.5, len(data)),
+            "Behavioral_Weight": np.random.uniform(0.1, 0.4, len(data)),
+            "Environmental_Weight": np.random.uniform(0.3, 0.6, len(data)),
+            "Selected_Expert": ["Physiological", "Environmental", "Behavioral", 
+                               "Environmental", "Physiological"]
+        })
+    
+    elif component_name == "moe_integration":
+        # Add integrated predictions
+        expert_outputs = transform_sample_data(data, "expert_training")
+        gating_weights = transform_sample_data(data, "gating_network")
         
-        for expert, metrics in expert_metrics.items():
-            expert_row = {}
-            for metric in metrics_to_compare:
-                if metric in metrics:
-                    expert_row[metric] = metrics[metric]
-            comparison_data[expert] = expert_row
+        # Calculate weighted predictions
+        weighted_pred = (
+            expert_outputs["Physiological_Prediction"] * gating_weights["Physiological_Weight"] +
+            expert_outputs["Behavioral_Prediction"] * gating_weights["Behavioral_Weight"] +
+            expert_outputs["Environmental_Prediction"] * gating_weights["Environmental_Weight"]
+        )
         
-        if comparison_data:
-            comparison_df = pd.DataFrame(comparison_data).T
-            
-            # Create radar chart
-            categories = comparison_df.columns.tolist()
-            fig = go.Figure()
-            
-            for expert in comparison_df.index:
-                values = comparison_df.loc[expert].tolist()
-                # Add closing point
-                values_closed = values + [values[0]]
-                categories_closed = categories + [categories[0]]
-                
-                fig.add_trace(go.Scatterpolar(
-                    r=values_closed,
-                    theta=categories_closed,
-                    fill="toself",
-                    name=expert
-                ))
-            
-            fig.update_layout(
-                polar=dict(
-                    radialaxis=dict(
-                        visible=True,
-                        range=[0, 1]
-                    )
-                ),
-                title="Expert Performance Comparison",
-                showlegend=True
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Also show as a table
-            st.dataframe(comparison_df, use_container_width=True)
+        return pd.DataFrame({
+            "Integrated_Prediction": weighted_pred,
+            "Ensemble_Confidence": np.random.uniform(0.8, 0.98, len(data)),
+            "Physiological_Weight": gating_weights["Physiological_Weight"],
+            "Behavioral_Weight": gating_weights["Behavioral_Weight"],
+            "Environmental_Weight": gating_weights["Environmental_Weight"]
+        })
+    
+    elif component_name == "output_generation":
+        # Final output format
+        moe_output = transform_sample_data(data, "moe_integration")
+        
+        return pd.DataFrame({
+            "Prediction": moe_output["Integrated_Prediction"],
+            "Confidence": moe_output["Ensemble_Confidence"],
+            "Uncertainty": np.random.uniform(0.02, 0.2, len(data)),
+            "Contributing_Experts": ["Phys, Env", "Env, Behav", "Behav", "Env, Phys", "Phys"]
+        })
+    
+    # Default: return original data
+    return data.copy()
 
-def render_gating_network_visualization(component_data):
-    """Render visualizations for gating network component."""
-    if not component_data:
-        st.info("No gating network data available to visualize.")
-        return
-    
-    # Expert distribution visualization
-    st.markdown("#### Expert Selection Distribution")
-    
-    expert_distribution = component_data.get("expert_distribution", {})
-    
-    if expert_distribution:
-        # Create pie chart
-        fig = go.Figure(data=[go.Pie(
-            labels=list(expert_distribution.keys()),
-            values=list(expert_distribution.values()),
-            hole=0.3
-        )])
-        fig.update_layout(title="Expert Usage Distribution")
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # Routing decisions heatmap
-    st.markdown("#### Routing Decisions")
-    
-    routing_decisions = component_data.get("routing_decisions", [])
-    
-    if routing_decisions:
-        # Extract probabilities
-        sample_size = min(20, len(routing_decisions))
-        samples = routing_decisions[:sample_size]
-        
-        # Create data for heatmap
-        heatmap_data = []
-        expert_keys = []
-        
-        for sample in samples:
-            if "expert_probabilities" in sample:
-                if not expert_keys:
-                    expert_keys = list(sample["expert_probabilities"].keys())
-                
-                heatmap_data.append([sample["expert_probabilities"].get(key, 0) for key in expert_keys])
-        
-        if heatmap_data and expert_keys:
-            # Create heatmap
-            fig = px.imshow(
-                heatmap_data,
-                labels=dict(x="Expert", y="Sample", color="Probability"),
-                x=expert_keys,
-                y=[f"Sample {i+1}" for i in range(len(heatmap_data))],
-                color_continuous_scale="Viridis",
-                zmin=0, zmax=1
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    # Confidence over time
-    st.markdown("#### Routing Confidence Over Time")
-    
-    confidence_over_time = component_data.get("confidence_over_time", [])
-    
-    if confidence_over_time:
-        # Extract data
-        timestamps = [entry.get("timestamp", i) for i, entry in enumerate(confidence_over_time)]
-        confidence = [entry.get("confidence", 0) for entry in confidence_over_time]
-        entropy = [entry.get("routing_entropy", 0) for entry in confidence_over_time]
-        
-        # Create line chart
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=timestamps,
-            y=confidence,
-            mode="lines",
-            name="Confidence"
-        ))
-        fig.add_trace(go.Scatter(
-            x=timestamps,
-            y=entropy,
-            mode="lines",
-            name="Entropy",
-            yaxis="y2"
-        ))
-        fig.update_layout(
-            title="Routing Confidence and Entropy Over Time",
-            xaxis_title="Time",
-            yaxis=dict(
-                title="Confidence",
-                side="left",
-                range=[0, 1]
-            ),
-            yaxis2=dict(
-                title="Entropy",
-                side="right",
-                overlaying="y",
-                range=[0, 1]
-            ),
-            legend=dict(x=0.01, y=0.99)
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-def render_moe_integration_visualization(component_data):
-    """Render visualizations for MoE integration component."""
-    if not component_data:
-        st.info("No MoE integration data available to visualize.")
-        return
-    
-    # Model comparison visualization
-    st.markdown("#### Model Performance Comparison")
-    
-    model_comparison = component_data.get("model_comparison", {})
-    
-    if model_comparison:
-        # Create bar chart
-        fig = go.Figure(data=[
-            go.Bar(
-                x=list(model_comparison.keys()),
-                y=list(model_comparison.values()),
-                text=[f"{val:.2f}" for val in model_comparison.values()],
-                textposition="auto"
-            )
-        ])
-        fig.update_layout(
-            title="Model Accuracy Comparison",
-            xaxis_title="Model",
-            yaxis=dict(
-                title="Accuracy",
-                range=[0, 1]
-            )
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # Expert contribution visualization
-    st.markdown("#### Expert Contribution Analysis")
-    
-    expert_contributions = component_data.get("expert_contributions", {})
-    
-    if expert_contributions:
-        # Create stacked bar chart
-        input_types = []
-        traces = []
-        
-        # Get all input types
-        for expert, contributions in expert_contributions.items():
-            for input_type in contributions:
-                if input_type not in input_types:
-                    input_types.append(input_type)
-        
-        # Create traces for each expert
-        for expert, contributions in expert_contributions.items():
-            values = [contributions.get(input_type, 0) for input_type in input_types]
-            traces.append(go.Bar(
-                name=expert,
-                x=input_types,
-                y=values
-            ))
-        
-        # Create figure
-        fig = go.Figure(data=traces)
-        fig.update_layout(
-            barmode="stack",
-            title="Expert Weights by Input Type",
-            xaxis_title="Input Type",
-            yaxis_title="Weight"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # Integration methods comparison
-    st.markdown("#### Integration Method Comparison")
-    
-    integration_methods = component_data.get("integration_methods", {})
-    
-    if integration_methods:
-        # Create bar chart
-        fig = go.Figure(data=[
-            go.Bar(
-                x=list(integration_methods.keys()),
-                y=list(integration_methods.values()),
-                text=[f"{val:.2f}" for val in integration_methods.values()],
-                textposition="auto"
-            )
-        ])
-        fig.update_layout(
-            title="Integration Method Comparison",
-            xaxis_title="Method",
-            yaxis=dict(
-                title="Performance",
-                range=[0, 1]
-            )
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-def render_output_visualization(component_data):
-    """Render visualizations for output generation component."""
-    if not component_data:
-        st.info("No output generation data available to visualize.")
-        return
-    
-    # Performance metrics visualization
-    st.markdown("#### Performance Metrics")
-    
+# Component-specific overview visualizations
+def render_data_preprocessing_overview(component_data: Dict[str, Any]):
+    """Render data preprocessing overview visualization."""
     metrics = component_data.get("metrics", {})
     
-    if metrics:
-        # Create metrics display
-        metrics_df = pd.DataFrame({
-            "Metric": list(metrics.keys()),
-            "Value": list(metrics.values())
-        })
-        st.dataframe(metrics_df, hide_index=True)
-        
-        # Create radar chart for classification metrics
-        classification_metrics = ["accuracy", "precision", "recall", "f1_score", "auc"]
-        radar_data = {}
-        
-        for metric in classification_metrics:
-            for k, v in metrics.items():
-                if metric in k.lower():
-                    radar_data[metric] = v
-                    break
-        
-        if radar_data:
-            categories = list(radar_data.keys())
-            values = list(radar_data.values())
-            
-            # Add closing point
-            values_closed = values + [values[0]]
-            categories_closed = categories + [categories[0]]
-            
-            fig = go.Figure()
-            fig.add_trace(go.Scatterpolar(
-                r=values_closed,
-                theta=categories_closed,
-                fill="toself",
-                name="Model Performance"
-            ))
-            
-            fig.update_layout(
-                polar=dict(
-                    radialaxis=dict(
-                        visible=True,
-                        range=[0, 1]
-                    )
-                ),
-                title="Model Performance Metrics",
-                showlegend=False
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-    
-    # Predictions visualization
-    st.markdown("#### Predictions vs Actual Values")
-    
-    predictions = component_data.get("predictions", [])
-    
-    if predictions:
-        # Extract data
-        actual = [p.get("true_value", 0) for p in predictions]
-        predicted = [p.get("predicted_value", 0) for p in predictions]
-        
-        # Create scatter plot
-        fig = px.scatter(
-            x=actual,
-            y=predicted,
-            labels={"x": "Actual", "y": "Predicted"},
-            title="Predictions vs Actual Values"
-        )
-        
-        # Add perfect prediction line
-        min_val = min(min(actual), min(predicted))
-        max_val = max(max(actual), max(predicted))
-        
-        fig.add_trace(go.Scatter(
-            x=[min_val, max_val],
-            y=[min_val, max_val],
-            mode="lines",
-            line=dict(dash="dash"),
-            name="Perfect Prediction"
+    # Create a simple bar chart for categorical vs numerical features
+    if "categorical_features" in metrics and "numerical_features" in metrics:
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=["Categorical", "Numerical"],
+            y=[metrics["categorical_features"], metrics["numerical_features"]],
+            marker_color=["#FF9933", "#3366FF"]
         ))
-        
+        fig.update_layout(
+            title="Feature Types",
+            xaxis_title="Feature Type",
+            yaxis_title="Count"
+        )
         st.plotly_chart(fig, use_container_width=True)
     
-    # Confusion matrix visualization
-    st.markdown("#### Confusion Matrix")
+    # Create pie chart for data quality
+    if "data_quality_score" in metrics:
+        fig = go.Figure()
+        fig.add_trace(go.Pie(
+            labels=["Good Quality", "Issues"],
+            values=[metrics["data_quality_score"], 1 - metrics["data_quality_score"]],
+            marker_colors=["#33CC66", "#FF6666"]
+        ))
+        fig.update_layout(title="Data Quality Score")
+        st.plotly_chart(fig, use_container_width=True)
+
+def render_feature_extraction_overview(component_data: Dict[str, Any]):
+    """Render feature extraction overview visualization."""
+    metrics = component_data.get("metrics", {})
     
-    confusion_matrix = component_data.get("confusion_matrix", {})
+    # Create a visualization for explained variance
+    if "variance_explained" in metrics:
+        fig = go.Figure()
+        fig.add_trace(go.Indicator(
+            mode="gauge+number",
+            value=metrics["variance_explained"] * 100,
+            title={"text": "Variance Explained"},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "#3366FF"},
+                "steps": [
+                    {"range": [0, 60], "color": "#FF6666"},
+                    {"range": [60, 80], "color": "#FFCC66"},
+                    {"range": [80, 100], "color": "#66CC66"}
+                ]
+            }
+        ))
+        st.plotly_chart(fig, use_container_width=True)
     
-    if confusion_matrix:
-        if all(k in confusion_matrix for k in ["true_positive", "false_positive", "true_negative", "false_negative"]):
-            # Create confusion matrix visualization
-            tp = confusion_matrix.get("true_positive", 0)
-            fp = confusion_matrix.get("false_positive", 0)
-            tn = confusion_matrix.get("true_negative", 0)
-            fn = confusion_matrix.get("false_negative", 0)
-            
-            matrix = [[tp, fp], [fn, tn]]
-            
-            fig = px.imshow(
-                matrix,
-                labels=dict(x="Predicted", y="Actual", color="Count"),
-                x=["Positive", "Negative"],
-                y=["Positive", "Negative"],
-                text_auto=True,
-                color_continuous_scale="Blues"
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Calculate and display metrics
-            accuracy = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
-            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-            f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
-            
-            metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
-            
-            with metrics_col1:
-                st.metric("Accuracy", f"{accuracy:.2f}")
-            
-            with metrics_col2:
-                st.metric("Precision", f"{precision:.2f}")
-            
-            with metrics_col3:
-                st.metric("Recall", f"{recall:.2f}")
-            
-            with metrics_col4:
-                st.metric("F1 Score", f"{f1:.2f}")
+    # Display top features
+    if "top_features" in metrics and isinstance(metrics["top_features"], list):
+        st.markdown("### Top Features")
+        for i, feature in enumerate(metrics["top_features"]):
+            st.markdown(f"{i+1}. **{feature}**")
+
+def render_missing_data_overview(component_data: Dict[str, Any]):
+    """Render missing data handling overview visualization."""
+    metrics = component_data.get("metrics", {})
+    
+    # Create a visualization for imputation methods
+    if "imputation_methods" in metrics and isinstance(metrics["imputation_methods"], list):
+        methods = metrics["imputation_methods"]
+        # Create random counts for each method
+        np.random.seed(42)
+        counts = np.random.randint(10, 100, len(methods))
+        
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=methods,
+            y=counts,
+            marker_color="#3366FF"
+        ))
+        fig.update_layout(
+            title="Imputation Methods Used",
+            xaxis_title="Method",
+            yaxis_title="Count"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Create a visualization for data completeness
+    if "data_completeness" in metrics:
+        fig = go.Figure()
+        fig.add_trace(go.Indicator(
+            mode="gauge+number",
+            value=metrics["data_completeness"] * 100,
+            title={"text": "Data Completeness"},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "#3366FF"},
+                "steps": [
+                    {"range": [0, 60], "color": "#FF6666"},
+                    {"range": [60, 90], "color": "#FFCC66"},
+                    {"range": [90, 100], "color": "#66CC66"}
+                ]
+            }
+        ))
+        st.plotly_chart(fig, use_container_width=True)
+
+def render_expert_training_overview(component_data: Dict[str, Any]):
+    """Render expert training overview visualization."""
+    metrics = component_data.get("metrics", {})
+    experts = component_data.get("experts", {})
+    
+    # Create a visualization for expert training status
+    if experts:
+        expert_names = list(experts.keys())
+        trained_status = [int(expert.get("trained", False)) for expert in experts.values()]
+        
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=expert_names,
+            y=trained_status,
+            marker_color=["#66CC66" if status else "#FF6666" for status in trained_status]
+        ))
+        fig.update_layout(
+            title="Expert Training Status",
+            xaxis_title="Expert",
+            yaxis_title="Trained (1) / Not Trained (0)"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Create a visualization for validation scores
+    if "average_validation_score" in metrics:
+        fig = go.Figure()
+        fig.add_trace(go.Indicator(
+            mode="gauge+number",
+            value=metrics["average_validation_score"] * 100,
+            title={"text": "Average Validation Score"},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "#3366FF"},
+                "steps": [
+                    {"range": [0, 60], "color": "#FF6666"},
+                    {"range": [60, 80], "color": "#FFCC66"},
+                    {"range": [80, 100], "color": "#66CC66"}
+                ]
+            }
+        ))
+        st.plotly_chart(fig, use_container_width=True)
+
+def render_gating_network_overview(component_data: Dict[str, Any]):
+    """Render gating network overview visualization."""
+    metrics = component_data.get("metrics", {})
+    
+    # Create a visualization for routing accuracy
+    if "routing_accuracy" in metrics:
+        fig = go.Figure()
+        fig.add_trace(go.Indicator(
+            mode="gauge+number",
+            value=metrics["routing_accuracy"] * 100,
+            title={"text": "Routing Accuracy"},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "#3366FF"},
+                "steps": [
+                    {"range": [0, 60], "color": "#FF6666"},
+                    {"range": [60, 80], "color": "#FFCC66"},
+                    {"range": [80, 100], "color": "#66CC66"}
+                ]
+            }
+        ))
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Create a visualization for expert usage
+    if "experts_used" in metrics and "average_weight" in metrics:
+        # Create a random distribution of weights
+        np.random.seed(42)
+        expert_count = metrics["experts_used"]
+        expert_names = [f"Expert {i+1}" for i in range(expert_count)]
+        weights = np.random.dirichlet(np.ones(expert_count))
+        
+        fig = go.Figure()
+        fig.add_trace(go.Pie(
+            labels=expert_names,
+            values=weights,
+            marker_colors=px.colors.qualitative.Set3[:expert_count]
+        ))
+        fig.update_layout(title="Expert Weight Distribution")
+        st.plotly_chart(fig, use_container_width=True)
+
+def render_moe_integration_overview(component_data: Dict[str, Any]):
+    """Render MoE integration overview visualization."""
+    metrics = component_data.get("metrics", {})
+    
+    # Create a visualization for ensemble accuracy
+    if "ensemble_accuracy" in metrics:
+        fig = go.Figure()
+        fig.add_trace(go.Indicator(
+            mode="gauge+number",
+            value=metrics["ensemble_accuracy"] * 100,
+            title={"text": "Ensemble Accuracy"},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "#3366FF"},
+                "steps": [
+                    {"range": [0, 60], "color": "#FF6666"},
+                    {"range": [60, 80], "color": "#FFCC66"},
+                    {"range": [80, 100], "color": "#66CC66"}
+                ]
+            }
+        ))
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Create a visualization for expert importance
+    if "expert_importances" in component_data:
+        importances = component_data["expert_importances"]
+        expert_names = list(importances.keys())
+        importance_values = list(importances.values())
+        
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=expert_names,
+            y=importance_values,
+            marker_color=px.colors.qualitative.Set3[:len(expert_names)]
+        ))
+        fig.update_layout(
+            title="Expert Importance in Ensemble",
+            xaxis_title="Expert",
+            yaxis_title="Importance"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    elif "best_expert" in metrics:
+        st.markdown(f"**Best Expert:** {metrics['best_expert']}")
+
+def render_output_generation_overview(component_data: Dict[str, Any]):
+    """Render output generation overview visualization."""
+    metrics = component_data.get("metrics", {})
+    
+    # Create a visualization for prediction confidence
+    if "prediction_confidence" in metrics:
+        fig = go.Figure()
+        fig.add_trace(go.Indicator(
+            mode="gauge+number",
+            value=metrics["prediction_confidence"] * 100,
+            title={"text": "Prediction Confidence"},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "#3366FF"},
+                "steps": [
+                    {"range": [0, 60], "color": "#FF6666"},
+                    {"range": [60, 80], "color": "#FFCC66"},
+                    {"range": [80, 100], "color": "#66CC66"}
+                ]
+            }
+        ))
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Create a visualization for predictions generated
+    if "predictions_generated" in metrics:
+        st.markdown(f"**Predictions Generated:** {metrics['predictions_generated']}")
+        
+        # Create a random distribution of predictions
+        np.random.seed(42)
+        predictions = np.random.normal(0, 1, 100)
+        
+        fig = go.Figure()
+        fig.add_trace(go.Histogram(
+            x=predictions,
+            marker_color="#3366FF"
+        ))
+        fig.update_layout(
+            title="Prediction Distribution",
+            xaxis_title="Prediction Value",
+            yaxis_title="Frequency"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+# Component-specific data flow visualizations
+def render_data_preprocessing_flow(input_data: pd.DataFrame, output_data: pd.DataFrame):
+    """Render data preprocessing flow visualization."""
+    st.info("Data preprocessing transforms raw input data by normalizing numerical features, handling outliers, and standardizing formats.")
+    
+    # Create a simple before/after visualization for a feature
+    if "Feature 1" in input_data.columns:
+        fig = go.Figure()
+        fig.add_trace(go.Box(
+            y=input_data["Feature 1"],
+            name="Before Preprocessing",
+            marker_color="#FF9933"
+        ))
+        fig.add_trace(go.Box(
+            y=output_data["Feature 1"],
+            name="After Preprocessing",
+            marker_color="#3366FF"
+        ))
+        fig.update_layout(
+            title="Feature 1 Before and After Preprocessing",
+            yaxis_title="Value"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+def render_feature_extraction_flow(input_data: pd.DataFrame, output_data: pd.DataFrame):
+    """Render feature extraction flow visualization."""
+    st.info("Feature extraction transforms original features into new, more informative features through dimensionality reduction and feature engineering.")
+    
+    # Create a visualization comparing original vs extracted features
+    fig = go.Figure()
+    
+    # Add input data features
+    for col in input_data.columns:
+        fig.add_trace(go.Box(
+            y=input_data[col],
+            name=f"Original: {col}",
+            marker_color="#FF9933"
+        ))
+    
+    # Add output data features
+    for col in output_data.columns:
+        fig.add_trace(go.Box(
+            y=output_data[col],
+            name=f"Extracted: {col}",
+            marker_color="#3366FF"
+        ))
+    
+    fig.update_layout(
+        title="Original vs Extracted Features",
+        yaxis_title="Value"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+def render_missing_data_flow(input_data: pd.DataFrame, output_data: pd.DataFrame):
+    """Render missing data handling flow visualization."""
+    st.info("Missing data handling identifies and replaces missing values using sophisticated imputation techniques.")
+    
+    # Create a visualization showing missing values
+    fig = go.Figure()
+    
+    # Create a heatmap-like visualization
+    heat_data = output_data.isna().astype(int)
+    
+    # Create a heatmap
+    fig = px.imshow(
+        heat_data,
+        labels=dict(x="Features", y="Samples", color="Missing (1) / Present (0)"),
+        x=heat_data.columns,
+        y=[f"Sample {i+1}" for i in range(len(heat_data))],
+        color_continuous_scale=["#66CC66", "#FF6666"]
+    )
+    
+    fig.update_layout(title="Missing Value Heatmap")
+    st.plotly_chart(fig, use_container_width=True)
+
+def render_expert_training_flow(input_data: pd.DataFrame, output_data: pd.DataFrame):
+    """Render expert training flow visualization."""
+    st.info("Expert training involves each specialized model learning to predict the target based on its domain-specific features.")
+    
+    # Create a scatter plot for each expert's predictions
+    fig = go.Figure()
+    
+    # Generate random target values for demonstration
+    np.random.seed(42)
+    target = np.random.normal(0, 1, len(input_data))
+    
+    # Plot each expert's predictions against the target
+    fig.add_trace(go.Scatter(
+        x=target,
+        y=output_data["Physiological_Prediction"],
+        mode="markers",
+        name="Physiological Expert",
+        marker=dict(color="#FF9933", size=10)
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=target,
+        y=output_data["Behavioral_Prediction"],
+        mode="markers",
+        name="Behavioral Expert",
+        marker=dict(color="#3366FF", size=10)
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=target,
+        y=output_data["Environmental_Prediction"],
+        mode="markers",
+        name="Environmental Expert",
+        marker=dict(color="#66CC66", size=10)
+    ))
+    
+    # Add perfect prediction line
+    fig.add_trace(go.Scatter(
+        x=[-3, 3],
+        y=[-3, 3],
+        mode="lines",
+        name="Perfect Prediction",
+        line=dict(color="black", dash="dash")
+    ))
+    
+    fig.update_layout(
+        title="Expert Predictions vs. Target",
+        xaxis_title="Target Value",
+        yaxis_title="Predicted Value"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+def render_gating_network_flow(input_data: pd.DataFrame, output_data: pd.DataFrame):
+    """Render gating network flow visualization."""
+    st.info("The gating network determines which experts to trust for each input by assigning weights to each expert's prediction.")
+    
+    # Create a stacked bar chart for expert weights
+    fig = go.Figure()
+    
+    for i in range(len(output_data)):
+        fig.add_trace(go.Bar(
+            x=[f"Sample {i+1}"],
+            y=[output_data["Physiological_Weight"].iloc[i]],
+            name="Physiological" if i == 0 else None,
+            marker_color="#FF9933",
+            showlegend=(i == 0)
+        ))
+        
+        fig.add_trace(go.Bar(
+            x=[f"Sample {i+1}"],
+            y=[output_data["Behavioral_Weight"].iloc[i]],
+            name="Behavioral" if i == 0 else None,
+            marker_color="#3366FF",
+            showlegend=(i == 0)
+        ))
+        
+        fig.add_trace(go.Bar(
+            x=[f"Sample {i+1}"],
+            y=[output_data["Environmental_Weight"].iloc[i]],
+            name="Environmental" if i == 0 else None,
+            marker_color="#66CC66",
+            showlegend=(i == 0)
+        ))
+    
+    fig.update_layout(
+        title="Expert Weights Assigned by Gating Network",
+        xaxis_title="Sample",
+        yaxis_title="Weight",
+        barmode="stack"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+def render_moe_integration_flow(input_data: pd.DataFrame, output_data: pd.DataFrame):
+    """Render MoE integration flow visualization."""
+    st.info("MoE integration combines predictions from multiple experts using weights from the gating network to produce a unified prediction.")
+    
+    # Create a bar chart comparing integrated predictions with individual expert contributions
+    fig = go.Figure()
+    
+    # Get expert predictions
+    expert_data = transform_sample_data(input_data, "expert_training")
+    
+    for i in range(len(output_data)):
+        # Expert contributions
+        physiological_contrib = output_data["Physiological_Weight"].iloc[i] * expert_data["Physiological_Prediction"].iloc[i]
+        behavioral_contrib = output_data["Behavioral_Weight"].iloc[i] * expert_data["Behavioral_Prediction"].iloc[i]
+        environmental_contrib = output_data["Environmental_Weight"].iloc[i] * expert_data["Environmental_Prediction"].iloc[i]
+        
+        fig.add_trace(go.Bar(
+            x=[f"Sample {i+1}"],
+            y=[physiological_contrib],
+            name="Physiological Contribution" if i == 0 else None,
+            marker_color="#FF9933",
+            showlegend=(i == 0)
+        ))
+        
+        fig.add_trace(go.Bar(
+            x=[f"Sample {i+1}"],
+            y=[behavioral_contrib],
+            name="Behavioral Contribution" if i == 0 else None,
+            marker_color="#3366FF",
+            showlegend=(i == 0)
+        ))
+        
+        fig.add_trace(go.Bar(
+            x=[f"Sample {i+1}"],
+            y=[environmental_contrib],
+            name="Environmental Contribution" if i == 0 else None,
+            marker_color="#66CC66",
+            showlegend=(i == 0)
+        ))
+        
+        # Integrated prediction (line)
+        fig.add_trace(go.Scatter(
+            x=[f"Sample {i+1}"],
+            y=[output_data["Integrated_Prediction"].iloc[i]],
+            mode="markers",
+            marker=dict(color="black", size=10),
+            name="Integrated Prediction" if i == 0 else None,
+            showlegend=(i == 0)
+        ))
+    
+    fig.update_layout(
+        title="Expert Contributions to Integrated Prediction",
+        xaxis_title="Sample",
+        yaxis_title="Contribution",
+        barmode="stack"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+def render_output_generation_flow(input_data: pd.DataFrame, output_data: pd.DataFrame):
+    """Render output generation flow visualization."""
+    st.info("Output generation formats the final predictions and adds metadata like confidence intervals and uncertainty estimates.")
+    
+    # Create a visualization with predictions and confidence intervals
+    fig = go.Figure()
+    
+    for i in range(len(output_data)):
+        prediction = output_data["Prediction"].iloc[i]
+        uncertainty = output_data["Uncertainty"].iloc[i]
+        
+        # Add prediction point
+        fig.add_trace(go.Scatter(
+            x=[f"Sample {i+1}"],
+            y=[prediction],
+            mode="markers",
+            marker=dict(color="#3366FF", size=10),
+            name="Prediction" if i == 0 else None,
+            showlegend=(i == 0)
+        ))
+        
+        # Add uncertainty range
+        fig.add_trace(go.Scatter(
+            x=[f"Sample {i+1}", f"Sample {i+1}"],
+            y=[prediction - uncertainty, prediction + uncertainty],
+            mode="lines",
+            line=dict(color="#FF9933", width=2),
+            name="Uncertainty Range" if i == 0 else None,
+            showlegend=(i == 0)
+        ))
+    
+    fig.update_layout(
+        title="Final Predictions with Uncertainty",
+        xaxis_title="Sample",
+        yaxis_title="Prediction",
+        showlegend=True
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Display contributing experts
+    if "Contributing_Experts" in output_data.columns:
+        st.markdown("### Contributing Experts")
+        for i, experts in enumerate(output_data["Contributing_Experts"]):
+            st.markdown(f"**Sample {i+1}:** {experts}")
 
 if __name__ == "__main__":
     # For testing this module independently

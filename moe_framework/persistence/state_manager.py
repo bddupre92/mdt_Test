@@ -90,96 +90,62 @@ class FileSystemStateManager(StateManager):
     the file system, using a structured directory format.
     """
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs):
+    def __init__(self, base_dir: Optional[str] = None):
         """
         Initialize the file system state manager.
         
         Args:
-            config: Configuration dictionary with storage settings
-            **kwargs: Additional arguments for backward compatibility
-                      - checkpoint_dir: Base directory for checkpoints
-                      - max_checkpoints: Maximum number of checkpoints to keep
+            base_dir: Base directory for checkpoints
         """
-        self.config = config or {}
-        
-        # Handle both config dict and direct parameters for backward compatibility
-        if 'checkpoint_dir' in kwargs:
-            self.base_dir = kwargs['checkpoint_dir']
-            self.config['base_dir'] = self.base_dir
-        else:
-            self.base_dir = self.config.get('base_dir', 'checkpoints')
-            
-        self.max_checkpoints = kwargs.get('max_checkpoints', self.config.get('max_checkpoints', 5))
-        self.config['max_checkpoints'] = self.max_checkpoints
-        
-        # Environment-specific settings
-        env = os.environ.get('MOE_ENV', 'dev')
-        if not os.path.isabs(self.base_dir):  # Only apply env subfolder if not absolute path
-            self.base_dir = os.path.join(self.base_dir, env)
-        
-        # Create base directory if it doesn't exist
+        self.base_dir = base_dir or os.path.join(os.getcwd(), 'checkpoints')
         os.makedirs(self.base_dir, exist_ok=True)
         
-    def save_state(self, state: Dict[str, Any]) -> str:
+    def save_state(self, state_data: Dict[str, Any], path: Optional[str] = None) -> bool:
         """
         Save the system state to a file.
         
         Args:
-            state: State dictionary to save
+            state_data: Dictionary containing state data
+            path: Optional path to save the state file
             
         Returns:
-            Full path to the saved checkpoint file
+            Success flag
         """
-        # Generate checkpoint path with timestamp and microseconds for uniqueness
-        # This is especially important for tests where checkpoints are created in quick succession
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        microseconds = datetime.now().microsecond
-        checkpoint_name = f"checkpoint_{timestamp}_{microseconds:06d}.json"
-        checkpoint_path = os.path.join(self.base_dir, checkpoint_name)
-        
-        # Test JSON serialization before writing to file to ensure TypeError is raised
-        # for non-serializable objects
         try:
-            json.dumps(state)
-        except (TypeError, OverflowError) as e:
-            logger.error(f"State is not JSON serializable: {e}")
-            raise
+            if path is None:
+                # Generate default path if none provided
+                timestamp = int(time.time())
+                path = os.path.join(self.base_dir, f"state_{timestamp}.json")
+                
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             
-        try:
-            # Write to file
-            with open(checkpoint_path, 'w') as f:
-                json.dump(state, f, indent=2)
+            # Save state to file
+            with open(path, 'w') as f:
+                json.dump(state_data, f, indent=2)
+                
+            return True
             
-            logger.info(f"Saved checkpoint to {checkpoint_path}")
-            
-            # Enforce max_checkpoints limit
-            self._enforce_max_checkpoints()
-            
-            return checkpoint_path
         except Exception as e:
-            logger.error(f"Error saving state: {e}")
-            return ""
+            logger.error(f"Error saving state: {str(e)}")
+            return False
     
-    def load_state(self, checkpoint_path: str) -> Dict[str, Any]:
+    def load_state(self, path: str) -> Optional[Dict[str, Any]]:
         """
         Load a state from a checkpoint file.
         
         Args:
-            checkpoint_path: Path to the checkpoint file
+            path: Path to the checkpoint file
             
         Returns:
             The loaded state dictionary
         """
         try:
-            with open(checkpoint_path, 'r') as f:
-                state = json.load(f)
-            return state
-        except FileNotFoundError:
-            logger.error(f"Checkpoint not found: {checkpoint_path}")
-            raise
-        except json.JSONDecodeError as e:
-            logger.error(f"Error decoding checkpoint: {e}")
-            raise
+            with open(path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading state: {str(e)}")
+            return None
     
     def _enforce_max_checkpoints(self) -> None:
         """

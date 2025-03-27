@@ -328,94 +328,109 @@ class EnvironmentalExpert(BaseExpert):
         # Default confidence calculation
         return super()._calculate_confidence(X, predictions, **kwargs)
     
-    def optimize_hyperparameters(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> None:
+    def optimize_hyperparameters(self, X, y):
         """
         Optimize hyperparameters using Evolution Strategy.
         
         Args:
-            X: Feature data
-            y: Target data
-            **kwargs: Additional keyword arguments
+            X: Training features
+            y: Target values
+            
+        Returns:
+            Best hyperparameters found
         """
-        logger.info(f"Optimizing hyperparameters for {self.name} using Evolution Strategy")
-        
-        # Define parameter bounds for GradientBoostingRegressor
-        param_bounds = {
-            'n_estimators': (50, 200),
-            'learning_rate': (0.01, 0.3),
-            'max_depth': (3, 10),
-            'min_samples_split': (2, 20)
-        }
-        
-        # Define fitness function (negative cross-validation score)
-        def fitness_function(params):
-            # Extract parameters
-            n_estimators = int(params[0])
-            learning_rate = params[1]
-            max_depth = int(params[2])
-            min_samples_split = int(params[3])
+        try:
+            # Define parameter bounds
+            param_bounds = [
+                (50, 300),      # n_estimators
+                (0.01, 0.3),    # learning_rate
+                (3, 15),        # max_depth
+                (0.5, 1.0),     # subsample
+                (0.5, 1.0)      # colsample_bytree
+            ]
+            param_names = ['n_estimators', 'learning_rate', 'max_depth', 'subsample', 'colsample_bytree']
             
-            # Create model with these parameters
-            model = GradientBoostingRegressor(
-                n_estimators=n_estimators,
-                learning_rate=learning_rate,
-                max_depth=max_depth,
-                min_samples_split=min_samples_split,
-                random_state=42
+            # Define fitness function
+            def fitness_function(params):
+                try:
+                    # Convert parameters to correct types
+                    params_dict = {
+                        'n_estimators': int(params[0]),
+                        'learning_rate': float(params[1]),
+                        'max_depth': int(params[2]),
+                        'subsample': float(params[3]),
+                        'colsample_bytree': float(params[4])
+                    }
+                    
+                    # Create and evaluate model with these parameters
+                    model = self._create_model(**params_dict)
+                    scores = cross_val_score(model, X, y, cv=3, scoring='neg_mean_squared_error')
+                    return -np.mean(scores)  # Return negative MSE (to minimize)
+                    
+                except Exception as e:
+                    logger.error(f"Error in fitness function: {str(e)}")
+                    return float('inf')  # Return worst possible score on error
+            
+            # Initialize optimizer
+            optimizer = EvolutionStrategyAdapter(
+                fitness_function=fitness_function,
+                bounds=param_bounds,
+                population_size=20,
+                max_iterations=30,
+                initial_step_size=0.3,
+                adaptation_rate=0.2,
+                random_seed=42
             )
             
-            # Perform cross-validation
-            cv_scores = cross_val_score(
-                model, X, y, 
-                cv=5, 
-                scoring='neg_mean_squared_error'
-            )
+            # Run optimization
+            best_params, best_fitness = optimizer.optimize()
             
-            # Return negative mean score (ES minimizes)
-            return -np.mean(cv_scores)
-        
-        # Initialize optimizer using the adapter
-        self.optimizer = EvolutionStrategyAdapter(
-            fitness_function=fitness_function,
-            bounds=[
-                param_bounds['n_estimators'],
-                param_bounds['learning_rate'],
-                param_bounds['max_depth'],
-                param_bounds['min_samples_split']
-            ],
-            population_size=10,
-            max_iterations=10,
-            initial_step_size=0.3,
-            adaptation_rate=0.2,
-            random_seed=42
-        )
-        
-        # Run optimization
-        best_params, best_fitness = self.optimizer.optimize()
-        
-        # Update model with best parameters
-        self.model = GradientBoostingRegressor(
-            n_estimators=int(best_params[0]),
-            learning_rate=best_params[1],
-            max_depth=int(best_params[2]),
-            min_samples_split=int(best_params[3]),
-            random_state=42
-        )
-        
-        # Log optimization results
-        logger.info(f"Optimized hyperparameters: n_estimators={int(best_params[0])}, "
-                   f"learning_rate={best_params[1]:.3f}, max_depth={int(best_params[2])}, "
-                   f"min_samples_split={int(best_params[3])}")
-        logger.info(f"Best fitness (negative MSE): {best_fitness}")
-        
-        # Store optimization results in metadata
-        self.metadata['optimization_results'] = {
-            'best_params': {
+            # Convert best parameters to dictionary
+            best_params_dict = {
                 'n_estimators': int(best_params[0]),
                 'learning_rate': float(best_params[1]),
                 'max_depth': int(best_params[2]),
-                'min_samples_split': int(best_params[3])
+                'subsample': float(best_params[3]),
+                'colsample_bytree': float(best_params[4])
+            }
+            
+            logger.info(f"Best hyperparameters found: {best_params_dict}")
+            logger.info(f"Best fitness score: {best_fitness}")
+            
+            return best_params_dict
+            
+        except Exception as e:
+            logger.error(f"Error in hyperparameter optimization: {str(e)}")
+            # Return default parameters on error
+            return {
+                'n_estimators': 100,
+                'learning_rate': 0.1,
+                'max_depth': 5,
+                'subsample': 0.8,
+                'colsample_bytree': 0.8
+            }
+
+    def get_hyperparameter_space(self):
+        """Get the hyperparameter space for optimization."""
+        return {
+            'n_estimators': {
+                'type': 'int',
+                'bounds': [(50, 500)],
+                'value': self.model.n_estimators if hasattr(self.model, 'n_estimators') else 100
             },
-            'best_fitness': float(best_fitness),
-            'optimizer': 'EvolutionStrategyOptimizer'
+            'max_depth': {
+                'type': 'int',
+                'bounds': [(3, 20)],
+                'value': self.model.max_depth if hasattr(self.model, 'max_depth') else 5
+            },
+            'min_samples_split': {
+                'type': 'int',
+                'bounds': [(2, 20)],
+                'value': self.model.min_samples_split if hasattr(self.model, 'min_samples_split') else 2
+            },
+            'min_samples_leaf': {
+                'type': 'int',
+                'bounds': [(1, 10)],
+                'value': self.model.min_samples_leaf if hasattr(self.model, 'min_samples_leaf') else 1
+            }
         }

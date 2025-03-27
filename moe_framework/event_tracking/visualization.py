@@ -52,19 +52,124 @@ class WorkflowVisualizer:
     Generates visualizations of workflow executions in the MoE framework.
     """
     
-    def __init__(self, output_dir: str = "./visualizations"):
+    def __init__(self, tracking_dir: str):
         """
         Initialize the workflow visualizer.
         
         Args:
-            output_dir: Directory to store visualizations
+            tracking_dir: Directory containing workflow tracking data
         """
-        self.output_dir = output_dir
+        self.tracking_dir = tracking_dir
+        self.events_file = os.path.join(tracking_dir, 'events.json')
         
-        # Create output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
+        # Create tracking directory if it doesn't exist
+        os.makedirs(tracking_dir, exist_ok=True)
         
-        logger.info(f"Initialized WorkflowVisualizer with output directory: {output_dir}")
+        logger.info(f"Initialized WorkflowVisualizer with output directory: {tracking_dir}")
+        
+    def get_events(self) -> List[Dict[str, Any]]:
+        """
+        Get all workflow events from the tracking directory.
+        
+        Returns:
+            List of workflow events
+        """
+        events = []
+        
+        try:
+            if os.path.exists(self.events_file):
+                with open(self.events_file, 'r') as f:
+                    events = json.load(f)
+            else:
+                logger.warning(f"No events file found at {self.events_file}")
+                
+        except Exception as e:
+            logger.error(f"Error reading events file: {str(e)}")
+            
+        return events
+        
+    def add_event(self, event_type: str, event_data: Dict[str, Any]) -> bool:
+        """
+        Add a new workflow event.
+        
+        Args:
+            event_type: Type of the event
+            event_data: Event data dictionary
+            
+        Returns:
+            Success flag
+        """
+        try:
+            # Load existing events
+            events = self.get_events()
+            
+            # Add new event with timestamp
+            event = {
+                'type': event_type,
+                'timestamp': datetime.now().isoformat(),
+                'data': event_data
+            }
+            events.append(event)
+            
+            # Save updated events
+            with open(self.events_file, 'w') as f:
+                json.dump(events, f, indent=2)
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error adding event: {str(e)}")
+            return False
+            
+    def get_timeline(self) -> List[Dict[str, Any]]:
+        """
+        Get timeline of workflow events.
+        
+        Returns:
+            List of events sorted by timestamp
+        """
+        events = self.get_events()
+        
+        # Sort events by timestamp
+        return sorted(events, key=lambda x: x.get('timestamp', ''))
+        
+    def get_stage_status(self) -> Dict[str, str]:
+        """
+        Get status of each workflow stage.
+        
+        Returns:
+            Dictionary mapping stage names to their status
+        """
+        events = self.get_events()
+        stages = {}
+        
+        for event in events:
+            if event['type'].endswith('_STARTED'):
+                stage = event['type'].replace('_STARTED', '')
+                stages[stage] = 'In Progress'
+            elif event['type'].endswith('_COMPLETED'):
+                stage = event['type'].replace('_COMPLETED', '')
+                stages[stage] = 'Completed'
+            elif event['type'].endswith('_FAILED'):
+                stage = event['type'].replace('_FAILED', '')
+                stages[stage] = 'Failed'
+                
+        return stages
+        
+    def clear_events(self) -> bool:
+        """
+        Clear all workflow events.
+        
+        Returns:
+            Success flag
+        """
+        try:
+            if os.path.exists(self.events_file):
+                os.remove(self.events_file)
+            return True
+        except Exception as e:
+            logger.error(f"Error clearing events: {str(e)}")
+            return False
         
     def create_execution_graph(self, workflow: WorkflowExecution) -> nx.DiGraph:
         """
@@ -161,7 +266,7 @@ class WorkflowVisualizer:
         if not output_filename:
             output_filename = f"{workflow.workflow_id}.png"
             
-        output_path = os.path.join(self.output_dir, output_filename)
+        output_path = os.path.join(self.tracking_dir, output_filename)
         
         # Create the graph
         G = self.create_execution_graph(workflow)
@@ -289,7 +394,7 @@ class WorkflowVisualizer:
         if not output_filename:
             output_filename = f"{workflow.workflow_id}.mmd"
             
-        output_path = os.path.join(self.output_dir, output_filename)
+        output_path = os.path.join(self.tracking_dir, output_filename)
         
         # Build the mermaid diagram
         mermaid_lines = ["graph TD"]
@@ -381,7 +486,7 @@ class WorkflowVisualizer:
         if not output_filename:
             output_filename = f"{workflow.workflow_id}_export.json"
             
-        output_path = os.path.join(self.output_dir, output_filename)
+        output_path = os.path.join(self.tracking_dir, output_filename)
         
         # Convert workflow to graph
         G = self.create_execution_graph(workflow)
@@ -481,7 +586,7 @@ class WorkflowVisualizer:
         if not output_filename:
             output_filename = f"{workflow.workflow_id}_timeline.png"
             
-        output_path = os.path.join(self.output_dir, output_filename)
+        output_path = os.path.join(self.tracking_dir, output_filename)
         
         # Create figure
         fig, ax = plt.subplots(figsize=figsize)
@@ -650,7 +755,7 @@ class WorkflowVisualizer:
                 else:
                     conv_filename = f"{output_filename}_{optimizer_id}_convergence.png"
                     
-                conv_path = os.path.join(self.output_dir, conv_filename)
+                conv_path = os.path.join(self.tracking_dir, conv_filename)
                 
                 plt.figure(figsize=(10, 6))
                 plt.plot(perf.convergence_curve, 'b-', linewidth=2)
@@ -672,7 +777,7 @@ class WorkflowVisualizer:
                 else:
                     param_filename = f"{output_filename}_{optimizer_id}_parameters.png"
                     
-                param_path = os.path.join(self.output_dir, param_filename)
+                param_path = os.path.join(self.tracking_dir, param_filename)
                 
                 plt.figure(figsize=(12, 8))
                 
@@ -699,7 +804,7 @@ class WorkflowVisualizer:
                 else:
                     explore_filename = f"{output_filename}_{optimizer_id}_exploration.png"
                     
-                explore_path = os.path.join(self.output_dir, explore_filename)
+                explore_path = os.path.join(self.tracking_dir, explore_filename)
                 
                 plt.figure(figsize=(10, 6))
                 plt.plot(perf.exploration_exploitation_ratio, 'g-', linewidth=2)
@@ -723,7 +828,7 @@ class WorkflowVisualizer:
                 else:
                     div_filename = f"{output_filename}_{optimizer_id}_diversity.png"
                     
-                div_path = os.path.join(self.output_dir, div_filename)
+                div_path = os.path.join(self.tracking_dir, div_filename)
                 
                 plt.figure(figsize=(10, 6))
                 plt.plot(perf.diversity_history, 'r-', linewidth=2)
@@ -744,7 +849,7 @@ class WorkflowVisualizer:
             else:
                 summary_filename = f"{output_filename}_{optimizer_id}_summary.png"
                 
-            summary_path = os.path.join(self.output_dir, summary_filename)
+            summary_path = os.path.join(self.tracking_dir, summary_filename)
             
             fig = plt.figure(figsize=figsize)
             fig.suptitle(f"Optimizer Performance Summary: {optimizer_type}", fontsize=16)
@@ -868,7 +973,7 @@ class WorkflowVisualizer:
         else:
             weights_filename = f"{output_filename}_expert_weights.png"
             
-        weights_path = os.path.join(self.output_dir, weights_filename)
+        weights_path = os.path.join(self.tracking_dir, weights_filename)
         
         plt.figure(figsize=(10, 8))
         
@@ -898,7 +1003,7 @@ class WorkflowVisualizer:
         else:
             conf_filename = f"{output_filename}_expert_confidence.png"
             
-        conf_path = os.path.join(self.output_dir, conf_filename)
+        conf_path = os.path.join(self.tracking_dir, conf_filename)
         
         plt.figure(figsize=(12, 8))
         
@@ -931,7 +1036,7 @@ class WorkflowVisualizer:
             else:
                 feat_filename = f"{output_filename}_feature_importance.png"
                 
-            feat_path = os.path.join(self.output_dir, feat_filename)
+            feat_path = os.path.join(self.tracking_dir, feat_filename)
             
             # Collect feature importance data
             feature_importance = {}
@@ -1007,7 +1112,7 @@ class WorkflowVisualizer:
         else:
             freq_filename = f"{output_filename}_algorithm_frequency.png"
             
-        freq_path = os.path.join(self.output_dir, freq_filename)
+        freq_path = os.path.join(self.tracking_dir, freq_filename)
         
         plt.figure(figsize=(12, 8))
         
@@ -1041,7 +1146,7 @@ class WorkflowVisualizer:
         else:
             conf_filename = f"{output_filename}_selection_confidence.png"
             
-        conf_path = os.path.join(self.output_dir, conf_filename)
+        conf_path = os.path.join(self.tracking_dir, conf_filename)
         
         plt.figure(figsize=(10, 8))
         

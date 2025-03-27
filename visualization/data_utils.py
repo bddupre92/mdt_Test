@@ -19,6 +19,9 @@ import plotly.graph_objects as go
 import plotly.express as px
 import sys
 import string
+import time
+import uuid
+import logging
 
 # Add parent directory to path to import MoE modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

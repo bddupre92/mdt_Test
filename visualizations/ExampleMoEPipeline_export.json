@@ -1,7 +1,7 @@
 {
   "workflow_id": "ExampleMoEPipeline",
-  "start_time": "2025-03-26T13:20:21.268602",
-  "end_time": "2025-03-26T13:20:23.783427",
+  "start_time": "2025-03-26T22:47:33.479497",
+  "end_time": "2025-03-26T22:47:35.981965",
   "success": true,
   "nodes": [
     {
@@ -57,9 +57,9 @@
     {
       "id": "event_2",
       "type": "event",
-      "label": "Trained expert: physiological_expert_0",
+      "label": "Trained expert: behavioral_expert_0",
       "success": true,
-      "event_type": "Trained expert: physiological_expert_0",
+      "event_type": "Trained expert: behavioral_expert_0",
       "component": "expert_training",
       "color": "#FF8C00"
     },
@@ -84,45 +84,45 @@
     {
       "id": "event_5",
       "type": "event",
-      "label": "Trained expert: environmental_expert_3",
+      "label": "Trained expert: behavioral_expert_3",
       "success": true,
-      "event_type": "Trained expert: environmental_expert_3",
+      "event_type": "Trained expert: behavioral_expert_3",
       "component": "expert_training",
       "color": "#FF8C00"
     },
     {
       "id": "event_6",
       "type": "event",
-      "label": "Trained expert: physiological_expert_4",
+      "label": "Trained expert: medication_expert_4",
       "success": true,
-      "event_type": "Trained expert: physiological_expert_4",
+      "event_type": "Trained expert: medication_expert_4",
       "component": "expert_training",
       "color": "#FF8C00"
     },
     {
       "id": "event_7",
       "type": "event",
-      "label": "Trained expert: medication_expert_5",
+      "label": "Trained expert: environmental_expert_5",
       "success": true,
-      "event_type": "Trained expert: medication_expert_5",
+      "event_type": "Trained expert: environmental_expert_5",
       "component": "expert_training",
       "color": "#FF8C00"
     },
     {
       "id": "event_8",
       "type": "event",
-      "label": "Trained expert: physiological_expert_6",
+      "label": "Trained expert: behavioral_expert_6",
       "success": true,
-      "event_type": "Trained expert: physiological_expert_6",
+      "event_type": "Trained expert: behavioral_expert_6",
       "component": "expert_training",
       "color": "#FF8C00"
     },
     {
       "id": "event_9",
       "type": "event",
-      "label": "Trained expert: physiological_expert_7",
+      "label": "Trained expert: behavioral_expert_7",
       "success": true,
-      "event_type": "Trained expert: physiological_expert_7",
+      "event_type": "Trained expert: behavioral_expert_7",
       "component": "expert_training",
       "color": "#FF8C00"
     },
@@ -138,9 +138,9 @@
     {
       "id": "event_11",
       "type": "event",
-      "label": "Trained expert: medication_expert_9",
+      "label": "Trained expert: physiological_expert_9",
       "success": true,
-      "event_type": "Trained expert: medication_expert_9",
+      "event_type": "Trained expert: physiological_expert_9",
       "component": "expert_training",
       "color": "#FF8C00"
     },
@@ -210,36 +210,36 @@
     {
       "id": "event_19",
       "type": "event",
-      "label": "Expert prediction: medication_expert_pred_1",
+      "label": "Expert prediction: behavioral_expert_pred_1",
       "success": true,
-      "event_type": "Expert prediction: medication_expert_pred_1",
+      "event_type": "Expert prediction: behavioral_expert_pred_1",
       "component": "prediction",
       "color": "#9932CC"
     },
     {
       "id": "event_20",
       "type": "event",
-      "label": "Expert prediction: physiological_expert_pred_2",
+      "label": "Expert prediction: environmental_expert_pred_2",
       "success": true,
-      "event_type": "Expert prediction: physiological_expert_pred_2",
+      "event_type": "Expert prediction: environmental_expert_pred_2",
       "component": "prediction",
       "color": "#9932CC"
     },
     {
       "id": "event_21",
       "type": "event",
-      "label": "Expert prediction: medication_expert_pred_3",
+      "label": "Expert prediction: physiological_expert_pred_3",
       "success": true,
-      "event_type": "Expert prediction: medication_expert_pred_3",
+      "event_type": "Expert prediction: physiological_expert_pred_3",
       "component": "prediction",
       "color": "#9932CC"
     },
     {
       "id": "event_22",
       "type": "event",
-      "label": "Expert prediction: physiological_expert_pred_4",
+      "label": "Expert prediction: medication_expert_pred_4",
       "success": true,
-      "event_type": "Expert prediction: physiological_expert_pred_4",
+      "event_type": "Expert prediction: medication_expert_pred_4",
       "component": "prediction",
       "color": "#9932CC"
     },

@@ -1,370 +1,675 @@
 """
-live_visualization.py
---------------------
-Real-time visualization tools for optimization algorithms.
+Real-time visualization tools for MOE Framework.
+
+This module provides real-time visualization capabilities for monitoring
+training progress, optimization algorithms, and convergence of models.
 """
 
-# Set matplotlib backend for non-interactive use
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend for saving only
-import matplotlib.pyplot as plt
-
+import streamlit as st
+import plotly.graph_objects as go
+import plotly.express as px
+import pandas as pd
 import numpy as np
-from matplotlib.animation import FuncAnimation
-import threading
-import queue
-import time
 from typing import Dict, List, Any, Optional
+import time
 import logging
-import os
-from pathlib import Path
-import sys
-sys.path.append(str(Path(__file__).parent.parent))
-from utils.plot_utils import save_plot
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 class LiveOptimizationMonitor:
-    """Real-time visualization for optimization progress."""
+    """
+    Class for monitoring optimization processes in real-time.
+    Used by the meta-optimizer component to visualize optimization progress.
+    """
+    def __init__(self, title="Optimization Monitor"):
+        """
+        Initialize the optimization monitor.
+        
+        Args:
+            title (str): Title for the monitor display
+        """
+        self.title = title
+        self.trials = []
+        self.best_score = 0
+        self.best_params = {}
+        self.best_trial = 0
+        self.iteration = 0
+        logger.info(f"Initialized {self.title}")
     
-    def __init__(self, max_data_points: int = 1000, auto_show: bool = False, headless: bool = True):
+    def update(self, trial_result: Dict[str, Any]):
         """
-        Initialize the live monitor.
+        Update the monitor with a new trial result.
         
         Args:
-            max_data_points: Maximum number of data points to store per optimizer
-            auto_show: Whether to automatically show the plot when starting monitoring
-            headless: Whether to run in headless mode (no display, save only)
+            trial_result: Dictionary containing trial information
+                Required keys:
+                - score: The evaluation score for this trial
+                - params: Dictionary of parameter values used in this trial
         """
-        self.data_queue = queue.Queue()
-        self.running = False
-        self.fig, self.axes = plt.subplots(2, 2, figsize=(14, 10))
-        self.optimizer_data = {}  # Store data for each optimizer
-        self.animation = None
-        self.logger = logging.getLogger(__name__)
-        self.max_data_points = max_data_points
-        self.auto_show = auto_show
-        self.headless = headless
+        self.iteration += 1
+        score = trial_result.get('score', 0)
+        params = trial_result.get('params', {})
         
-    def start_monitoring(self):
-        """Start the visualization thread."""
-        if self.running:
-            return
-            
-        self.running = True
-        self.logger.info("Starting optimization monitoring")
+        # Check if this is the best score
+        if score > self.best_score:
+            self.best_score = score
+            self.best_params = params.copy()
+            self.best_trial = self.iteration
         
-        # Set up the plots
-        self.axes[0, 0].set_title('Optimization Progress')
-        self.axes[0, 0].set_xlabel('Evaluations')
-        self.axes[0, 0].set_ylabel('Best Score (log scale)')
-        self.axes[0, 0].set_yscale('log')
-        self.axes[0, 0].grid(True)
+        # Add trial data
+        trial_data = {
+            "trial_id": self.iteration,
+            "score": score,
+        }
         
-        self.axes[0, 1].set_title('Improvement Rate')
-        self.axes[0, 1].set_xlabel('Evaluations')
-        self.axes[0, 1].set_ylabel('Score Improvement')
-        self.axes[0, 1].grid(True)
+        # Add parameter data
+        for param_name, param_value in params.items():
+            trial_data[f"param_{param_name}"] = param_value
         
-        self.axes[1, 0].set_title('Convergence Speed')
-        self.axes[1, 0].set_xlabel('Time (s)')
-        self.axes[1, 0].set_ylabel('Best Score (log scale)')
-        self.axes[1, 0].set_yscale('log')
-        self.axes[1, 0].grid(True)
+        self.trials.append(trial_data)
+        logger.info(f"Updated monitor with trial {self.iteration}, score: {score:.4f}")
         
-        self.axes[1, 1].set_title('Optimization Statistics')
-        self.axes[1, 1].axis('off')  # No axes for the text area
-        
-        # Create legend handles
-        self.lines = {}
-        self.improvement_lines = {}
-        self.time_lines = {}
-        
-        # Start time for relative timing
-        self.start_time = time.time()
-        
-        # Only set up animation if not in headless mode
-        if not self.headless:
-            # Enable interactive mode if showing plots
-            if self.auto_show:
-                plt.ion()
-                
-            self.animation = FuncAnimation(
-                self.fig, self._update_plot, interval=500, 
-                cache_frame_data=False, blit=False
-            )
-            
-            plt.tight_layout()
-            
-            # Show the plot if auto_show is enabled
-            if self.auto_show:
-                plt.show(block=False)
-                plt.pause(0.1)  # Add pause to ensure the plot is displayed
-        
-    def stop_monitoring(self):
-        """Stop the visualization."""
-        self.running = False
-        if self.animation:
-            self.animation.event_source.stop()
-        
-        # Update the plot one last time to ensure all data is visualized
-        self._update_final_plot()
-        
-        if not self.headless:
-            plt.close(self.fig)
-        self.logger.info("Stopped optimization monitoring")
-        
-    def update_data(self, optimizer: str, iteration: int, score: float, evaluations: int):
+        return {
+            "best_score": self.best_score,
+            "best_params": self.best_params,
+            "best_trial": self.best_trial
+        }
+    
+    def reset(self):
+        """Reset the monitor to its initial state."""
+        self.trials = []
+        self.best_score = 0
+        self.best_params = {}
+        self.best_trial = 0
+        self.iteration = 0
+        logger.info(f"Reset {self.title}")
+    
+    def display(self, container=None):
         """
-        Update the data for a specific optimizer.
+        Display the optimization monitor in a Streamlit container.
         
         Args:
-            optimizer: Name of the optimizer
-            iteration: Current iteration
-            score: Current best score
-            evaluations: Current number of function evaluations
+            container: Optional Streamlit container to render in
         """
-        if not self.running:
+        # If no container is provided, use st directly
+        if container is None:
+            container = st
+        
+        container.markdown(f"## {self.title}")
+        
+        if not self.trials:
+            container.info("No optimization trials completed yet.")
             return
+        
+        # Create DataFrame from trials
+        trials_df = pd.DataFrame(self.trials)
+        
+        # Display trials visualization
+        fig = px.scatter(
+            trials_df,
+            x="trial_id",
+            y="score",
+            color="score",
+            size="score",
+            color_continuous_scale="Viridis",
+            title="Trial Scores"
+        )
+        
+        # Add best score line
+        fig.add_hline(
+            y=self.best_score,
+            line_dash="dash",
+            line_color="red",
+            annotation_text=f"Best: {self.best_score:.4f}"
+        )
+        
+        container.plotly_chart(fig, use_container_width=True)
+        
+        # Display best configuration
+        container.markdown("### Best Configuration")
+        container.markdown(f"**Best Score:** {self.best_score:.4f}")
+        container.markdown(f"**Found at Trial:** {self.best_trial}")
+        
+        container.markdown("**Best Parameters:**")
+        for param, value in self.best_params.items():
+            container.markdown(f"- {param}: {value}")
+        
+        # Check if we have enough trials for parameter importance
+        if len(self.trials) >= 5:
+            # Create parallel coordinates plot for parameters
+            param_cols = [col for col in trials_df.columns if col.startswith("param_")]
             
-        # Add data to the queue
-        self.data_queue.put({
-            'optimizer': optimizer,
-            'iteration': iteration,
-            'score': score,
-            'evaluations': evaluations,
-            'timestamp': time.time()
-        })
-        
-        # If in headless mode, process the queue immediately
-        if self.headless:
-            self._process_data_queue()
-            
-    def _process_data_queue(self):
-        """Process all data in the queue."""
-        while not self.data_queue.empty():
-            try:
-                data = self.data_queue.get_nowait()
-                optimizer = data['optimizer']
-                
-                # Initialize data for new optimizer
-                if optimizer not in self.optimizer_data:
-                    self.optimizer_data[optimizer] = {
-                        'iterations': [],
-                        'scores': [],
-                        'evaluations': [],
-                        'timestamps': [],
-                        'improvements': []
-                    }
-                
-                # Store the data
-                opt_data = self.optimizer_data[optimizer]
-                opt_data['iterations'].append(data['iteration'])
-                opt_data['scores'].append(data['score'])
-                opt_data['evaluations'].append(data['evaluations'])
-                opt_data['timestamps'].append(data['timestamp'])
-                
-                # Calculate improvement
-                if len(opt_data['scores']) > 1:
-                    improvement = opt_data['scores'][-2] - opt_data['scores'][-1]
-                    opt_data['improvements'].append(improvement)
-                else:
-                    opt_data['improvements'].append(0)
-                
-                # Limit the amount of data stored
-                if len(opt_data['iterations']) > self.max_data_points:
-                    # Keep first few points, most recent points, and downsample the middle
-                    keep_first = min(100, self.max_data_points // 10)
-                    keep_last = min(900, self.max_data_points - keep_first)
-                    
-                    # Downsample the middle part if needed
-                    if len(opt_data['iterations']) > keep_first + keep_last:
-                        for key in opt_data:
-                            opt_data[key] = (
-                                opt_data[key][:keep_first] + 
-                                opt_data[key][-keep_last:]
-                            )
-                
-            except queue.Empty:
-                break
-                
-    def _update_plot(self, frame):
-        """Update the plot with new data for animation."""
-        self._process_data_queue()
-        self._update_plot_data()
-        
-        # Force a redraw of the figure if not in headless mode
-        if not self.headless:
-            self.fig.canvas.draw()
-            self.fig.canvas.flush_events()
-            plt.pause(0.01)  # Add a small pause to allow the GUI to update
-        
-        return list(self.lines.values()) + list(self.improvement_lines.values()) + list(self.time_lines.values())
-        
-    def _update_final_plot(self):
-        """Update the plot with all data for final visualization."""
-        self._process_data_queue()
-        
-        # Create lines for each optimizer if they don't exist
-        for optimizer in self.optimizer_data:
-            if optimizer not in self.lines:
-                line, = self.axes[0, 0].plot([], [], label=optimizer)
-                self.lines[optimizer] = line
-                
-                imp_line, = self.axes[0, 1].plot([], [], label=f"{optimizer} improvement")
-                self.improvement_lines[optimizer] = imp_line
-                
-                time_line, = self.axes[1, 0].plot([], [], label=optimizer)
-                self.time_lines[optimizer] = time_line
-        
-        self._update_plot_data()
-        
-    def _update_plot_data(self):
-        """Update the plot data for all optimizers."""
-        # Update the line data for each optimizer
-        for optimizer, opt_data in self.optimizer_data.items():
-            if optimizer not in self.lines:
-                line, = self.axes[0, 0].plot([], [], label=optimizer)
-                self.lines[optimizer] = line
-                
-                imp_line, = self.axes[0, 1].plot([], [], label=f"{optimizer} improvement")
-                self.improvement_lines[optimizer] = imp_line
-                
-                time_line, = self.axes[1, 0].plot([], [], label=optimizer)
-                self.time_lines[optimizer] = time_line
-            
-            # Update the line data
-            self.lines[optimizer].set_data(
-                opt_data['evaluations'], 
-                opt_data['scores']
-            )
-            
-            # Update improvement line
-            if len(opt_data['improvements']) > 1:
-                self.improvement_lines[optimizer].set_data(
-                    opt_data['evaluations'][1:],
-                    opt_data['improvements']
+            if param_cols:
+                # Display parameter importance
+                container.markdown("### Parameter Exploration")
+                fig = px.parallel_coordinates(
+                    trials_df,
+                    dimensions=param_cols + ["score"],
+                    color="score",
+                    color_continuous_scale="Viridis",
+                    title="Parameter Space Exploration"
                 )
+                
+                container.plotly_chart(fig, use_container_width=True)
+                
+                # Calculate parameter importance (simplified)
+                container.markdown("### Parameter Importance")
+                importance = {}
+                
+                for param in param_cols:
+                    # Calculate correlation with score as a simple importance metric
+                    correlation = abs(trials_df[param].corr(trials_df["score"]))
+                    importance[param.replace("param_", "")] = correlation
+                
+                # Create importance chart
+                importance_df = pd.DataFrame({
+                    "Parameter": list(importance.keys()),
+                    "Importance": list(importance.values())
+                }).sort_values("Importance", ascending=False)
+                
+                fig = px.bar(
+                    importance_df,
+                    x="Parameter",
+                    y="Importance",
+                    color="Importance",
+                    color_continuous_scale="Viridis",
+                    title="Parameter Importance (Correlation with Score)"
+                )
+                
+                container.plotly_chart(fig, use_container_width=True)
+
+def create_live_training_monitor():
+    """
+    Creates a real-time training monitor visualization that updates as training progresses.
+    """
+    st.markdown("## Live Training Monitor")
+    
+    # Create placeholders for the visualizations
+    progress_placeholder = st.empty()
+    loss_chart_placeholder = st.empty()
+    metrics_placeholder = st.empty()
+    
+    # Initialize session state for training data if not already done
+    if 'training_progress' not in st.session_state:
+        st.session_state.training_progress = 0
+        st.session_state.loss_history = []
+        st.session_state.val_loss_history = []
+        st.session_state.metric_history = {}
+        st.session_state.epochs = []
+    
+    # Display current progress
+    with progress_placeholder.container():
+        if st.session_state.training_progress < 100:
+            st.progress(st.session_state.training_progress / 100)
+            st.write(f"Training Progress: {st.session_state.training_progress}%")
+        else:
+            st.success("Training Complete!")
+    
+    # Display loss chart
+    with loss_chart_placeholder.container():
+        if st.session_state.loss_history:
+            # Create loss chart
+            fig = go.Figure()
             
-            # Update time line
-            relative_time = [t - self.start_time for t in opt_data['timestamps']]
-            self.time_lines[optimizer].set_data(
-                relative_time, 
-                opt_data['scores']
+            fig.add_trace(go.Scatter(
+                x=st.session_state.epochs,
+                y=st.session_state.loss_history,
+                name="Training Loss",
+                mode="lines+markers"
+            ))
+            
+            if st.session_state.val_loss_history:
+                fig.add_trace(go.Scatter(
+                    x=st.session_state.epochs,
+                    y=st.session_state.val_loss_history,
+                    name="Validation Loss",
+                    mode="lines+markers",
+                    line=dict(dash="dash")
+                ))
+            
+            fig.update_layout(
+                title="Training & Validation Loss",
+                xaxis_title="Epoch",
+                yaxis_title="Loss",
+                legend=dict(x=0.01, y=0.99)
             )
+            
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No training data available yet.")
+    
+    # Display metrics
+    with metrics_placeholder.container():
+        if st.session_state.metric_history:
+            # Create columns for metrics
+            metric_cols = st.columns(len(st.session_state.metric_history))
+            
+            # Display each metric
+            for i, (metric_name, metric_values) in enumerate(st.session_state.metric_history.items()):
+                with metric_cols[i]:
+                    # Display current value
+                    if metric_values:
+                        current_value = metric_values[-1]
+                        st.metric(
+                            label=metric_name.replace("_", " ").title(),
+                            value=f"{current_value:.4f}"
+                        )
+        else:
+            st.info("No metrics available yet.")
+    
+    # Demo mode: Simulate training progress
+    if st.button("Simulate Training"):
+        simulate_training_progress()
+
+def simulate_training_progress():
+    """
+    Simulates training progress for demonstration purposes.
+    """
+    # Reset progress
+    st.session_state.training_progress = 0
+    st.session_state.loss_history = []
+    st.session_state.val_loss_history = []
+    st.session_state.metric_history = {
+        "accuracy": [],
+        "precision": [],
+        "recall": []
+    }
+    st.session_state.epochs = []
+    
+    # Simulate epochs
+    total_epochs = 10
+    
+    for epoch in range(total_epochs):
+        # Update progress
+        st.session_state.training_progress = (epoch + 1) / total_epochs * 100
+        st.session_state.epochs.append(epoch + 1)
         
-        # Adjust axes limits
-        if self.optimizer_data:
-            all_evals = []
-            all_scores = []
-            all_improvements = []
-            all_times = []
+        # Generate loss values (decreasing over time with some noise)
+        base_loss = 1.0 - 0.08 * epoch
+        train_loss = max(0.1, base_loss + np.random.normal(0, 0.05))
+        val_loss = max(0.15, base_loss + 0.1 + np.random.normal(0, 0.07))
+        
+        st.session_state.loss_history.append(train_loss)
+        st.session_state.val_loss_history.append(val_loss)
+        
+        # Generate metric values (increasing over time with some noise)
+        accuracy = min(0.95, 0.5 + 0.04 * epoch + np.random.normal(0, 0.02))
+        precision = min(0.93, 0.45 + 0.05 * epoch + np.random.normal(0, 0.03))
+        recall = min(0.94, 0.4 + 0.06 * epoch + np.random.normal(0, 0.025))
+        
+        st.session_state.metric_history["accuracy"].append(accuracy)
+        st.session_state.metric_history["precision"].append(precision)
+        st.session_state.metric_history["recall"].append(recall)
+        
+        # Rerun to update visualizations
+        time.sleep(0.5)
+        st.rerun()
+
+def create_optimization_monitor():
+    """
+    Creates a real-time visualization for hyperparameter optimization.
+    """
+    st.markdown("## Optimization Monitor")
+    
+    # Create placeholders for visualizations
+    process_placeholder = st.empty()
+    best_results_placeholder = st.empty()
+    param_charts_placeholder = st.empty()
+    
+    # Initialize session state for optimization data if not already done
+    if 'optimization_rounds' not in st.session_state:
+        st.session_state.optimization_rounds = 0
+        st.session_state.trials = []
+        st.session_state.best_score = 0
+        st.session_state.best_params = {}
+    
+    # Display optimization process
+    with process_placeholder.container():
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write(f"Trials Completed: {st.session_state.optimization_rounds}")
             
-            for opt_data in self.optimizer_data.values():
-                all_evals.extend(opt_data['evaluations'])
-                all_scores.extend(opt_data['scores'])
-                all_improvements.extend(opt_data['improvements'])
-                all_times.extend([t - self.start_time for t in opt_data['timestamps']])
-            
-            if all_evals:
-                self.axes[0, 0].set_xlim(0, max(all_evals) * 1.1)
+            if st.session_state.optimization_rounds > 0:
+                # Create trials visualization
+                trials_df = pd.DataFrame(st.session_state.trials)
                 
-            if all_scores:
-                min_score = max(1e-10, min([s for s in all_scores if s > 0]))
-                max_score = max(all_scores)
-                self.axes[0, 0].set_ylim(min_score * 0.1, max_score * 2)
+                fig = px.scatter(
+                    trials_df,
+                    x="trial_id",
+                    y="score",
+                    color="score",
+                    size="score",
+                    color_continuous_scale="Viridis",
+                    title="Trial Scores"
+                )
                 
-            if all_improvements:
-                max_imp = max(all_improvements) if all_improvements else 1
-                self.axes[0, 1].set_ylim(0, max_imp * 1.1)
-                self.axes[0, 1].set_xlim(0, max(all_evals) * 1.1 if all_evals else 100)
-            
-            if all_times:
-                max_time = max(all_times)
-                self.axes[1, 0].set_xlim(0, max_time * 1.1)
-                self.axes[1, 0].set_ylim(min_score * 0.1, max_score * 2)
+                # Add best score line
+                fig.add_hline(
+                    y=st.session_state.best_score,
+                    line_dash="dash",
+                    line_color="red",
+                    annotation_text=f"Best: {st.session_state.best_score:.4f}"
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No optimization trials completed yet.")
         
-        # Update legend
-        self.axes[0, 0].legend(loc='upper right')
-        self.axes[0, 1].legend(loc='upper right')
-        self.axes[1, 0].legend(loc='upper right')
-        
-        # Update statistics text in the fourth panel
-        self.axes[1, 1].clear()
-        self.axes[1, 1].axis('off')
-        
-        # Prepare statistics text
-        stats_text = "Optimization Statistics:\n\n"
-        
-        if self.optimizer_data:
-            # Find best optimizer so far
-            best_opt = None
-            best_score = float('inf')
-            
-            for opt_name, opt_data in self.optimizer_data.items():
-                if opt_data['scores'] and min(opt_data['scores']) < best_score:
-                    best_score = min(opt_data['scores'])
-                    best_opt = opt_name
-            
-            stats_text += f"Best optimizer: {best_opt}\n"
-            stats_text += f"Best score: {best_score:.3e}\n\n"
-            
-            # Add per-optimizer statistics
-            stats_text += "Per-optimizer statistics:\n"
-            for opt_name, opt_data in self.optimizer_data.items():
-                if not opt_data['scores']:
-                    continue
+        with col2:
+            if st.session_state.trials:
+                # Create parallel coordinates plot for parameters
+                param_cols = [col for col in trials_df.columns if col.startswith("param_")]
+                
+                if param_cols:
+                    fig = px.parallel_coordinates(
+                        trials_df,
+                        dimensions=param_cols + ["score"],
+                        color="score",
+                        color_continuous_scale="Viridis",
+                        title="Parameter Space Exploration"
+                    )
                     
-                current_score = opt_data['scores'][-1]
-                total_evals = opt_data['evaluations'][-1] if opt_data['evaluations'] else 0
+                    st.plotly_chart(fig, use_container_width=True)
+    
+    # Display best results
+    with best_results_placeholder.container():
+        if st.session_state.best_params:
+            st.markdown("### Best Configuration")
+            
+            # Create columns for parameters
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown(f"**Best Score:** {st.session_state.best_score:.4f}")
+                st.markdown(f"**Found at Trial:** {st.session_state.best_trial}")
+            
+            with col2:
+                # Display best parameters
+                st.markdown("**Best Parameters:**")
+                for param, value in st.session_state.best_params.items():
+                    st.markdown(f"- {param}: {value}")
+    
+    # Parameter importance visualization
+    with param_charts_placeholder.container():
+        if st.session_state.trials and len(st.session_state.trials) >= 5:
+            st.markdown("### Parameter Importance")
+            
+            # Calculate parameter importance (simplified)
+            param_cols = [col for col in trials_df.columns if col.startswith("param_")]
+            importance = {}
+            
+            for param in param_cols:
+                # Calculate correlation with score as a simple importance metric
+                correlation = abs(trials_df[param].corr(trials_df["score"]))
+                importance[param.replace("param_", "")] = correlation
+            
+            # Create importance chart
+            importance_df = pd.DataFrame({
+                "Parameter": list(importance.keys()),
+                "Importance": list(importance.values())
+            }).sort_values("Importance", ascending=False)
+            
+            fig = px.bar(
+                importance_df,
+                x="Parameter",
+                y="Importance",
+                color="Importance",
+                color_continuous_scale="Viridis",
+                title="Parameter Importance (Correlation with Score)"
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+    
+    # Demo mode: Simulate optimization
+    if st.button("Simulate Optimization"):
+        simulate_optimization()
+
+def simulate_optimization():
+    """
+    Simulates hyperparameter optimization for demonstration purposes.
+    """
+    # Reset optimization data
+    st.session_state.optimization_rounds = 0
+    st.session_state.trials = []
+    st.session_state.best_score = 0
+    st.session_state.best_params = {}
+    st.session_state.best_trial = 0
+    
+    # Define parameter space
+    param_space = {
+        "learning_rate": (0.001, 0.1),
+        "max_depth": (3, 10),
+        "n_estimators": (50, 200)
+    }
+    
+    # Simulate optimization rounds
+    total_rounds = 15
+    
+    for round_id in range(total_rounds):
+        # Generate random parameters
+        params = {
+            "learning_rate": np.random.uniform(param_space["learning_rate"][0], param_space["learning_rate"][1]),
+            "max_depth": int(np.random.uniform(param_space["max_depth"][0], param_space["max_depth"][1])),
+            "n_estimators": int(np.random.uniform(param_space["n_estimators"][0], param_space["n_estimators"][1]))
+        }
+        
+        # Calculate a score based on parameters
+        # This is a simplified model of how parameters affect performance
+        score = (
+            0.75 + 
+            0.15 * (params["learning_rate"] - 0.001) / (0.1 - 0.001) * np.exp(-5 * params["learning_rate"]) +
+            0.05 * (params["max_depth"] - 3) / (10 - 3) +
+            0.05 * (params["n_estimators"] - 50) / (200 - 50)
+        )
+        
+        # Add some noise to the score
+        score += np.random.normal(0, 0.01)
+        score = min(0.99, max(0.5, score))
+        
+        # Update best score and params if necessary
+        if score > st.session_state.best_score:
+            st.session_state.best_score = score
+            st.session_state.best_params = params.copy()
+            st.session_state.best_trial = round_id + 1
+        
+        # Add trial to history
+        trial = {
+            "trial_id": round_id + 1,
+            "score": score,
+            "param_learning_rate": params["learning_rate"],
+            "param_max_depth": params["max_depth"],
+            "param_n_estimators": params["n_estimators"]
+        }
+        
+        st.session_state.trials.append(trial)
+        st.session_state.optimization_rounds += 1
+        
+        # Rerun to update visualizations
+        time.sleep(0.3)
+        st.rerun()
+
+def create_convergence_monitor():
+    """
+    Creates a visualization for monitoring model convergence during training.
+    """
+    st.markdown("## Convergence Monitor")
+    
+    # Create placeholders for visualizations
+    convergence_placeholder = st.empty()
+    weight_dist_placeholder = st.empty()
+    gradient_placeholder = st.empty()
+    
+    # Initialize session state for convergence data if not already done
+    if 'convergence_data' not in st.session_state:
+        st.session_state.convergence_data = {
+            "iterations": [],
+            "loss": [],
+            "gradient_norm": [],
+            "weight_change": [],
+            "weight_distributions": []
+        }
+    
+    # Display convergence metrics
+    with convergence_placeholder.container():
+        if st.session_state.convergence_data["iterations"]:
+            # Create convergence metrics visualization
+            fig = go.Figure()
+            
+            # Add loss curve
+            fig.add_trace(go.Scatter(
+                x=st.session_state.convergence_data["iterations"],
+                y=st.session_state.convergence_data["loss"],
+                name="Loss",
+                mode="lines+markers",
+                yaxis="y"
+            ))
+            
+            # Add gradient norm
+            fig.add_trace(go.Scatter(
+                x=st.session_state.convergence_data["iterations"],
+                y=st.session_state.convergence_data["gradient_norm"],
+                name="Gradient Norm",
+                mode="lines+markers",
+                yaxis="y2"
+            ))
+            
+            # Add weight change
+            fig.add_trace(go.Scatter(
+                x=st.session_state.convergence_data["iterations"],
+                y=st.session_state.convergence_data["weight_change"],
+                name="Weight Change",
+                mode="lines+markers",
+                yaxis="y3"
+            ))
+            
+            # Set up layout with multiple Y axes
+            fig.update_layout(
+                title="Training Convergence Metrics",
+                xaxis=dict(title="Iteration"),
+                yaxis=dict(
+                    title="Loss",
+                    side="left"
+                ),
+                yaxis2=dict(
+                    title="Gradient Norm",
+                    overlaying="y",
+                    side="right",
+                    showgrid=False
+                ),
+                yaxis3=dict(
+                    title="Weight Change",
+                    overlaying="y",
+                    side="right",
+                    position=0.85,
+                    showgrid=False
+                ),
+                legend=dict(x=0.01, y=0.99)
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No convergence data available yet.")
+    
+    # Display weight distribution
+    with weight_dist_placeholder.container():
+        if st.session_state.convergence_data["weight_distributions"]:
+            st.markdown("### Weight Distribution Evolution")
+            
+            # Create weight distribution visualization
+            iterations = st.session_state.convergence_data["iterations"]
+            weight_distributions = st.session_state.convergence_data["weight_distributions"]
+            
+            # Let user select which iterations to compare
+            if len(iterations) > 1:
+                iteration_options = [f"Iteration {it}" for it in iterations]
+                selected_iterations = st.multiselect(
+                    "Select iterations to compare:",
+                    iteration_options,
+                    default=[iteration_options[0], iteration_options[-1]]
+                )
                 
-                # Calculate improvement rate (per evaluation)
-                if len(opt_data['scores']) > 10:
-                    recent_improvement = opt_data['scores'][-10] - opt_data['scores'][-1]
-                    recent_evals = opt_data['evaluations'][-1] - opt_data['evaluations'][-10]
-                    imp_rate = recent_improvement / recent_evals if recent_evals > 0 else 0
-                    stats_text += f"\n{opt_name}:\n"
-                    stats_text += f"  Current score: {current_score:.3e}\n"
-                    stats_text += f"  Evaluations: {total_evals}\n"
-                    stats_text += f"  Recent improvement rate: {imp_rate:.3e}/eval\n"
+                if selected_iterations:
+                    # Create distribution plot
+                    fig = go.Figure()
+                    
+                    for selected in selected_iterations:
+                        # Extract iteration number
+                        it_idx = iteration_options.index(selected)
+                        it_num = iterations[it_idx]
+                        
+                        # Add distribution
+                        fig.add_trace(go.Histogram(
+                            x=weight_distributions[it_idx],
+                            name=f"Iteration {it_num}",
+                            opacity=0.7,
+                            nbinsx=30
+                        ))
+                    
+                    fig.update_layout(
+                        title="Weight Distribution Comparison",
+                        xaxis_title="Weight Value",
+                        yaxis_title="Frequency",
+                        barmode="overlay"
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Need more iterations to compare weight distributions.")
+    
+    # Display gradient visualization
+    with gradient_placeholder.container():
+        st.markdown("### Gradient Evolution")
+        st.info("Gradient visualization would be displayed here in a real implementation.")
+    
+    # Demo mode: Simulate convergence
+    if st.button("Simulate Convergence"):
+        simulate_convergence()
+
+def simulate_convergence():
+    """
+    Simulates model convergence for demonstration purposes.
+    """
+    # Reset convergence data
+    st.session_state.convergence_data = {
+        "iterations": [],
+        "loss": [],
+        "gradient_norm": [],
+        "weight_change": [],
+        "weight_distributions": []
+    }
+    
+    # Simulate iterations
+    total_iterations = 20
+    
+    # Initial weight distribution
+    np.random.seed(42)
+    weights = np.random.normal(0, 1, 1000)
+    
+    for iteration in range(1, total_iterations + 1):
+        # Update iteration counter
+        st.session_state.convergence_data["iterations"].append(iteration)
         
-        # Display the statistics
-        self.axes[1, 1].text(0.05, 0.95, stats_text, 
-                          transform=self.axes[1, 1].transAxes,
-                          fontsize=10, verticalalignment='top')
+        # Generate loss (decreasing exponentially with noise)
+        loss = 2.0 * np.exp(-0.2 * iteration) + 0.1 + np.random.normal(0, 0.05)
+        st.session_state.convergence_data["loss"].append(loss)
         
-        plt.tight_layout()
+        # Generate gradient norm (decreasing with noise)
+        grad_norm = 1.0 * np.exp(-0.15 * iteration) + 0.05 + np.random.normal(0, 0.02)
+        st.session_state.convergence_data["gradient_norm"].append(grad_norm)
         
-    def save_results(self, filename: str):
-        """Save the current plot to a file."""
-        if self.fig:
-            # Make sure the plot is up to date
-            self._update_final_plot()
-            
-            # Save the figure using save_plot
-            save_plot(self.fig, filename, plot_type='benchmarks')
-            self.logger.info(f"Saved visualization to {filename}")
-            
-    def save_data(self, filename: str):
-        """Save the collected data to a CSV file."""
-        if not self.optimizer_data:
-            self.logger.warning("No data to save")
-            return
-            
-        # Convert data to DataFrame
-        all_data = []
+        # Update weights (simulate optimization step)
+        weight_updates = np.random.normal(0, grad_norm / 5, len(weights))
+        weights = weights - weight_updates
         
-        for optimizer, data in self.optimizer_data.items():
-            for i in range(len(data['iterations'])):
-                all_data.append({
-                    'optimizer': optimizer,
-                    'iteration': data['iterations'][i],
-                    'score': data['scores'][i],
-                    'evaluations': data['evaluations'][i],
-                    'timestamp': data['timestamps'][i],
-                    'improvement': data['improvements'][i] if i < len(data['improvements']) else 0
-                })
-                
-        # Create DataFrame and save to CSV
-        import pandas as pd
-        df = pd.DataFrame(all_data)
-        df.to_csv(filename, index=False)
-        self.logger.info(f"Saved optimization data to {filename}")
+        # Calculate weight change
+        weight_change = np.linalg.norm(weight_updates)
+        st.session_state.convergence_data["weight_change"].append(weight_change)
+        
+        # Store weight distribution snapshot
+        st.session_state.convergence_data["weight_distributions"].append(weights.copy())
+        
+        # Rerun to update visualizations
+        time.sleep(0.2)
+        st.rerun()

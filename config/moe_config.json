@@ -1,4 +1,11 @@
 {
+  "gating_network": {
+    "type": "quality_aware",
+    "params": {
+      "weighting_strategy": "quality_score",
+      "quality_threshold": 0.7
+    }
+  },
   "experts": {
     "behavioral": {
       "behavior_cols": ["sleep_hours", "activity_level", "stress_level"],
@@ -23,6 +30,12 @@
       "patient_id_col": "patient_id",
       "timestamp_col": "date",
       "normalize_vitals": true
+    },
+    "num_experts": 3,
+    "expert_type": "sklearn_rf",
+    "params": {
+      "n_estimators": 100,
+      "max_depth": 10
     }
   },
   "gating": {
@@ -39,11 +52,15 @@
       "smooth_weights": true
     }
   },
+  "data": {
+    "validation_split": 0.2,
+    "test_split": 0.1,
+    "random_seed": 42
+  },
   "training": {
     "batch_size": 32,
     "epochs": 10,
-    "learning_rate": 0.001,
-    "validation_split": 0.2
+    "learning_rate": 0.001
   },
   "environment": "dev",
   "logging": {
