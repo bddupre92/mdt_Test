@@ -23,6 +23,37 @@ def create_parser() -> argparse.ArgumentParser:
     add_migraine_args(parser)
     add_benchmark_args(parser)
     add_moe_validation_args(parser)
+    # Note: add_moe_comparison_args is not called here because those arguments
+    # are added to the moe_comparison_parser subparser directly
+    add_real_data_validation_args(parser)
+    
+    # Create subparsers for different commands
+    subparsers = parser.add_subparsers(
+        dest="command",
+        help="Command to execute",
+        required=True
+    )
+    
+    # Define a baseline comparison command
+    baseline_parser = subparsers.add_parser(
+        "baseline_comparison",
+        help="Run baseline comparison benchmark"
+    )
+    
+    # Define the MoE validation command
+    moe_validation_parser = subparsers.add_parser(
+        "moe_validation",
+        help="Run MoE validation framework tests"
+    )
+    
+    # Define the MoE comparison command
+    moe_comparison_parser = subparsers.add_parser(
+        "moe_comparison",
+        help="Run comparison between MoE and baseline approaches"
+    )
+    
+    # Add MoE comparison specific arguments 
+    add_moe_comparison_args(moe_comparison_parser)
     
     return parser
 
@@ -217,14 +248,13 @@ def add_benchmark_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--baseline-comparison', help="Run baseline comparison", action='store_true')
     parser.add_argument('--dimensions', type=int, default=3,
                      help="Dimension for optimization problems")
-    parser.add_argument('--max-evaluations', type=int, default=1000,
-                     help="Maximum function evaluations per algorithm")
+    # Note: --max-evaluations is defined in add_optimization_args to avoid duplication
     parser.add_argument('--num-trials', type=int, default=3,
                      help="Number of trials to run per algorithm")
     parser.add_argument('--functions', type=str, default='sphere',
                      help="Comma-separated list of test functions (sphere,rosenbrock,rastrigin,ackley,griewank,levy,schwefel)")
-    parser.add_argument('--output-dir', type=str, default='results',
-                     help="Directory to save results")
+    parser.add_argument('--benchmark-output-dir', type=str, default='results',
+                     help="Directory to save benchmark results")
     parser.add_argument('--selector-path', type=str,
                      help="Path to trained SatzillaInspiredSelector model")
     parser.add_argument('--all-functions', action='store_true',
@@ -236,7 +266,7 @@ def add_benchmark_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--function', type=str, 
                      choices=['sphere', 'rastrigin', 'rosenbrock', 'ackley', 'griewank', 'levy', 'schwefel'],
                      help="Test function to use for dynamic optimization")
-    parser.add_argument('--drift-type', type=str, 
+    parser.add_argument('--dynamic-drift-type', type=str, 
                      choices=['sudden', 'oscillatory', 'linear', 'incremental', 'gradual', 'random', 'noise'],
                      help="Type of drift for dynamic optimization")
     parser.add_argument('--drift-rate', type=float, default=0.1,
@@ -326,6 +356,85 @@ def add_moe_validation_args(parser: argparse.ArgumentParser) -> None:
     enhanced_data_group.add_argument('--use-enhanced-data-for-validation', action='store_true',
                         help="Use enhanced synthetic data for MoE validation test cases")
 
+def add_moe_comparison_args(parser: argparse.ArgumentParser) -> None:
+    """
+    Add MoE comparison related arguments to the parser
+    
+    Parameters:
+    -----------
+    parser : argparse.ArgumentParser
+        The parser to add arguments to
+    """
+    parser.add_argument('--moe-comparison', action='store_true',
+                      help="Run comparison between MoE and baseline approaches")
+    parser.add_argument('--moe-config-path', type=str, default=None,
+                      help="Path to MoE configuration file (JSON format)")
+    parser.add_argument('--moe-model-path', type=str, default=None,
+                      help="Path to pre-trained MoE model (optional)")
+    parser.add_argument('--output-dir', type=str, default="results/moe_comparison",
+                      help="Directory to save MoE comparison results")
+    parser.add_argument('--num-trials', '-t', type=int, default=10, 
+                      help="Number of trials per function (default: 10)")
+    parser.add_argument('--functions', type=str, nargs="+",
+                      default=["sphere", "rosenbrock", "rastrigin", "ackley", "griewank"],
+                      help="List of benchmark functions to use in comparison")
+    parser.add_argument('--all-functions', action="store_true",
+                      help="Use all available benchmark functions for comparison")
+    parser.add_argument('--visualize-moe-contributions', action='store_true',
+                      help="Generate visualizations showing expert contributions in MoE")
+    parser.add_argument('--calculate-expert-impact', action='store_true',
+                      help="Calculate and report the impact of each expert on final predictions")
+    parser.add_argument('--detailed-report', action='store_true',
+                      help="Generate a detailed HTML report with interactive visualizations")
+    parser.add_argument('--include-confidence-metrics', action='store_true',
+                      help="Include confidence metrics in the comparison results")
+
+def add_real_data_validation_args(parser: argparse.ArgumentParser) -> None:
+    """
+    Add real clinical data validation related arguments to the parser
+    
+    Parameters:
+    -----------
+    parser : argparse.ArgumentParser
+        The parser to add arguments to
+    """
+    # Main group for real data validation
+    parser.add_argument('--real-data-validation', action='store_true',
+                      help="Run real clinical data validation with MoE framework")
+    
+    # Data source arguments
+    data_group = parser.add_argument_group('Real Data Sources')
+    data_group.add_argument('--clinical-data', type=str,
+                      help="Path to clinical data file (CSV, JSON, or Excel)")
+    data_group.add_argument('--data-format', type=str, default='csv',
+                      choices=['csv', 'json', 'excel', 'parquet'],
+                      help="Format of clinical data file")
+    data_group.add_argument('--data-config', type=str,
+                      help="Path to configuration file for data integration")
+    data_group.add_argument('--target-column', type=str, default='migraine',
+                      help="Target column name in clinical data")
+    
+    # Validation options
+    validation_group = parser.add_argument_group('Validation Options')
+    validation_group.add_argument('--validation-output-dir', type=str, default='results/real_data_validation',
+                      help="Directory to store validation results")
+    validation_group.add_argument('--synthetic-compare', action='store_true',
+                      help="Generate and compare with synthetic data")
+    validation_group.add_argument('--validation-drift-type', type=str, default='sudden',
+                      choices=['sudden', 'gradual', 'recurring', 'none'],
+                      help="Type of drift to analyze")
+    validation_group.add_argument('--run-mode', type=str, default='full',
+                      choices=['full', 'validation', 'comparison', 'report'],
+                      help="Which parts of the process to run")
+    
+    # Integration with MoE framework
+    integration_group = parser.add_argument_group('MoE Integration')
+    integration_group.add_argument('--interactive-report', action='store_true',
+                      help="Generate interactive HTML report with MoE validation results")
+    integration_group.add_argument('--expert-mapping-method', type=str, default='auto',
+                      choices=['auto', 'manual', 'config'],
+                      help="Method to map features to expert types")
+
 def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Parse command-line arguments
@@ -390,6 +499,147 @@ def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
         help="Run MoE validation framework tests"
     )
     
+    # Define the MoE comparison command
+    moe_comparison_parser = subparsers.add_parser(
+        "moe_comparison",
+        help="Run comparison between MoE and baseline approaches"
+    )
+    
+    # Add MoE comparison specific arguments
+    moe_comparison_parser.add_argument(
+        "--moe-config-path",
+        type=str,
+        help="Path to MoE configuration file (JSON format)"
+    )
+    
+    moe_comparison_parser.add_argument(
+        "--moe-model-path",
+        type=str,
+        help="Path to pre-trained MoE model (optional)"
+    )
+    
+    moe_comparison_parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="results/moe_comparison",
+        help="Directory to save MoE comparison results"
+    )
+    
+    moe_comparison_parser.add_argument(
+        "--num-trials", "-t",
+        type=int,
+        default=10,
+        help="Number of trials per function (default: 10)"
+    )
+    
+    moe_comparison_parser.add_argument(
+        "--functions",
+        type=str,
+        nargs="+",
+        default=["sphere", "rosenbrock", "rastrigin", "ackley", "griewank"],
+        help="List of benchmark functions to use in comparison"
+    )
+    
+    moe_comparison_parser.add_argument(
+        "--all-functions", 
+        action="store_true",
+        help="Use all available benchmark functions for comparison"
+    )
+    
+    moe_comparison_parser.add_argument(
+        "--visualize-moe-contributions",
+        action="store_true",
+        help="Generate visualizations showing expert contributions in MoE"
+    )
+    
+    moe_comparison_parser.add_argument(
+        "--calculate-expert-impact",
+        action="store_true",
+        help="Calculate and report the impact of each expert on final predictions"
+    )
+    
+    moe_comparison_parser.add_argument(
+        "--detailed-report",
+        action="store_true",
+        help="Generate a detailed HTML report with interactive visualizations"
+    )
+    
+    moe_comparison_parser.add_argument(
+        "--include-confidence-metrics",
+        action="store_true",
+        help="Include confidence metrics in the comparison results"
+    )
+    
+    # Define the real data validation command
+    real_data_parser = subparsers.add_parser(
+        "real_data_validation",
+        help="Run real clinical data validation with MoE framework"
+    )
+    
+    # Add real data validation arguments
+    real_data_parser.add_argument(
+        "--clinical-data", "-c",
+        type=str,
+        required=True,
+        help="Path to clinical data file (CSV, JSON, or Excel)"
+    )
+    
+    real_data_parser.add_argument(
+        "--data-format",
+        type=str,
+        default="csv",
+        choices=["csv", "json", "excel", "parquet"],
+        help="Format of clinical data file"
+    )
+    
+    real_data_parser.add_argument(
+        "--config",
+        type=str,
+        help="Path to configuration file for data integration"
+    )
+    
+    real_data_parser.add_argument(
+        "--target-column",
+        type=str,
+        default="migraine",
+        help="Target column name in clinical data"
+    )
+    
+    real_data_parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="results/real_data_validation",
+        help="Directory to store validation results"
+    )
+    
+    real_data_parser.add_argument(
+        "--synthetic-compare",
+        action="store_true",
+        help="Generate and compare with synthetic data"
+    )
+    
+    real_data_parser.add_argument(
+        "--drift-type",
+        type=str,
+        default="sudden",
+        choices=["sudden", "gradual", "recurring", "none"],
+        help="Type of drift to analyze"
+    )
+    
+    real_data_parser.add_argument(
+        "--run-mode",
+        type=str,
+        default="full",
+        choices=["full", "validation", "comparison", "report"],
+        help="Which parts of the process to run"
+    )
+    
+    real_data_parser.add_argument(
+        "--interactive-report",
+        action="store_true",
+        help="Generate interactive HTML report with MoE validation results"
+    )
+
     # Add baseline comparison arguments
     baseline_parser.add_argument(
         "--dimensions", "-d",

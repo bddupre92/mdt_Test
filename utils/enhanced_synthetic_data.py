@@ -1761,3 +1761,245 @@ class EnhancedPatientDataGenerator(PatientDataGenerator):
         plt.subplots_adjust(top=0.92)
         plt.savefig(patient_dir / 'drift_analysis.png')
         plt.close(fig)
+
+
+class EnhancedSyntheticDataGenerator:
+    """Enhanced synthetic data generator for MoE validation with real data"""
+    
+    def __init__(self, num_samples: int = 1000, drift_type: str = 'sudden', data_modality: str = 'mixed'):
+        """
+        Initialize the enhanced synthetic data generator.
+        
+        Parameters:
+        -----------
+        num_samples : int
+            Number of samples to generate
+        drift_type : str
+            Type of drift to simulate ('sudden', 'gradual', 'recurring', 'none')
+        data_modality : str
+            Type of data to generate ('physiological', 'environmental', 'behavioral', 'mixed')
+        """
+        self.num_samples = num_samples
+        self.drift_type = drift_type
+        self.data_modality = data_modality
+        self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Initialize the patient data generator as the base
+        self.base_generator = EnhancedPatientDataGenerator()
+        
+        # Feature categories by modality
+        self.modality_features = {
+            'physiological': [
+                'heart_rate', 'blood_pressure', 'temperature', 'hrv',
+                'body_temperature', 'sleep_rem_percentage', 'sleep_deep_percentage'
+            ],
+            'environmental': [
+                'humidity', 'barometric_pressure', 'temperature', 
+                'weather_change_rate', 'air_quality_pm25', 'uv_index'
+            ],
+            'behavioral': [
+                'stress_level', 'sleep_quality', 'activity_level',
+                'screen_blue_light_exposure', 'social_activity_hours'
+            ],
+            'medication': [
+                'triptan_usage', 'nsaid_usage', 'preventative_adherence',
+                'rescue_medication_count'
+            ]
+        }
+        
+        # Drift parameters for different types
+        self.drift_params = {
+            'sudden': {
+                'magnitude': 0.5,
+                'start_point': 0.5,  # Halfway through the data
+                'features_affected': 0.4
+            },
+            'gradual': {
+                'magnitude': 0.4,
+                'rate': 0.05,
+                'start_point': 0.3,
+                'features_affected': 0.6
+            },
+            'recurring': {
+                'magnitude': 0.3,
+                'frequency': 0.1,
+                'features_affected': 0.5
+            },
+            'none': {}
+        }
+    
+    def generate_mirrored_data(self, feature_stats: dict, target_column: str, target_ratio: float = 0.3) -> pd.DataFrame:
+        """
+        Generate synthetic data mirroring the characteristics of real data.
+        
+        Parameters:
+        -----------
+        feature_stats : dict
+            Statistics of features to mirror (means, stds, etc.)
+        target_column : str
+            Name of the target column
+        target_ratio : float
+            Ratio of positive cases in the target column
+            
+        Returns:
+        --------
+        pd.DataFrame
+            Synthetic data mirroring real data characteristics
+        """
+        self.logger.info(f"Generating {self.num_samples} synthetic samples with {self.drift_type} drift")
+        
+        # Get the features to include based on modality
+        if self.data_modality == 'mixed':
+            # Use features from all modalities
+            features = []
+            for modality in self.modality_features:
+                features.extend(self.modality_features[modality])
+        else:
+            # Use features from the specified modality
+            features = self.modality_features.get(self.data_modality, [])
+        
+        # Create a dataframe with the required features
+        df = pd.DataFrame(index=range(self.num_samples))
+        
+        # Generate timestamps spanning 30 days
+        start_date = datetime.now() - timedelta(days=30)
+        timestamps = [start_date + timedelta(minutes=i*15) for i in range(self.num_samples)]
+        df['timestamp'] = timestamps
+        
+        # Set the target column with the desired ratio of positive cases
+        target_values = np.zeros(self.num_samples)
+        
+        # Ensure target_ratio is valid (between 0 and 1)
+        safe_target_ratio = min(max(0.0, target_ratio), 1.0)
+        num_positive = int(self.num_samples * safe_target_ratio)
+        
+        # Use replace=True if we need more samples than available
+        # This shouldn't happen with a proper ratio but adds robustness
+        if num_positive >= self.num_samples:
+            num_positive = int(self.num_samples * 0.5)  # Default to 50% if ratio is invalid
+            self.logger.warning(f"Target ratio {target_ratio} too large, defaulting to 0.5")
+            
+        positive_indices = np.random.choice(
+            range(self.num_samples), 
+            size=num_positive, 
+            replace=False
+        )
+        target_values[positive_indices] = 1
+        df[target_column] = target_values
+        
+        # Generate feature data with appropriate drift characteristics
+        for feature in features:
+            # Generate base feature values
+            if feature in feature_stats and 'mean' in feature_stats[feature] and 'std' in feature_stats[feature]:
+                # Use statistics from real data if available
+                mean = feature_stats[feature]['mean']
+                std = feature_stats[feature]['std']
+            else:
+                # Use default values if not available
+                mean = np.random.uniform(50, 100)
+                std = np.random.uniform(5, 20)
+            
+            # Generate base feature values
+            feature_values = np.random.normal(mean, std, self.num_samples)
+            
+            # Apply drift if specified
+            if self.drift_type != 'none':
+                feature_values = self._apply_drift(feature_values, feature)
+            
+            df[feature] = feature_values
+        
+        # Post-process to ensure data quality
+        self._post_process_data(df, target_column)
+        
+        return df
+    
+    def _apply_drift(self, feature_values: np.ndarray, feature: str) -> np.ndarray:
+        """
+        Apply drift to feature values based on drift type.
+        
+        Parameters:
+        -----------
+        feature_values : np.ndarray
+            Original feature values
+        feature : str
+            Feature name
+            
+        Returns:
+        --------
+        np.ndarray
+            Feature values with drift applied
+        """
+        # Determine if this feature should be affected by drift
+        # Use hash of feature name for consistent decision
+        feature_hash = hash(feature) % 100 / 100.0
+        if feature_hash > self.drift_params[self.drift_type].get('features_affected', 0.5):
+            return feature_values
+        
+        # Make a copy to avoid modifying the original
+        drifted_values = feature_values.copy()
+        n_samples = len(feature_values)
+        
+        if self.drift_type == 'sudden':
+            # Apply sudden drift after the start point
+            start_idx = int(n_samples * self.drift_params['sudden']['start_point'])
+            magnitude = self.drift_params['sudden']['magnitude']
+            drifted_values[start_idx:] += magnitude * np.std(feature_values) * (1 if feature_hash > 0.5 else -1)
+            
+        elif self.drift_type == 'gradual':
+            # Apply gradual drift that increases over time
+            start_idx = int(n_samples * self.drift_params['gradual']['start_point'])
+            max_magnitude = self.drift_params['gradual']['magnitude']
+            rate = self.drift_params['gradual']['rate']
+            
+            for i in range(start_idx, n_samples):
+                progress = (i - start_idx) / (n_samples - start_idx)  # 0 to 1
+                current_magnitude = progress * max_magnitude
+                drifted_values[i] += current_magnitude * np.std(feature_values) * (1 if feature_hash > 0.5 else -1)
+                
+        elif self.drift_type == 'recurring':
+            # Apply cyclical drift pattern
+            magnitude = self.drift_params['recurring']['magnitude']
+            frequency = self.drift_params['recurring']['frequency'] * n_samples
+            
+            for i in range(n_samples):
+                cycle_phase = np.sin(2 * np.pi * i / frequency)
+                drifted_values[i] += magnitude * cycle_phase * np.std(feature_values)
+        
+        return drifted_values
+    
+    def _post_process_data(self, df: pd.DataFrame, target_column: str) -> None:
+        """
+        Post-process generated data for quality.
+        
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            Generated dataframe
+        target_column : str
+            Name of the target column
+        """
+        # Ensure positive correlation between related features
+        if 'stress_level' in df.columns and 'heart_rate' in df.columns:
+            # Stress and heart rate should be positively correlated
+            correlation = np.corrcoef(df['stress_level'], df['heart_rate'])[0, 1]
+            if correlation < 0.3:
+                # Adjust to ensure positive correlation
+                df['heart_rate'] = df['heart_rate'] + 0.5 * df['stress_level']
+        
+        # Ensure target is related to key features
+        target_triggers = [
+            'stress_level', 'barometric_pressure', 'sleep_quality',
+            'preventative_adherence', 'weather_change_rate'
+        ]
+        
+        for trigger in target_triggers:
+            if trigger in df.columns:
+                # For each feature identified as a trigger, ensure some correlation with target
+                for i in df[df[target_column] == 1].index:
+                    # For positive cases, push the trigger feature values toward extremes
+                    if np.random.random() > 0.3:  # 70% chance to adjust
+                        mean = np.mean(df[trigger])
+                        std = np.std(df[trigger])
+                        # Push high for some features, low for others based on feature name hash
+                        direction = 1 if hash(trigger) % 2 == 0 else -1
+                        df.loc[i, trigger] = mean + direction * np.random.uniform(1.0, 2.0) * std

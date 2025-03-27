@@ -1,0 +1,18 @@
+{
+  "timestamp": "2025-03-22_20-44-22",
+  "data_source": "sample_data/clinical_data_sample.csv",
+  "num_records": 25,
+  "num_features": 16,
+  "target_column": "migraine_severity",
+  "drift_type": "sudden",
+  "validation_summary": {
+    "total_validations": 5,
+    "passed_validations": 4,
+    "warnings": 1,
+    "errors": 2,
+    "overall_valid": false
+  },
+  "data_type": "real_clinical",
+  "title": "Real Clinical Data MoE Validation Report",
+  "description": "Validation results for real clinical data from sample_data/clinical_data_sample.csv"
+}

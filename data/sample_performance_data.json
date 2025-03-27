@@ -1,0 +1,218 @@
+{
+  "performance_metrics": {
+    "expert_benchmarks": {
+      "physiological_expert": {
+        "rmse": 0.142,
+        "mae": 0.118,
+        "r2": 0.786,
+        "feature_importance": {
+          "heart_rate": 0.32,
+          "blood_pressure": 0.28,
+          "galvanic_skin_response": 0.21,
+          "respiration_rate": 0.15,
+          "temperature": 0.04
+        },
+        "confidence_metrics": {
+          "mean_confidence": 0.83,
+          "calibration_error": 0.08
+        }
+      },
+      "behavioral_expert": {
+        "rmse": 0.173,
+        "mae": 0.145,
+        "r2": 0.722,
+        "feature_importance": {
+          "activity_level": 0.41,
+          "sleep_quality": 0.35,
+          "stress_indicators": 0.18,
+          "social_interaction": 0.06
+        },
+        "confidence_metrics": {
+          "mean_confidence": 0.77,
+          "calibration_error": 0.12
+        }
+      },
+      "environmental_expert": {
+        "rmse": 0.185,
+        "mae": 0.163,
+        "r2": 0.694,
+        "feature_importance": {
+          "weather_changes": 0.38,
+          "barometric_pressure": 0.32,
+          "humidity": 0.16,
+          "temperature": 0.14
+        },
+        "confidence_metrics": {
+          "mean_confidence": 0.75,
+          "calibration_error": 0.15
+        }
+      },
+      "nutritional_expert": {
+        "rmse": 0.155,
+        "mae": 0.129,
+        "r2": 0.763,
+        "feature_importance": {
+          "caffeine_intake": 0.39,
+          "meal_timing": 0.25,
+          "hydration": 0.22,
+          "alcohol_consumption": 0.14
+        },
+        "confidence_metrics": {
+          "mean_confidence": 0.81,
+          "calibration_error": 0.09
+        }
+      }
+    },
+    "gating_evaluation": {
+      "optimal_expert_selection_rate": 0.72,
+      "selection_overlap": {
+        "physiological_expert": 0.68,
+        "behavioral_expert": 0.23,
+        "environmental_expert": 0.45,
+        "nutritional_expert": 0.38
+      },
+      "mean_regret": 0.082,
+      "max_regret": 0.215,
+      "weight_concentration": 0.51,
+      "weight_error_correlation": -0.63,
+      "decision_boundaries": {
+        "feature_1": [0.2, 0.4, 0.6, 0.8],
+        "feature_2": [0.3, 0.5, 0.7, 0.9]
+      }
+    },
+    "end_to_end_metrics": {
+      "overall": {
+        "rmse": 0.114,
+        "mae": 0.092,
+        "r2": 0.842,
+        "accuracy": 0.786,
+        "precision": 0.817,
+        "recall": 0.808,
+        "f1": 0.8,
+        "auc": 0.778
+      },
+      "temporal_analysis": {
+        "timestamps": ["2025-01-01", "2025-01-15", "2025-02-01", "2025-02-15", "2025-03-01", "2025-03-15"],
+        "rmse_over_time": [0.152, 0.143, 0.131, 0.126, 0.118, 0.114],
+        "precision_over_time": [0.744, 0.768, 0.785, 0.798, 0.809, 0.817],
+        "recall_over_time": [0.734, 0.751, 0.773, 0.789, 0.798, 0.808],
+        "expert_contributions_over_time": {
+          "physiological_expert": [0.32, 0.35, 0.37, 0.36, 0.38, 0.40],
+          "behavioral_expert": [0.28, 0.27, 0.26, 0.25, 0.24, 0.23],
+          "environmental_expert": [0.22, 0.20, 0.19, 0.21, 0.22, 0.20],
+          "nutritional_expert": [0.18, 0.18, 0.18, 0.18, 0.16, 0.17]
+        }
+      }
+    },
+    "baseline_comparisons": {
+      "models": {
+        "MoE": {
+          "rmse": 0.114,
+          "mae": 0.092,
+          "r2": 0.842,
+          "accuracy": 0.786,
+          "f1": 0.8
+        },
+        "Random Forest": {
+          "rmse": 0.147,
+          "mae": 0.121,
+          "r2": 0.747,
+          "accuracy": 0.747,
+          "f1": 0.79
+        },
+        "XGBoost": {
+          "rmse": 0.152,
+          "mae": 0.127,
+          "r2": 0.732,
+          "accuracy": 0.749,
+          "f1": 0.752
+        },
+        "Ensemble": {
+          "rmse": 0.133,
+          "mae": 0.112,
+          "r2": 0.775,
+          "accuracy": 0.782,
+          "f1": 0.747
+        },
+        "Linear Regression": {
+          "rmse": 0.187,
+          "mae": 0.156,
+          "r2": 0.634,
+          "accuracy": 0.723,
+          "f1": 0.712
+        }
+      },
+      "percentage_improvement": {
+        "Random Forest": 22.4,
+        "XGBoost": 25.0,
+        "Ensemble": 14.3,
+        "Linear Regression": 39.0
+      }
+    },
+    "statistical_tests": {
+      "t_test": {
+        "MoE vs Random Forest": {
+          "t_statistic": 3.42,
+          "p_value": 0.0015,
+          "significant": true
+        },
+        "MoE vs XGBoost": {
+          "t_statistic": 3.78,
+          "p_value": 0.0008,
+          "significant": true
+        },
+        "MoE vs Ensemble": {
+          "t_statistic": 2.56,
+          "p_value": 0.0142,
+          "significant": true
+        },
+        "MoE vs Linear Regression": {
+          "t_statistic": 5.63,
+          "p_value": 0.00001,
+          "significant": true
+        }
+      },
+      "wilcoxon_test": {
+        "MoE vs Random Forest": {
+          "statistic": 42.5,
+          "p_value": 0.0023,
+          "significant": true
+        },
+        "MoE vs XGBoost": {
+          "statistic": 36.0,
+          "p_value": 0.0011,
+          "significant": true
+        },
+        "MoE vs Ensemble": {
+          "statistic": 53.5,
+          "p_value": 0.0175,
+          "significant": true
+        },
+        "MoE vs Linear Regression": {
+          "statistic": 18.0,
+          "p_value": 0.00003,
+          "significant": true
+        }
+      },
+      "friedman_test": {
+        "statistic": 28.37,
+        "p_value": 0.00001,
+        "significant": true
+      }
+    },
+    "visualization_metadata": {
+      "color_scheme": "viridis",
+      "plot_dimensions": {
+        "width": 10,
+        "height": 6
+      },
+      "annotations": {
+        "title_font_size": 16,
+        "axis_font_size": 12,
+        "include_grid": true
+      }
+    },
+    "experiment_id": "MoE-Benchmark-2025-03-25",
+    "data_config_id": "migraine-clinical-dataset-v2"
+  }
+}

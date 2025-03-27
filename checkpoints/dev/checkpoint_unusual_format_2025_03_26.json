@@ -1,0 +1,52 @@
+{
+  "benchmark_results": {
+    "model_suite": {
+      "moe_model": {
+        "performance": {
+          "by_expert": {
+            "expert_1": {
+              "accuracy_metrics": {
+                "rmse": 0.156,
+                "mae": 0.124
+              },
+              "correlation_metrics": {
+                "r2": 0.763,
+                "pearson": 0.874
+              }
+            },
+            "expert_2": {
+              "accuracy_metrics": {
+                "rmse": 0.183,
+                "mae": 0.149
+              },
+              "correlation_metrics": {
+                "r2": 0.704,
+                "pearson": 0.842
+              }
+            }
+          },
+          "combined": {
+            "accuracy_metrics": {
+              "rmse": 0.135,
+              "mae": 0.109
+            },
+            "correlation_metrics": {
+              "r2": 0.821,
+              "pearson": 0.906
+            }
+          }
+        },
+        "gating": {
+          "metrics": {
+            "selection_accuracy": 0.78,
+            "entropy": 0.62
+          },
+          "utilization": {
+            "expert_1": 0.45,
+            "expert_2": 0.55
+          }
+        }
+      }
+    }
+  }
+}

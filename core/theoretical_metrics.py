@@ -76,8 +76,11 @@ def calculate_convergence_rate(optimization_trajectory: np.ndarray) -> Dict[str,
             if errors[i] > 1e-10 and errors[i+1] > 1e-10:
                 ratio1 = np.abs((errors[i+2] - errors[i+1]) / (errors[i+1] - errors[i]))
                 ratio2 = np.abs((errors[i+1] - errors[i]) / (errors[i] - errors[i-1]) if i > 0 else 1.0)
-                if ratio2 > 1e-10:
-                    ratios.append(np.log(ratio1) / np.log(ratio2))
+                if ratio2 > 1e-10 and ratio2 != 1.0:
+                    log_ratio2 = np.log(ratio2)
+                    # Prevent division by zero or very small values
+                    if np.abs(log_ratio2) > 1e-10:
+                        ratios.append(np.log(ratio1) / log_ratio2)
         
         order = np.median(ratios) if ratios else np.nan
     else:

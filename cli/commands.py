@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 import traceback
 from baseline_comparison.comparison_runner import BaselineComparison
+from baseline_comparison.moe_comparison import MoEBaselineComparison, create_moe_adapter
 from baseline_comparison.baseline_algorithms.satzilla_inspired import SatzillaInspiredSelector
 from baseline_comparison.benchmark_utils import get_benchmark_function, get_all_benchmark_functions
 from baseline_comparison.visualization import ComparisonVisualizer
@@ -19,6 +20,7 @@ import json
 import datetime
 import os
 from collections import Counter
+from cli.real_data_commands import RealDataValidationCommand
 
 # Configure logging
 logging.basicConfig(
@@ -317,6 +319,216 @@ class BaselineComparisonCommand(Command):
             traceback.print_exc()
             return 1
 
+class MoEComparisonCommand(Command):
+    """Command for running MoE-based baseline comparisons"""
+    
+    def execute(self) -> int:
+        """
+        Execute the MoE-based baseline comparison benchmark
+        
+        Returns:
+            Exit code (0 for success, non-zero for failure)
+        """
+        try:
+            # Get parameters from args
+            dimensions = self.args.dimensions
+            max_evaluations = self.args.max_evaluations
+            num_trials = self.args.num_trials
+            output_dir = self.args.output_dir
+            model_path = self.args.selector_path
+            moe_config_path = self.args.moe_config_path
+            moe_model_path = self.args.moe_model_path
+            
+            # Parse functions to test
+            if self.args.all_functions:
+                logger.info(f"Using all benchmark functions")
+                functions = ["sphere", "rosenbrock", "rastrigin", "ackley", "griewank", "levy", "schwefel"]
+            else:
+                functions = self.args.functions
+                if isinstance(functions, str):
+                    functions = functions.split(",")
+                logger.info(f"Using specified functions: {functions}")
+            
+            # Create timestamped output directory
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = os.path.join(output_dir, timestamp)
+            os.makedirs(output_dir, exist_ok=True)
+            logger.info(f"Output directory: {output_dir}")
+            
+            # Initialize all four standard optimizers
+            
+            # 1. Simple Baseline (Random Selection)
+            from baseline_comparison.baseline_algorithms.simple_baseline import SimpleBaselineSelector
+            simple_baseline = SimpleBaselineSelector()
+            logger.info("Initialized SimpleBaselineSelector")
+            
+            # 2. Meta-Learner (Basic Bandit)
+            meta_learner = MetaOptimizer(
+                dimensions=dimensions,
+                max_evaluations=max_evaluations,
+                n_parallel=1,
+                visualize_selection=True
+            )
+            logger.info("Initialized Meta-Learner")
+            
+            # 3. Enhanced Meta-Optimizer
+            enhanced_meta = MetaOptimizer(
+                dimensions=dimensions,
+                max_evaluations=max_evaluations,
+                n_parallel=1,
+                visualize_selection=True,
+                use_ml_selection=True,
+                extract_features=True
+            )
+            logger.info("Initialized Enhanced Meta-Optimizer")
+            
+            # 4. SATzilla-Inspired Selector
+            satzilla_selector = SatzillaInspiredSelector()
+            logger.info("Initialized SatzillaInspiredSelector")
+            
+            # 5. Initialize the MoE adapter
+            moe_config = None
+            if moe_config_path and os.path.exists(moe_config_path):
+                try:
+                    with open(moe_config_path, 'r') as f:
+                        moe_config = json.load(f)
+                    logger.info(f"Loaded MoE configuration from {moe_config_path}")
+                except Exception as e:
+                    logger.error(f"Error loading MoE configuration: {e}")
+                    return 1
+            else:
+                # Default configuration for MoE
+                moe_config = {
+                    'target_column': 'target',
+                    'time_column': 'timestamp',
+                    'patient_column': 'patient_id',
+                    'experts': {
+                        'expert_1': {
+                            'model_type': 'sklearn',
+                            'model_class': 'RandomForestRegressor',
+                            'model_kwargs': {'n_estimators': 100, 'random_state': 42},
+                        },
+                        'expert_2': {
+                            'model_type': 'sklearn',
+                            'model_class': 'GradientBoostingRegressor',
+                            'model_kwargs': {'n_estimators': 100, 'random_state': 42},
+                        },
+                        'expert_3': {
+                            'model_type': 'sklearn',
+                            'model_class': 'SVR',
+                            'model_kwargs': {'kernel': 'rbf', 'C': 1.0},
+                        }
+                    },
+                    'gating_network': {
+                        'model_type': 'sklearn',
+                        'model_class': 'RandomForestClassifier',
+                        'model_kwargs': {'n_estimators': 100, 'random_state': 42},
+                    }
+                }
+                logger.info("Using default MoE configuration")
+            
+            # Create MoE adapter
+            moe_adapter = create_moe_adapter(
+                config=moe_config,
+                model_path=moe_model_path,
+                verbose=True
+            )
+            logger.info("Initialized MoE adapter")
+            
+            # Load optimizer implementations for all selectors
+            try:
+                optimizers = load_optimizers()
+                meta_learner.register_optimizers(optimizers)
+                enhanced_meta.register_optimizers(optimizers)
+                simple_baseline.set_available_algorithms(list(optimizers.keys()))
+                satzilla_selector.set_available_algorithms(list(optimizers.keys()))
+                logger.info(f"Loaded {len(optimizers)} optimizers: {list(optimizers.keys())}")
+            except ImportError as e:
+                logger.error(f"Could not import optimizer implementations: {e}")
+                return 1
+            
+            # Load SATzilla model if provided
+            if model_path:
+                model_path_str = str(model_path)
+                logger.info(f"Loading SATzilla model from: {model_path_str}")
+                try:
+                    satzilla_selector.load_model(model_path_str)
+                    if satzilla_selector.is_trained:
+                        logger.info("Successfully loaded SATzilla model")
+                    else:
+                        logger.warning("Model loaded but is_trained=False. The model may be invalid.")
+                except Exception as e:
+                    logger.error(f"Failed to load SATzilla model: {e}")
+                    return 1
+            
+            # Initialize MoE comparison framework
+            comparison = MoEBaselineComparison(
+                simple_baseline=simple_baseline,
+                meta_learner=meta_learner,
+                enhanced_meta=enhanced_meta,
+                satzilla_selector=satzilla_selector,
+                moe_adapter=moe_adapter,
+                max_evaluations=max_evaluations,
+                num_trials=num_trials,
+                verbose=True,
+                output_dir=output_dir,
+                model_path=model_path,
+                moe_model_path=moe_model_path
+            )
+            
+            # Run comparison for each benchmark function
+            logger.info("Running MoE baseline comparison...")
+            for func_name in functions:
+                try:
+                    # Get benchmark function
+                    func = get_benchmark_function(func_name, dimensions)
+                    if func is None:
+                        logger.warning(f"Skipping unknown function: {func_name}")
+                        continue
+                    
+                    # Run comparison
+                    logger.info(f"Running comparison for {func_name}")
+                    comparison.run_comparison(
+                        problem_name=func_name,
+                        problem_func=func,
+                        dimensions=dimensions,
+                        max_evaluations=max_evaluations,
+                        num_trials=num_trials
+                    )
+                except Exception as e:
+                    logger.error(f"Error running comparison for {func_name}: {e}")
+                    traceback.print_exc()
+            
+            # Generate visualizations
+            logger.info("Generating visualizations...")
+            visualizer = ComparisonVisualizer(comparison.results, export_dir=os.path.join(output_dir, "visualizations"))
+            visualizer.create_all_visualizations()
+            
+            # Get and save MoE-enhanced summary
+            summary_df = comparison.get_summary_with_moe()
+            summary_df.to_csv(os.path.join(output_dir, "comparison_summary.csv"), index=False)
+            
+            # Save summary information
+            with open(os.path.join(output_dir, "comparison_summary.txt"), "w") as f:
+                f.write(f"MoE Baseline Comparison Summary\n")
+                f.write(f"==============================\n")
+                f.write(f"Dimensions: {dimensions}\n")
+                f.write(f"Max Evaluations: {max_evaluations}\n")
+                f.write(f"Number of Trials: {num_trials}\n")
+                f.write(f"Model Path: {model_path if model_path else 'None'}\n")
+                f.write(f"MoE Model Path: {moe_model_path if moe_model_path else 'None'}\n")
+                f.write(f"SATzilla Model Loaded: {satzilla_selector.is_trained}\n")
+                f.write(f"Benchmark Functions: {functions}\n")
+                f.write(f"Timestamp: {timestamp}\n")
+            
+            logger.info(f"MoE baseline comparison completed successfully. Results saved to: {output_dir}")
+            return 0
+            
+        except Exception as e:
+            logger.error(f"Error in MoE baseline comparison: {str(e)}")
+            traceback.print_exc()
+            return 1
+
 class SatzillaTrainCommand(Command):
     """Command for training a SATzilla-inspired algorithm selector"""
     
@@ -415,6 +627,8 @@ def get_command(args: argparse.Namespace) -> Optional[Command]:
         return MigrainePredictionCommand(args)
     elif args.baseline_comparison:
         return BaselineComparisonCommand(args)
+    elif args.moe_comparison:
+        return MoEComparisonCommand(args)
     elif args.train_satzilla:
         return SatzillaTrainCommand(args)
     else:

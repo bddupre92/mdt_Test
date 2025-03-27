@@ -1,0 +1,1044 @@
+{
+  "workflow_id": "workflow_13c591a2-9520-491f-b061-f727575dda0c",
+  "start_time": "2025-03-26T13:04:53.794352",
+  "end_time": "2025-03-26T13:04:57.855038",
+  "success": true,
+  "events": [],
+  "components": [],
+  "results": {
+    "accuracy": 0.92,
+    "execution_time": 4.5
+  },
+  "expert_contributions": [
+    {
+      "expert_id": "physiological_expert_0",
+      "expert_type": "physiological_expert",
+      "confidence": 0.7588489726221332,
+      "weight": 0.36877207226762687,
+      "prediction": 0.5226047761587186,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.19799214917397906,
+        "blood_pressure": 0.29885685238294724,
+        "sleep_quality": 0.08756102508021689,
+        "stress_level": 0.41558997336285686
+      }
+    },
+    {
+      "expert_id": "environmental_expert_0",
+      "expert_type": "environmental_expert",
+      "confidence": 0.7113534585653347,
+      "weight": 0.1974712500252809,
+      "prediction": 0.8612910497709807,
+      "features_used": [
+        "temperature",
+        "humidity",
+        "barometric_pressure",
+        "light_level"
+      ],
+      "feature_importance": {
+        "temperature": 0.24313654383082023,
+        "humidity": 0.3277904398281023,
+        "barometric_pressure": 0.14254872626066595,
+        "light_level": 0.2865242900804116
+      }
+    },
+    {
+      "expert_id": "behavioral_expert_0",
+      "expert_type": "behavioral_expert",
+      "confidence": 0.6642901311232776,
+      "weight": 0.13068180192117326,
+      "prediction": 0.6676709143501195,
+      "features_used": [
+        "exercise_minutes",
+        "water_intake",
+        "screen_time",
+        "social_activity"
+      ],
+      "feature_importance": {
+        "exercise_minutes": 0.3600851579822448,
+        "water_intake": 0.3690472652863656,
+        "screen_time": 0.047024184701387584,
+        "social_activity": 0.223843392030002
+      }
+    },
+    {
+      "expert_id": "medication_expert_0",
+      "expert_type": "medication_expert",
+      "confidence": 0.8744330722353135,
+      "weight": 0.3030748757859191,
+      "prediction": 0.49849957444867776,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.2165694012918509,
+        "medication_timing": 0.0017898032547252205,
+        "medication_effectiveness": 0.5677608671060256,
+        "side_effects": 0.21387992834739827
+      }
+    },
+    {
+      "expert_id": "physiological_expert_1",
+      "expert_type": "physiological_expert",
+      "confidence": 0.6167469618735767,
+      "weight": 0.31899326939967276,
+      "prediction": 0.771877245837258,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.19799214917397906,
+        "blood_pressure": 0.29885685238294724,
+        "sleep_quality": 0.08756102508021689,
+        "stress_level": 0.41558997336285686
+      }
+    },
+    {
+      "expert_id": "environmental_expert_1",
+      "expert_type": "environmental_expert",
+      "confidence": 0.7404897583257952,
+      "weight": 0.23763069544453733,
+      "prediction": 0.5268898783613645,
+      "features_used": [
+        "temperature",
+        "humidity",
+        "barometric_pressure",
+        "light_level"
+      ],
+      "feature_importance": {
+        "temperature": 0.24313654383082023,
+        "humidity": 0.3277904398281023,
+        "barometric_pressure": 0.14254872626066595,
+        "light_level": 0.2865242900804116
+      }
+    },
+    {
+      "expert_id": "behavioral_expert_1",
+      "expert_type": "behavioral_expert",
+      "confidence": 0.7200847751199312,
+      "weight": 0.17611989115754229,
+      "prediction": 0.875714469269911,
+      "features_used": [
+        "exercise_minutes",
+        "water_intake",
+        "screen_time",
+        "social_activity"
+      ],
+      "feature_importance": {
+        "exercise_minutes": 0.3600851579822448,
+        "water_intake": 0.3690472652863656,
+        "screen_time": 0.047024184701387584,
+        "social_activity": 0.223843392030002
+      }
+    },
+    {
+      "expert_id": "medication_expert_1",
+      "expert_type": "medication_expert",
+      "confidence": 0.6873339163112385,
+      "weight": 0.2672561439982476,
+      "prediction": 0.8651738817682966,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.2165694012918509,
+        "medication_timing": 0.0017898032547252205,
+        "medication_effectiveness": 0.5677608671060256,
+        "side_effects": 0.21387992834739827
+      }
+    },
+    {
+      "expert_id": "physiological_expert_2",
+      "expert_type": "physiological_expert",
+      "confidence": 0.6023468528690595,
+      "weight": 0.24058291270679474,
+      "prediction": 0.35124955628485144,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.19799214917397906,
+        "blood_pressure": 0.29885685238294724,
+        "sleep_quality": 0.08756102508021689,
+        "stress_level": 0.41558997336285686
+      }
+    },
+    {
+      "expert_id": "environmental_expert_2",
+      "expert_type": "environmental_expert",
+      "confidence": 0.7560864567987848,
+      "weight": 0.13985513973438027,
+      "prediction": 0.8613982427769027,
+      "features_used": [
+        "temperature",
+        "humidity",
+        "barometric_pressure",
+        "light_level"
+      ],
+      "feature_importance": {
+        "temperature": 0.24313654383082023,
+        "humidity": 0.3277904398281023,
+        "barometric_pressure": 0.14254872626066595,
+        "light_level": 0.2865242900804116
+      }
+    },
+    {
+      "expert_id": "behavioral_expert_2",
+      "expert_type": "behavioral_expert",
+      "confidence": 0.6457361385109882,
+      "weight": 0.13771202237821095,
+      "prediction": 0.6111493522251614,
+      "features_used": [
+        "exercise_minutes",
+        "water_intake",
+        "screen_time",
+        "social_activity"
+      ],
+      "feature_importance": {
+        "exercise_minutes": 0.3600851579822448,
+        "water_intake": 0.3690472652863656,
+        "screen_time": 0.047024184701387584,
+        "social_activity": 0.223843392030002
+      }
+    },
+    {
+      "expert_id": "medication_expert_2",
+      "expert_type": "medication_expert",
+      "confidence": 0.7717028365790854,
+      "weight": 0.48184992518061415,
+      "prediction": 0.7607291356948473,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.2165694012918509,
+        "medication_timing": 0.0017898032547252205,
+        "medication_effectiveness": 0.5677608671060256,
+        "side_effects": 0.21387992834739827
+      }
+    },
+    {
+      "expert_id": "physiological_expert_3",
+      "expert_type": "physiological_expert",
+      "confidence": 0.667064067093226,
+      "weight": 0.5196018226608586,
+      "prediction": 0.7011262992011535,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.19799214917397906,
+        "blood_pressure": 0.29885685238294724,
+        "sleep_quality": 0.08756102508021689,
+        "stress_level": 0.41558997336285686
+      }
+    },
+    {
+      "expert_id": "environmental_expert_3",
+      "expert_type": "environmental_expert",
+      "confidence": 0.6718252000440391,
+      "weight": 0.0008742531562901716,
+      "prediction": 0.35303473605005237,
+      "features_used": [
+        "temperature",
+        "humidity",
+        "barometric_pressure",
+        "light_level"
+      ],
+      "feature_importance": {
+        "temperature": 0.24313654383082023,
+        "humidity": 0.3277904398281023,
+        "barometric_pressure": 0.14254872626066595,
+        "light_level": 0.2865242900804116
+      }
+    },
+    {
+      "expert_id": "behavioral_expert_3",
+      "expert_type": "behavioral_expert",
+      "confidence": 0.6187821580127769,
+      "weight": 0.46164668446795326,
+      "prediction": 0.6129913376881183,
+      "features_used": [
+        "exercise_minutes",
+        "water_intake",
+        "screen_time",
+        "social_activity"
+      ],
+      "feature_importance": {
+        "exercise_minutes": 0.3600851579822448,
+        "water_intake": 0.3690472652863656,
+        "screen_time": 0.047024184701387584,
+        "social_activity": 0.223843392030002
+      }
+    },
+    {
+      "expert_id": "medication_expert_3",
+      "expert_type": "medication_expert",
+      "confidence": 0.8315436173825095,
+      "weight": 0.017877239714897953,
+      "prediction": 0.8180903547153215,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.2165694012918509,
+        "medication_timing": 0.0017898032547252205,
+        "medication_effectiveness": 0.5677608671060256,
+        "side_effects": 0.21387992834739827
+      }
+    },
+    {
+      "expert_id": "physiological_expert_4",
+      "expert_type": "physiological_expert",
+      "confidence": 0.6273577316215074,
+      "weight": 0.23900105397282367,
+      "prediction": 0.6172719494917365,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.19799214917397906,
+        "blood_pressure": 0.29885685238294724,
+        "sleep_quality": 0.08756102508021689,
+        "stress_level": 0.41558997336285686
+      }
+    },
+    {
+      "expert_id": "environmental_expert_4",
+      "expert_type": "environmental_expert",
+      "confidence": 0.8385000404767289,
+      "weight": 0.23797040597500496,
+      "prediction": 0.5018520826854642,
+      "features_used": [
+        "temperature",
+        "humidity",
+        "barometric_pressure",
+        "light_level"
+      ],
+      "feature_importance": {
+        "temperature": 0.24313654383082023,
+        "humidity": 0.3277904398281023,
+        "barometric_pressure": 0.14254872626066595,
+        "light_level": 0.2865242900804116
+      }
+    },
+    {
+      "expert_id": "behavioral_expert_4",
+      "expert_type": "behavioral_expert",
+      "confidence": 0.8179973878028161,
+      "weight": 0.33281850325466616,
+      "prediction": 0.3495251023396894,
+      "features_used": [
+        "exercise_minutes",
+        "water_intake",
+        "screen_time",
+        "social_activity"
+      ],
+      "feature_importance": {
+        "exercise_minutes": 0.3600851579822448,
+        "water_intake": 0.3690472652863656,
+        "screen_time": 0.047024184701387584,
+        "social_activity": 0.223843392030002
+      }
+    },
+    {
+      "expert_id": "medication_expert_4",
+      "expert_type": "medication_expert",
+      "confidence": 0.6571967473973912,
+      "weight": 0.19021003679750523,
+      "prediction": 0.8568072439202361,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.2165694012918509,
+        "medication_timing": 0.0017898032547252205,
+        "medication_effectiveness": 0.5677608671060256,
+        "side_effects": 0.21387992834739827
+      }
+    },
+    {
+      "expert_id": "physiological_expert_5",
+      "expert_type": "physiological_expert",
+      "confidence": 0.6420459939587696,
+      "weight": 0.25707153171401836,
+      "prediction": 0.4063147682048956,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.19799214917397906,
+        "blood_pressure": 0.29885685238294724,
+        "sleep_quality": 0.08756102508021689,
+        "stress_level": 0.41558997336285686
+      }
+    },
+    {
+      "expert_id": "environmental_expert_5",
+      "expert_type": "environmental_expert",
+      "confidence": 0.6212086922371418,
+      "weight": 0.21024796541429822,
+      "prediction": 0.5458464127071275,
+      "features_used": [
+        "temperature",
+        "humidity",
+        "barometric_pressure",
+        "light_level"
+      ],
+      "feature_importance": {
+        "temperature": 0.24313654383082023,
+        "humidity": 0.3277904398281023,
+        "barometric_pressure": 0.14254872626066595,
+        "light_level": 0.2865242900804116
+      }
+    },
+    {
+      "expert_id": "behavioral_expert_5",
+      "expert_type": "behavioral_expert",
+      "confidence": 0.8671416420696477,
+      "weight": 0.27859760541532036,
+      "prediction": 0.5207377028430733,
+      "features_used": [
+        "exercise_minutes",
+        "water_intake",
+        "screen_time",
+        "social_activity"
+      ],
+      "feature_importance": {
+        "exercise_minutes": 0.3600851579822448,
+        "water_intake": 0.3690472652863656,
+        "screen_time": 0.047024184701387584,
+        "social_activity": 0.223843392030002
+      }
+    },
+    {
+      "expert_id": "medication_expert_5",
+      "expert_type": "medication_expert",
+      "confidence": 0.8855205615275336,
+      "weight": 0.2540828974563631,
+      "prediction": 0.8370772314895136,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.2165694012918509,
+        "medication_timing": 0.0017898032547252205,
+        "medication_effectiveness": 0.5677608671060256,
+        "side_effects": 0.21387992834739827
+      }
+    },
+    {
+      "expert_id": "physiological_expert_6",
+      "expert_type": "physiological_expert",
+      "confidence": 0.8820598901663725,
+      "weight": 0.4387308818783934,
+      "prediction": 0.40017787255217957,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.19799214917397906,
+        "blood_pressure": 0.29885685238294724,
+        "sleep_quality": 0.08756102508021689,
+        "stress_level": 0.41558997336285686
+      }
+    },
+    {
+      "expert_id": "environmental_expert_6",
+      "expert_type": "environmental_expert",
+      "confidence": 0.7538036942017363,
+      "weight": 0.18166763949861786,
+      "prediction": 0.8833596128371095,
+      "features_used": [
+        "temperature",
+        "humidity",
+        "barometric_pressure",
+        "light_level"
+      ],
+      "feature_importance": {
+        "temperature": 0.24313654383082023,
+        "humidity": 0.3277904398281023,
+        "barometric_pressure": 0.14254872626066595,
+        "light_level": 0.2865242900804116
+      }
+    },
+    {
+      "expert_id": "behavioral_expert_6",
+      "expert_type": "behavioral_expert",
+      "confidence": 0.6577226950809267,
+      "weight": 0.19412973524334665,
+      "prediction": 0.46259414403673194,
+      "features_used": [
+        "exercise_minutes",
+        "water_intake",
+        "screen_time",
+        "social_activity"
+      ],
+      "feature_importance": {
+        "exercise_minutes": 0.3600851579822448,
+        "water_intake": 0.3690472652863656,
+        "screen_time": 0.047024184701387584,
+        "social_activity": 0.223843392030002
+      }
+    },
+    {
+      "expert_id": "medication_expert_6",
+      "expert_type": "medication_expert",
+      "confidence": 0.7145842309263304,
+      "weight": 0.18547174337964215,
+      "prediction": 0.7493472134244467,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.2165694012918509,
+        "medication_timing": 0.0017898032547252205,
+        "medication_effectiveness": 0.5677608671060256,
+        "side_effects": 0.21387992834739827
+      }
+    },
+    {
+      "expert_id": "physiological_expert_7",
+      "expert_type": "physiological_expert",
+      "confidence": 0.8734837079877559,
+      "weight": 0.601815778465743,
+      "prediction": 0.6500701749578909,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.19799214917397906,
+        "blood_pressure": 0.29885685238294724,
+        "sleep_quality": 0.08756102508021689,
+        "stress_level": 0.41558997336285686
+      }
+    },
+    {
+      "expert_id": "environmental_expert_7",
+      "expert_type": "environmental_expert",
+      "confidence": 0.7556790456894831,
+      "weight": 0.05139196792305236,
+      "prediction": 0.374790763346285,
+      "features_used": [
+        "temperature",
+        "humidity",
+        "barometric_pressure",
+        "light_level"
+      ],
+      "feature_importance": {
+        "temperature": 0.24313654383082023,
+        "humidity": 0.3277904398281023,
+        "barometric_pressure": 0.14254872626066595,
+        "light_level": 0.2865242900804116
+      }
+    },
+    {
+      "expert_id": "behavioral_expert_7",
+      "expert_type": "behavioral_expert",
+      "confidence": 0.7010595964860725,
+      "weight": 0.297556812984236,
+      "prediction": 0.6806004960713327,
+      "features_used": [
+        "exercise_minutes",
+        "water_intake",
+        "screen_time",
+        "social_activity"
+      ],
+      "feature_importance": {
+        "exercise_minutes": 0.3600851579822448,
+        "water_intake": 0.3690472652863656,
+        "screen_time": 0.047024184701387584,
+        "social_activity": 0.223843392030002
+      }
+    },
+    {
+      "expert_id": "medication_expert_7",
+      "expert_type": "medication_expert",
+      "confidence": 0.7699713070704516,
+      "weight": 0.049235440626968684,
+      "prediction": 0.5684610018033012,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.2165694012918509,
+        "medication_timing": 0.0017898032547252205,
+        "medication_effectiveness": 0.5677608671060256,
+        "side_effects": 0.21387992834739827
+      }
+    },
+    {
+      "expert_id": "physiological_expert_8",
+      "expert_type": "physiological_expert",
+      "confidence": 0.6788270078709531,
+      "weight": 0.20045370238935473,
+      "prediction": 0.5775431031806104,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.19799214917397906,
+        "blood_pressure": 0.29885685238294724,
+        "sleep_quality": 0.08756102508021689,
+        "stress_level": 0.41558997336285686
+      }
+    },
+    {
+      "expert_id": "environmental_expert_8",
+      "expert_type": "environmental_expert",
+      "confidence": 0.7466969645056253,
+      "weight": 0.30238797532818096,
+      "prediction": 0.556170887485725,
+      "features_used": [
+        "temperature",
+        "humidity",
+        "barometric_pressure",
+        "light_level"
+      ],
+      "feature_importance": {
+        "temperature": 0.24313654383082023,
+        "humidity": 0.3277904398281023,
+        "barometric_pressure": 0.14254872626066595,
+        "light_level": 0.2865242900804116
+      }
+    },
+    {
+      "expert_id": "behavioral_expert_8",
+      "expert_type": "behavioral_expert",
+      "confidence": 0.7184738536969173,
+      "weight": 0.08400036497250532,
+      "prediction": 0.43122179951413975,
+      "features_used": [
+        "exercise_minutes",
+        "water_intake",
+        "screen_time",
+        "social_activity"
+      ],
+      "feature_importance": {
+        "exercise_minutes": 0.3600851579822448,
+        "water_intake": 0.3690472652863656,
+        "screen_time": 0.047024184701387584,
+        "social_activity": 0.223843392030002
+      }
+    },
+    {
+      "expert_id": "medication_expert_8",
+      "expert_type": "medication_expert",
+      "confidence": 0.7513127694329832,
+      "weight": 0.4131579573099591,
+      "prediction": 0.4155920607340927,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.2165694012918509,
+        "medication_timing": 0.0017898032547252205,
+        "medication_effectiveness": 0.5677608671060256,
+        "side_effects": 0.21387992834739827
+      }
+    },
+    {
+      "expert_id": "physiological_expert_9",
+      "expert_type": "physiological_expert",
+      "confidence": 0.863455399614331,
+      "weight": 0.459995942807509,
+      "prediction": 0.8251760193503768,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.19799214917397906,
+        "blood_pressure": 0.29885685238294724,
+        "sleep_quality": 0.08756102508021689,
+        "stress_level": 0.41558997336285686
+      }
+    },
+    {
+      "expert_id": "environmental_expert_9",
+      "expert_type": "environmental_expert",
+      "confidence": 0.8105734760498908,
+      "weight": 0.1325340787948219,
+      "prediction": 0.5162140577178609,
+      "features_used": [
+        "temperature",
+        "humidity",
+        "barometric_pressure",
+        "light_level"
+      ],
+      "feature_importance": {
+        "temperature": 0.24313654383082023,
+        "humidity": 0.3277904398281023,
+        "barometric_pressure": 0.14254872626066595,
+        "light_level": 0.2865242900804116
+      }
+    },
+    {
+      "expert_id": "behavioral_expert_9",
+      "expert_type": "behavioral_expert",
+      "confidence": 0.739913531275831,
+      "weight": 0.2622174771769018,
+      "prediction": 0.8658128384181789,
+      "features_used": [
+        "exercise_minutes",
+        "water_intake",
+        "screen_time",
+        "social_activity"
+      ],
+      "feature_importance": {
+        "exercise_minutes": 0.3600851579822448,
+        "water_intake": 0.3690472652863656,
+        "screen_time": 0.047024184701387584,
+        "social_activity": 0.223843392030002
+      }
+    },
+    {
+      "expert_id": "medication_expert_9",
+      "expert_type": "medication_expert",
+      "confidence": 0.7346845771588159,
+      "weight": 0.14525250122076735,
+      "prediction": 0.47836975583672436,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.2165694012918509,
+        "medication_timing": 0.0017898032547252205,
+        "medication_effectiveness": 0.5677608671060256,
+        "side_effects": 0.21387992834739827
+      }
+    }
+  ],
+  "optimizer_performances": [
+    {
+      "optimizer_id": "DE_optimizer",
+      "optimizer_type": "differential_evolution",
+      "best_fitness": 14.956861922263503,
+      "convergence_curve": [
+        100.0,
+        90.48374180359595,
+        81.87307530779819,
+        74.08182206817179,
+        67.03200460356393,
+        60.653065971263345,
+        54.88116360940264,
+        49.65853037914095,
+        44.932896411722155,
+        40.65696597405991,
+        36.787944117144235,
+        33.28710836980795,
+        30.1194211912202,
+        27.25317930340126,
+        24.659696394160644,
+        22.313016014842983,
+        20.189651799465537,
+        18.26835240527346,
+        16.529888822158654,
+        14.956861922263503
+      ],
+      "parameters": {
+        "F": [
+          0.8,
+          0.78,
+          0.76,
+          0.74,
+          0.7200000000000001,
+          0.7000000000000001,
+          0.68,
+          0.66,
+          0.64,
+          0.6200000000000001,
+          0.6000000000000001,
+          0.5800000000000001,
+          0.56,
+          0.54,
+          0.52,
+          0.5,
+          0.48000000000000004,
+          0.46,
+          0.44000000000000006,
+          0.42000000000000004
+        ],
+        "CR": [
+          0.5,
+          0.51,
+          0.52,
+          0.53,
+          0.54,
+          0.55,
+          0.56,
+          0.5700000000000001,
+          0.58,
+          0.59,
+          0.6,
+          0.61,
+          0.62,
+          0.63,
+          0.64,
+          0.65,
+          0.66,
+          0.67,
+          0.6799999999999999,
+          0.69
+        ]
+      },
+      "diversity_history": [
+        1.0,
+        0.951229424500714,
+        0.9048374180359595,
+        0.8607079764250578,
+        0.8187307530779818,
+        0.7788007830714049,
+        0.7408182206817179,
+        0.7046880897187134,
+        0.6703200460356393,
+        0.6376281516217733,
+        0.6065306597126334,
+        0.5769498103804866,
+        0.5488116360940264,
+        0.522045776761016,
+        0.49658530379140947,
+        0.4723665527410147,
+        0.44932896411722156,
+        0.42741493194872665,
+        0.4065696597405991,
+        0.3867410234545012
+      ],
+      "exploration_exploitation_ratio": [
+        0.8,
+        0.77,
+        0.74,
+        0.7100000000000001,
+        0.68,
+        0.65,
+        0.6200000000000001,
+        0.5900000000000001,
+        0.56,
+        0.53,
+        0.5,
+        0.4700000000000001,
+        0.44000000000000006,
+        0.41000000000000003,
+        0.38000000000000006,
+        0.3500000000000001,
+        0.32000000000000006,
+        0.29000000000000004,
+        0.26,
+        0.2300000000000001
+      ],
+      "iterations": 20,
+      "evaluations": 1000,
+      "duration": 1.5
+    },
+    {
+      "optimizer_id": "ES_optimizer",
+      "optimizer_type": "evolution_strategy",
+      "best_fitness": 17.70552772374395,
+      "convergence_curve": [
+        95.0,
+        84.25744148812996,
+        74.72964680132257,
+        66.27925097674795,
+        58.78442222158338,
+        52.13710542893251,
+        46.24146431619731,
+        41.012499725762574,
+        36.374824167635644,
+        32.26157493626921,
+        28.613450131659203,
+        25.37785368675579,
+        22.508137074801567,
+        19.962926764072648,
+        17.70552772374395
+      ],
+      "parameters": {
+        "sigma": [
+          1.0,
+          0.95,
+          0.9,
+          0.85,
+          0.8,
+          0.75,
+          0.7,
+          0.6499999999999999,
+          0.6,
+          0.55,
+          0.5,
+          0.44999999999999996,
+          0.3999999999999999,
+          0.35,
+          0.29999999999999993
+        ],
+        "population_size": [
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50
+        ]
+      },
+      "diversity_history": [
+        0.9,
+        0.8475880802258239,
+        0.7982283930454418,
+        0.7517431902701448,
+        0.7079650749598981,
+        0.666736398613546,
+        0.627908693463928,
+        0.591342137833551,
+        0.5569050526255268,
+        0.5244734271365907,
+        0.49393047248462374,
+        0.46516620104252937,
+        0.4380770303639745,
+        0.41256541017470116,
+        0.38853947108617176
+      ],
+      "exploration_exploitation_ratio": [
+        0.7,
+        0.6599999999999999,
+        0.62,
+        0.58,
+        0.5399999999999999,
+        0.49999999999999994,
+        0.45999999999999996,
+        0.41999999999999993,
+        0.37999999999999995,
+        0.33999999999999997,
+        0.29999999999999993,
+        0.25999999999999995,
+        0.21999999999999997,
+        0.17999999999999994,
+        0.1399999999999999
+      ],
+      "iterations": 15,
+      "evaluations": 800,
+      "duration": 1.2
+    }
+  ],
+  "meta_learner_decisions": [
+    {
+      "selection_id": "decision_1",
+      "selected_algorithm": "DE",
+      "problem_features": {
+        "dimensions": 20,
+        "multimodal": false,
+        "noisy": true,
+        "separable": false,
+        "continuous": true
+      },
+      "confidence": 0.85,
+      "alternatives": {
+        "ES": 0.75,
+        "GWO": 0.62,
+        "ACO": 0.45
+      }
+    },
+    {
+      "selection_id": "decision_2",
+      "selected_algorithm": "ES",
+      "problem_features": {
+        "dimensions": 15,
+        "multimodal": true,
+        "noisy": false,
+        "separable": true,
+        "continuous": true
+      },
+      "confidence": 0.78,
+      "alternatives": {
+        "DE": 0.72,
+        "GWO": 0.64,
+        "ACO": 0.51
+      }
+    },
+    {
+      "selection_id": "decision_3",
+      "selected_algorithm": "ACO",
+      "problem_features": {
+        "dimensions": 30,
+        "multimodal": false,
+        "noisy": true,
+        "separable": false,
+        "continuous": false
+      },
+      "confidence": 0.82,
+      "alternatives": {
+        "GWO": 0.76,
+        "DE": 0.58,
+        "ES": 0.49
+      }
+    }
+  ]
+}

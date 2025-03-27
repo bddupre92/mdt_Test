@@ -1,0 +1,20 @@
+{
+  "model_name": "MoE-v2.1",
+  "date_created": "2025-03-26T08:00:00",
+  "clinical_expert_rmse": 0.156,
+  "clinical_expert_mae": 0.124,
+  "clinical_expert_r2": 0.763,
+  "clinical_expert_auc": 0.812,
+  "environmental_expert_rmse": 0.183,
+  "environmental_expert_mae": 0.149,
+  "environmental_expert_r2": 0.704,
+  "environmental_expert_auc": 0.776,
+  "gating_selection_accuracy": 0.78,
+  "gating_selection_entropy": 0.62,
+  "clinical_expert_utilization": 0.45,
+  "environmental_expert_utilization": 0.55,
+  "overall_rmse": 0.135,
+  "overall_mae": 0.109,
+  "overall_r2": 0.821,
+  "overall_auc": 0.845
+}

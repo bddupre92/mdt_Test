@@ -1,0 +1,18 @@
+{
+  "patient_id": "general",
+  "date": "general",
+  "bp_sys": "general",
+  "bp_dia": "general",
+  "heart_rate": "physiological",
+  "sleep_hours": "behavioral",
+  "stress_level": "behavioral",
+  "weather_temp": "physiological",
+  "weather_humidity": "environmental",
+  "medication_dose": "medication",
+  "migraine_severity": "general",
+  "hour_of_day": "general",
+  "day_of_week": "general",
+  "weekend": "general",
+  "time_since_prev": "general",
+  "measurement_count": "general"
+}

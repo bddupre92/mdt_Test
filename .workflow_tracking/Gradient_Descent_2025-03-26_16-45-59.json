@@ -1,0 +1,858 @@
+{
+  "workflow_id": "Gradient_Descent_2025-03-26_16-45-59",
+  "timestamp": "2025-03-26_16-45-59",
+  "optimizer": "Gradient_Descent",
+  "optimizer_description": "Standard gradient descent with consistent but slow convergence",
+  "metrics": {
+    "loss": [
+      1.0072,
+      0.969,
+      0.9441,
+      0.9318,
+      0.9065,
+      0.8796,
+      0.8433,
+      0.822,
+      0.7977,
+      0.778,
+      0.7502,
+      0.728,
+      0.7068,
+      0.6759,
+      0.6404,
+      0.6279,
+      0.6032,
+      0.5726,
+      0.5594,
+      0.5325,
+      0.5058,
+      0.4664,
+      0.4506,
+      0.4225,
+      0.4064
+    ],
+    "accuracy": [
+      0.497,
+      0.514,
+      0.525,
+      0.531,
+      0.542,
+      0.554,
+      0.571,
+      0.58,
+      0.591,
+      0.6,
+      0.612,
+      0.622,
+      0.632,
+      0.646,
+      0.662,
+      0.667,
+      0.679,
+      0.692,
+      0.698,
+      0.71,
+      0.722,
+      0.74,
+      0.747,
+      0.76,
+      0.767
+    ],
+    "precision": [
+      0.538,
+      0.546,
+      0.563,
+      0.521,
+      0.516,
+      0.53,
+      0.627,
+      0.536,
+      0.54,
+      0.633,
+      0.601,
+      0.671,
+      0.584,
+      0.705,
+      0.724,
+      0.727,
+      0.631,
+      0.758,
+      0.723,
+      0.757,
+      0.658,
+      0.689,
+      0.75,
+      0.75,
+      0.814
+    ],
+    "recall": [
+      0.514,
+      0.438,
+      0.537,
+      0.489,
+      0.484,
+      0.485,
+      0.508,
+      0.586,
+      0.524,
+      0.52,
+      0.54,
+      0.534,
+      0.543,
+      0.711,
+      0.638,
+      0.626,
+      0.669,
+      0.632,
+      0.765,
+      0.662,
+      0.742,
+      0.779,
+      0.663,
+      0.682,
+      0.76
+    ],
+    "f1_score": [
+      0.526,
+      0.486,
+      0.55,
+      0.504,
+      0.499,
+      0.507,
+      0.561,
+      0.56,
+      0.532,
+      0.571,
+      0.569,
+      0.595,
+      0.563,
+      0.708,
+      0.678,
+      0.673,
+      0.649,
+      0.689,
+      0.743,
+      0.706,
+      0.697,
+      0.731,
+      0.704,
+      0.714,
+      0.786
+    ]
+  },
+  "parameters": {
+    "learning_rate": [
+      0.010036,
+      0.010761,
+      0.010626,
+      0.009042,
+      0.01077,
+      0.005255,
+      0.005311,
+      0.005103,
+      0.005495,
+      0.005306,
+      0.00253,
+      0.002434,
+      0.002508,
+      0.002453,
+      0.002535,
+      0.001155,
+      0.001291,
+      0.001219,
+      0.001236,
+      0.001303,
+      0.000604,
+      0.000571,
+      0.000625,
+      0.00066,
+      0.000574
+    ],
+    "batch_size": 32,
+    "epochs": 25,
+    "optimizer_type": "Gradient_Descent",
+    "momentum": 0.9,
+    "beta1": null,
+    "beta2": null
+  },
+  "experts": [
+    {
+      "name": "physiological_expert",
+      "type": "physiological",
+      "specialization": "vital_signs"
+    },
+    {
+      "name": "environmental_expert",
+      "type": "environmental",
+      "specialization": "weather_patterns"
+    },
+    {
+      "name": "behavioral_expert",
+      "type": "behavioral",
+      "specialization": "activity_patterns"
+    },
+    {
+      "name": "medication_expert",
+      "type": "medication",
+      "specialization": "drug_interactions"
+    }
+  ],
+  "expert_contributions": [
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.1762,
+        "contribution": 0.1868
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.2321,
+        "contribution": 0.2285
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.4768,
+        "contribution": 0.4872
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.1149,
+        "contribution": 0.1364
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.2,
+        "contribution": 0.1962
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.1057,
+        "contribution": 0.13
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.6289,
+        "contribution": 0.6513
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.0654,
+        "contribution": 0.0426
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.2817,
+        "contribution": 0.298
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.2784,
+        "contribution": 0.2893
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.2078,
+        "contribution": 0.1989
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.2321,
+        "contribution": 0.2384
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.2929,
+        "contribution": 0.3137
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.1675,
+        "contribution": 0.1509
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.3888,
+        "contribution": 0.3855
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.1508,
+        "contribution": 0.1751
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.0813,
+        "contribution": 0.0762
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.287,
+        "contribution": 0.2928
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.473,
+        "contribution": 0.4746
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.1587,
+        "contribution": 0.1798
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.2496,
+        "contribution": 0.2666
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.2521,
+        "contribution": 0.2331
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.2592,
+        "contribution": 0.2596
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.2391,
+        "contribution": 0.2372
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.0414,
+        "contribution": 0.0531
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.3695,
+        "contribution": 0.3702
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.1538,
+        "contribution": 0.1547
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.4354,
+        "contribution": 0.4141
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.2928,
+        "contribution": 0.3121
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.3326,
+        "contribution": 0.3155
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.2508,
+        "contribution": 0.2521
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.1238,
+        "contribution": 0.1218
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.2878,
+        "contribution": 0.299
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.2008,
+        "contribution": 0.2046
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.4972,
+        "contribution": 0.489
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.0142,
+        "contribution": -0.001
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.137,
+        "contribution": 0.1526
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.2189,
+        "contribution": 0.2057
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.3356,
+        "contribution": 0.3243
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.3085,
+        "contribution": 0.3182
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.4921,
+        "contribution": 0.473
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.3719,
+        "contribution": 0.3741
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.0429,
+        "contribution": 0.0646
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.093,
+        "contribution": 0.0772
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.1972,
+        "contribution": 0.1897
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.2197,
+        "contribution": 0.2238
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.3169,
+        "contribution": 0.3055
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.2662,
+        "contribution": 0.2691
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.2877,
+        "contribution": 0.2911
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.0862,
+        "contribution": 0.0743
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.3235,
+        "contribution": 0.3153
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.3026,
+        "contribution": 0.2879
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.4625,
+        "contribution": 0.4444
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.1706,
+        "contribution": 0.1562
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.2472,
+        "contribution": 0.2383
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.1197,
+        "contribution": 0.1
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.1962,
+        "contribution": 0.1721
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.3088,
+        "contribution": 0.3042
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.1295,
+        "contribution": 0.1093
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.3654,
+        "contribution": 0.373
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.2475,
+        "contribution": 0.2251
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.0674,
+        "contribution": 0.0427
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.4844,
+        "contribution": 0.4865
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.2006,
+        "contribution": 0.1863
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.2479,
+        "contribution": 0.2261
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.158,
+        "contribution": 0.1698
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.0239,
+        "contribution": 0.0438
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.5703,
+        "contribution": 0.5799
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.0082,
+        "contribution": 0.0306
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.4205,
+        "contribution": 0.4196
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.5282,
+        "contribution": 0.5513
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.0431,
+        "contribution": 0.0223
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.1357,
+        "contribution": 0.1217
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.1951,
+        "contribution": 0.1737
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.2967,
+        "contribution": 0.3064
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.3725,
+        "contribution": 0.3787
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.1293,
+        "contribution": 0.1333
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.3852,
+        "contribution": 0.3607
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.1621,
+        "contribution": 0.1529
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.3234,
+        "contribution": 0.3352
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.2898,
+        "contribution": 0.2742
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.0872,
+        "contribution": 0.0846
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.2254,
+        "contribution": 0.2187
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.3976,
+        "contribution": 0.4139
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.0103,
+        "contribution": -0.0062
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.2439,
+        "contribution": 0.2495
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.6747,
+        "contribution": 0.6952
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.0711,
+        "contribution": 0.0814
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.1676,
+        "contribution": 0.1478
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.3507,
+        "contribution": 0.3441
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.3758,
+        "contribution": 0.3938
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.1059,
+        "contribution": 0.1004
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.2635,
+        "contribution": 0.2617
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.2979,
+        "contribution": 0.2867
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.1058,
+        "contribution": 0.1246
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.3328,
+        "contribution": 0.3198
+      }
+    ],
+    [
+      {
+        "expert_id": "physiological_expert",
+        "expert_type": "physiological",
+        "weight": 0.2784,
+        "contribution": 0.2831
+      },
+      {
+        "expert_id": "environmental_expert",
+        "expert_type": "environmental",
+        "weight": 0.3278,
+        "contribution": 0.3228
+      },
+      {
+        "expert_id": "behavioral_expert",
+        "expert_type": "behavioral",
+        "weight": 0.108,
+        "contribution": 0.0968
+      },
+      {
+        "expert_id": "medication_expert",
+        "expert_type": "medication",
+        "weight": 0.2858,
+        "contribution": 0.309
+      }
+    ]
+  ],
+  "iterations_completed": 25,
+  "computation_environment": {
+    "device": "cpu",
+    "python_version": "3.8",
+    "framework": "PyTorch 1.10.0"
+  }
+}

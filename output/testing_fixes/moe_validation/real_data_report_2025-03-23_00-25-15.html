@@ -1,0 +1,1324 @@
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Model Evaluation Report - 2025-03-23_00-25-15</title>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+            .tab { overflow: hidden; border: 1px solid #ccc; background-color: #f1f1f1; }
+            .tab button { background-color: inherit; float: left; border: none; outline: none; cursor: pointer; padding: 14px 16px; transition: 0.3s; }
+            .tab button:hover { background-color: #ddd; }
+            .tab button.active { background-color: #ccc; }
+            .tab-content { display: none; padding: 6px 12px; border: 1px solid #ccc; border-top: none; }
+            .chart-container { height: 400px; width: 100%; margin-bottom: 20px; }
+        </style>
+    </head>
+    <body>
+        <h1>Model Evaluation Report - Enhanced Debugging</h1>
+        <div class="tab">
+            <button class="tab-button" onclick="openTab(event, 'ModelEvaluation')" id="defaultOpen">Model Evaluation</button>
+        </div>
+        
+    <div class="section">
+        <h2>Advanced Model Evaluation</h2>
+        <div class="description">
+            <p>This section displays advanced model evaluation metrics, including uncertainty quantification, calibration analysis, and stability tracking over time.</p>
+        </div>
+        <div id="model-eval-debug" style="background-color: #f8f9fa; padding: 10px; margin: 10px 0; display: none;">
+            <h4>Debug Information</h4>
+            <pre id="model-eval-debug-content"></pre>
+        </div>
+    
+    <div class="subsection">
+        <h3>Prediction Uncertainty Quantification</h3>
+        <div class="chart-container">
+            <div id="uncertainty-chart"></div>
+        </div>
+        <div class="description">
+            <p>This chart shows prediction values with confidence intervals, indicating the model's 
+            uncertainty in different prediction scenarios.</p>
+        </div>
+    </div>
+    
+    <div class="subsection">
+        <h3>Calibration Analysis</h3>
+        <div class="chart-container">
+            <div id="calibration-chart"></div>
+        </div>
+        <div class="description">
+            <p>Reliability diagram showing how well calibrated the predicted probabilities are 
+            compared to actual outcomes.</p>
+        </div>
+    </div>
+    
+    <div class="subsection">
+        <h3>Model Stability Over Time</h3>
+        <div class="chart-container">
+            <div id="stability-chart"></div>
+        </div>
+        <div class="description">
+            <p>Tracking of model consistency and stability metrics across different time periods,
+            showing how prediction behavior evolves over time.</p>
+        </div>
+    </div>
+    
+    <div class="subsection">
+        <h3>Comparative Benchmarks</h3>
+        <div class="chart-container">
+            <div id="benchmark-chart"></div>
+        </div>
+        <div class="description">
+            <p>Comparison of model performance against standard clinical approaches and other benchmark models.</p>
+        </div>
+    </div>
+    <script>
+    // Debug function to help identify issues
+    function logModelEvalDebug(message, data) {
+        console.log(message, data);
+        var debugContainer = document.getElementById('model-eval-debug');
+        var debugContent = document.getElementById('model-eval-debug-content');
+        if (debugContainer && debugContent) {
+            debugContainer.style.display = 'block';
+            debugContent.textContent += message + (data ? ': ' + JSON.stringify(data) : '') + '
+';
+        }
+    }
+    
+    // Register a function to initialize Model Evaluation charts when tab is activated
+    document.addEventListener('DOMContentLoaded', function() {
+        logModelEvalDebug('DOM fully loaded, adding event listener to Model Evaluation tab button');
+        var modelEvalTab = document.querySelector('button.tab-button[onclick="openTab(event, 'ModelEvaluation')"]');
+        if (modelEvalTab) {
+            modelEvalTab.addEventListener('click', function() {
+                logModelEvalDebug('Model Evaluation tab clicked, initializing charts in 100ms');
+                setTimeout(initModelEvalCharts, 100);
+            });
+        } else {
+            logModelEvalDebug('ERROR: Could not find Model Evaluation tab button');
+        }
+        
+        // Also add a direct initialization trigger for use right away
+        window.initModelEvaluationCharts = initModelEvalCharts;
+    });
+    
+    function initModelEvalCharts() {
+        logModelEvalDebug('Initializing Model Evaluation charts...');
+        
+        // Check if Plotly is available
+        if (typeof Plotly === 'undefined') {
+            logModelEvalDebug('ERROR: Plotly library is not available!');
+            chartIds.forEach(function(id) {
+                updateChartStatus(id, 'Error', 'Plotly library not loaded');
+            });
+            return;
+        } else {
+            logModelEvalDebug('Plotly library is available, version: ' + (Plotly.version || 'unknown'));
+        }
+        
+        // First, check if the Model Evaluation tab is visible
+        var modelEvalTab = document.getElementById('ModelEvaluation');
+        if (!modelEvalTab) {
+            logModelEvalDebug('ERROR: Model Evaluation tab element not found in DOM');
+            // Try to find it by alternative selectors
+            var possibleTabs = document.querySelectorAll('div[id*="model"], div[id*="evaluation"], div.tab-pane');
+            if (possibleTabs.length > 0) {
+                logModelEvalDebug(`Found ${possibleTabs.length} possible tab elements:`, 
+                    Array.from(possibleTabs).map(t => ({ id: t.id, class: t.className })));
+                // Try the first one that might be the Model Evaluation tab
+                modelEvalTab = possibleTabs[0];
+                logModelEvalDebug(`Using ${modelEvalTab.id} as fallback Model Evaluation tab`);
+            } else {
+                logModelEvalDebug('CRITICAL ERROR: No possible tab elements found, cannot proceed with initialization');
+                return;
+            }
+        }
+        
+        // Check tab visibility
+        var tabStyle = window.getComputedStyle(modelEvalTab);
+        logModelEvalDebug('Model Evaluation tab state before initialization:', {
+            display: tabStyle.display,
+            visibility: tabStyle.visibility,
+            width: modelEvalTab.offsetWidth,
+            height: modelEvalTab.offsetHeight,
+            childElementCount: modelEvalTab.childElementCount
+        });
+        
+        if (tabStyle.display === 'none' || modelEvalTab.offsetWidth === 0) {
+            logModelEvalDebug('MODEL EVALUATION TAB IS NOT VISIBLE, making it visible to initialize charts');
+            // Force tab to be visible for initialization
+            var allTabs = document.querySelectorAll('.tab-content > div');
+            logModelEvalDebug(`Found ${allTabs.length} tab content divs, hiding all`);
+            allTabs.forEach(function(tab) { 
+                tab.style.display = 'none';
+                logModelEvalDebug(`Set display:none for tab ${tab.id || 'unnamed'}`);
+            });
+            
+            // Apply multiple display techniques to ensure visibility
+            modelEvalTab.style.cssText = 'display: block !important; visibility: visible !important;';
+            logModelEvalDebug('Applied forced display styles to Model Evaluation tab');
+            
+            // Check if tab is now visible
+            setTimeout(function() {
+                var newStyle = window.getComputedStyle(modelEvalTab);
+                logModelEvalDebug('Tab style after forcing display:', {
+                    display: newStyle.display,
+                    visibility: newStyle.visibility,
+                    width: modelEvalTab.offsetWidth,
+                    height: modelEvalTab.offsetHeight
+                });
+            }, 50);
+        }
+        
+        // Ensure the tab is actually visible in the DOM after our attempts
+        if (window.getComputedStyle(modelEvalTab).display === 'none') {
+            logModelEvalDebug('WARNING: Tab still not visible after forcing display, trying alternative approach');
+            // Try to click the tab button
+            var tabButtons = document.querySelectorAll('.nav-link, button.tab-button');
+            var clicked = false;
+            
+            logModelEvalDebug(`Found ${tabButtons.length} potential tab buttons`);
+            tabButtons.forEach(function(button) {
+                logModelEvalDebug(`Button text: "${button.textContent.trim()}", class: ${button.className}`);
+                if (button.textContent.trim() === 'Model Evaluation' || 
+                    button.getAttribute('onclick')?.includes('ModelEvaluation') || 
+                    button.getAttribute('data-target') === '#ModelEvaluation') {
+                    try {
+                        button.click();
+                        clicked = true;
+                        logModelEvalDebug('Clicked Model Evaluation tab button');
+                    } catch (e) {
+                        logModelEvalDebug('ERROR clicking button:', e.message);
+                    }
+                }
+            });
+            
+            if (!clicked) {
+                logModelEvalDebug('WARNING: Could not find tab button to click, using direct style override');
+                // Last resort: force display with !important via stylesheet
+                try {
+                    var style = document.createElement('style');
+                    style.innerHTML = '#ModelEvaluation, [id*="model_evaluation"], [id*="modelEvaluation"] { display: block !important; visibility: visible !important; }'; 
+                    document.head.appendChild(style);
+                    logModelEvalDebug('Added style override to force tab visibility');
+                } catch (e) {
+                    logModelEvalDebug('ERROR adding style override:', e.message);
+                }
+            }
+        }
+        
+        // Dispatch resize event to ensure proper layout
+        try {
+            window.dispatchEvent(new Event('resize'));
+            logModelEvalDebug('Dispatched resize event');
+        } catch (e) {
+            logModelEvalDebug('ERROR dispatching resize event:', e.message);
+        }
+        
+        var chartIds = ['uncertainty-chart', 'calibration-chart', 'stability-chart', 'benchmark-chart'];
+        var missingCharts = [];
+        
+        // Check for data availability before attempting to initialize charts
+        try {
+            logModelEvalDebug('Checking for chart data availability:');
+            if (typeof uncertaintyData !== 'undefined') {
+                logModelEvalDebug('Uncertainty data found:', {
+                    type: typeof uncertaintyData,
+                    length: Array.isArray(uncertaintyData) ? uncertaintyData.length : 'not array'
+                });
+            } else {
+                logModelEvalDebug('ERROR: uncertaintyData is undefined');
+            }
+            
+            if (typeof calibrationData !== 'undefined') {
+                logModelEvalDebug('Calibration data found:', {
+                    type: typeof calibrationData,
+                    length: Array.isArray(calibrationData) ? calibrationData.length : 'not array'
+                });
+            } else {
+                logModelEvalDebug('ERROR: calibrationData is undefined');
+            }
+            
+            if (typeof stabilityData !== 'undefined') {
+                logModelEvalDebug('Stability data found:', {
+                    type: typeof stabilityData,
+                    length: Array.isArray(stabilityData) ? stabilityData.length : 'not array'
+                });
+            } else {
+                logModelEvalDebug('ERROR: stabilityData is undefined');
+            }
+            
+            if (typeof benchmarkData !== 'undefined') {
+                logModelEvalDebug('Benchmark data found:', {
+                    type: typeof benchmarkData,
+                    length: Array.isArray(benchmarkData) ? benchmarkData.length : 'not array'
+                });
+            } else {
+                logModelEvalDebug('ERROR: benchmarkData is undefined');
+            }
+        } catch (e) {
+            logModelEvalDebug('ERROR checking data availability:', e.message);
+        }
+        
+        // Verify chart containers and prepare them
+        chartIds.forEach(function(id) {
+            var container = document.getElementById(id);
+            if (!container) {
+                missingCharts.push(id);
+                logModelEvalDebug('ERROR: Chart container not found', id);
+                updateChartStatus(id, 'Error', 'Container not found in DOM');
+            } else {
+                // Log detailed container information
+                var containerStyle = window.getComputedStyle(container);
+                logModelEvalDebug(`Chart container ${id} details:`, {
+                    display: containerStyle.display,
+                    visibility: containerStyle.visibility,
+                    width: container.offsetWidth,
+                    height: container.offsetHeight,
+                    position: containerStyle.position,
+                    overflow: containerStyle.overflow,
+                    zIndex: containerStyle.zIndex,
+                    childCount: container.childElementCount
+                });
+                
+                // Make sure container is visible and has dimensions
+                container.style.cssText = 'display: block !important; visibility: visible !important;';
+                if (container.offsetWidth === 0 || container.offsetHeight === 0) {
+                    logModelEvalDebug(`Container ${id} has zero dimensions, forcing minimum size`);
+                    container.style.minHeight = '350px';
+                    container.style.minWidth = '100%';
+                    container.style.height = '350px';
+                    container.style.width = '100%';
+                    
+                    // Check if dimensions were applied successfully
+                    setTimeout(function() {
+                        logModelEvalDebug(`Container ${id} dimensions after forcing:`, {
+                            width: container.offsetWidth,
+                            height: container.offsetHeight
+                        });
+                    }, 50);
+                }
+                
+                // Clear any previous chart instances to avoid conflicts
+                if (container._Plotly) {
+                    try {
+                        Plotly.purge(container);
+                        logModelEvalDebug(`Cleared previous Plotly instance from ${id}`);
+                    } catch (e) {
+                        logModelEvalDebug(`Error clearing previous Plotly instance from ${id}:`, e.message);
+                    }
+                }
+            }
+        });
+        
+        if (missingCharts.length > 0) {
+            logModelEvalDebug('Some chart containers are missing:', missingCharts);
+        } else {
+            logModelEvalDebug('All chart containers found, proceeding with initialization');
+            // We'll call each chart initialization function manually to ensure it runs
+            try {
+                // Update status before initialization
+                chartIds.forEach(function(id) {
+                    updateChartStatus(id, 'Initializing...', 'Starting chart initialization');
+                });
+                
+                // Initialize each chart with a small delay between them and capture errors
+                setTimeout(function() {
+                    var uncertaintyResult;
+                    try {
+                        uncertaintyResult = initUncertaintyChart();
+                        logModelEvalDebug('Uncertainty chart initialization result:', uncertaintyResult);
+                    } catch (e) {
+                        logModelEvalDebug('ERROR initializing uncertainty chart:', e.message);
+                        updateChartStatus('uncertainty-chart', 'Error', 'Exception: ' + e.message);
+                    }
+                    
+                    setTimeout(function() {
+                        var calibrationResult;
+                        try {
+                            calibrationResult = initCalibrationChart();
+                            logModelEvalDebug('Calibration chart initialization result:', calibrationResult);
+                        } catch (e) {
+                            logModelEvalDebug('ERROR initializing calibration chart:', e.message);
+                            updateChartStatus('calibration-chart', 'Error', 'Exception: ' + e.message);
+                        }
+                        
+                        setTimeout(function() {
+                            var stabilityResult;
+                            try {
+                                stabilityResult = initStabilityChart();
+                                logModelEvalDebug('Stability chart initialization result:', stabilityResult);
+                            } catch (e) {
+                                logModelEvalDebug('ERROR initializing stability chart:', e.message);
+                                updateChartStatus('stability-chart', 'Error', 'Exception: ' + e.message);
+                            }
+                            
+                            setTimeout(function() {
+                                var benchmarkResult;
+                                try {
+                                    benchmarkResult = initBenchmarkChart();
+                                    logModelEvalDebug('Benchmark chart initialization result:', benchmarkResult);
+                                } catch (e) {
+                                    logModelEvalDebug('ERROR initializing benchmark chart:', e.message);
+                                    updateChartStatus('benchmark-chart', 'Error', 'Exception: ' + e.message);
+                                }
+                                
+                                var results = [uncertaintyResult, calibrationResult, stabilityResult, benchmarkResult];
+                                var successCount = results.filter(Boolean).length;
+                                logModelEvalDebug(`${successCount} out of ${results.length} charts initialized successfully`);
+                                
+                                // Force charts to resize
+                                setTimeout(function() {
+                                    try {
+                                        window.dispatchEvent(new Event('resize'));
+                                        logModelEvalDebug('Triggered window resize event');
+                                        
+                                        // Final check of chart containers
+                                        chartIds.forEach(function(id) {
+                                            var container = document.getElementById(id);
+                                            if (container) {
+                                                logModelEvalDebug(`Final state of ${id}:`, {
+                                                    width: container.offsetWidth,
+                                                    height: container.offsetHeight,
+                                                    childCount: container.childElementCount,
+                                                    hasPlotlyInstance: !!container._Plotly
+                                                });
+                                            }
+                                        });
+                                    } catch (e) {
+                                        logModelEvalDebug('ERROR during final resize:', e.message);
+                                    }
+                                }, 200);
+                            }, 100);
+                        }, 100);
+                    }, 100);
+                }, 100);
+            } catch (e) {
+                logModelEvalDebug('ERROR during chart initialization', e.message);
+            }
+        }
+    }
+    </script>
+    <script>
+    // Uncertainty Quantification Chart initialization function
+    function initUncertaintyChart() {
+        // Update chart status to indicate initialization is being attempted
+        updateChartStatus('uncertainty-chart', 'Initializing...', 'Attempting to initialize chart');
+        
+        // Check if Plotly is available
+        if (typeof Plotly === 'undefined') {
+            logModelEvalDebug('ERROR: Plotly library not available for uncertainty chart');
+            updateChartStatus('uncertainty-chart', 'Error', 'Plotly library not available');
+            return false;
+        }
+        
+        // Check if chart container exists and is visible
+        var container = document.getElementById('uncertainty-chart');
+        if (!container) {
+            logModelEvalDebug('ERROR: Uncertainty chart container not found in DOM');
+            updateChartStatus('uncertainty-chart', 'Error', 'Container not found');
+            return false;
+        }
+        
+        // Log container dimensions and visibility
+        var containerStyle = window.getComputedStyle(container);
+        logModelEvalDebug('Uncertainty chart container details:', {
+            width: container.offsetWidth,
+            height: container.offsetHeight,
+            display: containerStyle.display,
+            visibility: containerStyle.visibility,
+            position: containerStyle.position
+        });
+        
+        // Check if container has dimensions
+        if (container.offsetWidth === 0 || container.offsetHeight === 0) {
+            logModelEvalDebug('ERROR: Uncertainty chart container has zero dimensions');
+            
+            // Try to force dimensions
+            container.style.cssText = 'display: block !important; visibility: visible !important; height: 350px !important; width: 100% !important;';
+            logModelEvalDebug('Forced dimensions on uncertainty chart container');
+            
+            // Check if forcing dimensions worked
+            if (container.offsetWidth === 0 || container.offsetHeight === 0) {
+                logModelEvalDebug('ERROR: Failed to force dimensions on uncertainty chart container');
+                updateChartStatus('uncertainty-chart', 'Error', 'Container has zero dimensions');
+                return false;
+            }
+        }
+        
+        logModelEvalDebug('Initializing uncertainty chart with container dimensions: ' + container.offsetWidth + 'x' + container.offsetHeight);
+        
+        try {
+            // Log data availability and structure
+            logModelEvalDebug('Loading uncertainty chart data...');
+            
+            // Check if data variables exist
+            if (typeof uncertaintyData === 'undefined') {
+                logModelEvalDebug('ERROR: uncertaintyData variable is undefined');
+                updateChartStatus('uncertainty-chart', 'Error', 'Data variable undefined');
+                return false;
+            }
+            
+            // Extract data from the provided JSON
+            var x = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99];
+            var y = [0.0, 0.09983341664682815, 0.19866933079506122, 0.29552020666133955, 0.3894183423086505, 0.479425538604203, 0.5646424733950354, 0.644217687237691, 0.7173560908995228, 0.7833269096274834, 0.8414709848078965, 0.8912073600614354, 0.9320390859672263, 0.963558185417193, 0.9854497299884601, 0.9974949866040544, 0.9995736030415051, 0.9916648104524686, 0.9738476308781951, 0.9463000876874145, 0.9092974268256817, 0.8632093666488737, 0.8084964038195901, 0.7457052121767204, 0.6754631805511511, 0.5984721441039564, 0.5155013718214642, 0.4273798802338298, 0.3349881501559051, 0.23924932921398243, 0.1411200080598672, 0.04158066243329049, -0.058374143427580086, -0.1577456941432482, -0.2555411020268312, -0.35078322768961984, -0.44252044329485246, -0.5298361409084934, -0.6118578909427189, -0.6877661591839738, -0.7568024953079283, -0.8182771110644103, -0.8715757724135882, -0.9161659367494549, -0.9516020738895161, -0.977530117665097, -0.9936910036334644, -0.9999232575641008, -0.9961646088358407, -0.9824526126243325, -0.9589242746631385, -0.9258146823277325, -0.8834546557201531, -0.8322674422239013, -0.7727644875559871, -0.7055403255703919, -0.6312666378723216, -0.5506855425976376, -0.46460217941375737, -0.373876664830236, -0.27941549819892586, -0.18216250427209588, -0.0830894028174964, 0.016813900484349713, 0.11654920485049364, 0.21511998808781552, 0.31154136351337786, 0.4048499206165983, 0.49411335113860816, 0.5784397643882002, 0.6569865987187891, 0.7289690401258759, 0.7936678638491531, 0.8504366206285644, 0.8987080958116269, 0.9379999767747389, 0.9679196720314863, 0.9881682338770004, 0.998543345374605, 0.998941341839772, 0.9893582466233818, 0.9698898108450863, 0.9407305566797731, 0.9021718337562934, 0.8545989080882804, 0.7984871126234903, 0.7343970978741134, 0.6629692300821833, 0.5849171928917617, 0.5010208564578846, 0.4121184852417566, 0.3190983623493521, 0.22288991410024764, 0.1244544235070617, 0.024775425453357765, -0.0751511204618093, -0.17432678122297965, -0.27176062641094245, -0.36647912925192844, -0.4575358937753214];
+            var error_upper = [0.2, 0.29983341664682817, 0.3986693307950612, 0.49552020666133956, 0.5894183423086505, 0.679425538604203, 0.7646424733950354, 0.844217687237691, 0.9173560908995229, 0.9833269096274835, 1.0414709848078965, 1.0912073600614354, 1.1320390859672262, 1.163558185417193, 1.18544972998846, 1.1974949866040545, 1.1995736030415052, 1.1916648104524685, 1.173847630878195, 1.1463000876874145, 1.1092974268256817, 1.0632093666488738, 1.00849640381959, 0.9457052121767204, 0.875463180551151, 0.7984721441039564, 0.7155013718214642, 0.6273798802338297, 0.5349881501559051, 0.4392493292139824, 0.3411200080598672, 0.24158066243329052, 0.14162585657241994, 0.0422543058567518, -0.05554110202683121, -0.15078322768961983, -0.24252044329485245, -0.3298361409084934, -0.4118578909427189, -0.48776615918397376, -0.5568024953079282, -0.6182771110644103, -0.6715757724135882, -0.7161659367494548, -0.7516020738895162, -0.777530117665097, -0.7936910036334643, -0.7999232575641009, -0.7961646088358407, -0.7824526126243325, -0.7589242746631384, -0.7258146823277325, -0.6834546557201531, -0.6322674422239012, -0.5727644875559872, -0.5055403255703919, -0.4312666378723216, -0.35068554259763757, -0.26460217941375735, -0.173876664830236, -0.07941549819892585, 0.017837495727904135, 0.11691059718250361, 0.21681390048434973, 0.31654920485049365, 0.41511998808781553, 0.5115413635133779, 0.6048499206165983, 0.6941133511386082, 0.7784397643882002, 0.856986598718789, 0.9289690401258759, 0.9936678638491532, 1.0504366206285645, 1.0987080958116269, 1.1379999767747389, 1.1679196720314864, 1.1881682338770003, 1.198543345374605, 1.198941341839772, 1.1893582466233819, 1.1698898108450864, 1.1407305566797732, 1.1021718337562934, 1.0545989080882805, 0.9984871126234902, 0.9343970978741134, 0.8629692300821834, 0.7849171928917618, 0.7010208564578846, 0.6121184852417566, 0.5190983623493521, 0.4228899141002477, 0.3244544235070617, 0.22477542545335777, 0.12484887953819071, 0.025673218777020362, -0.07176062641094244, -0.16647912925192843, -0.2575358937753214];
+            var error_lower = [-0.2, -0.10016658335317186, -0.0013306692049387947, 0.09552020666133954, 0.1894183423086505, 0.279425538604203, 0.36464247339503536, 0.444217687237691, 0.5173560908995227, 0.5833269096274833, 0.6414709848078965, 0.6912073600614355, 0.7320390859672263, 0.7635581854171929, 0.7854497299884602, 0.7974949866040544, 0.799573603041505, 0.7916648104524686, 0.7738476308781952, 0.7463000876874144, 0.7092974268256818, 0.6632093666488736, 0.6084964038195901, 0.5457052121767203, 0.47546318055115105, 0.3984721441039564, 0.31550137182146415, 0.22737988023382977, 0.1349881501559051, 0.039249329213982415, -0.0588799919401328, -0.1584193375667095, -0.2583741434275801, -0.3577456941432482, -0.45554110202683123, -0.5507832276896198, -0.6425204432948525, -0.7298361409084935, -0.811857890942719, -0.8877661591839738, -0.9568024953079284, -1.0182771110644102, -1.0715757724135881, -1.116165936749455, -1.151602073889516, -1.177530117665097, -1.1936910036334645, -1.1999232575641008, -1.1961646088358406, -1.1824526126243324, -1.1589242746631385, -1.1258146823277324, -1.0834546557201532, -1.0322674422239013, -0.9727644875559871, -0.905540325570392, -0.8312666378723217, -0.7506855425976375, -0.6646021794137573, -0.573876664830236, -0.47941549819892587, -0.38216250427209586, -0.2830894028174964, -0.1831860995156503, -0.08345079514950637, 0.015119988087815506, 0.11154136351337784, 0.2048499206165983, 0.29411335113860815, 0.3784397643882002, 0.45698659871878905, 0.528969040125876, 0.593667863849153, 0.6504366206285643, 0.698708095811627, 0.7379999767747389, 0.7679196720314863, 0.7881682338770004, 0.7985433453746049, 0.798941341839772, 0.7893582466233817, 0.7698898108450862, 0.7407305566797731, 0.7021718337562934, 0.6545989080882804, 0.5984871126234903, 0.5343970978741135, 0.4629692300821833, 0.3849171928917617, 0.3010208564578846, 0.21211848524175658, 0.11909836234935212, 0.022889914100247627, -0.0755455764929383, -0.17522457454664225, -0.27515112046180934, -0.3743267812229797, -0.47176062641094246, -0.5664791292519284, -0.6575358937753214];
+            
+            // Validate data
+            if (!x || !y || !error_upper || !error_lower) {
+                logModelEvalDebug('ERROR: Missing required data for uncertainty chart', {
+                    hasX: !!x,
+                    hasY: !!y,
+                    hasErrorUpper: !!error_upper,
+                    hasErrorLower: !!error_lower
+                });
+                updateChartStatus('uncertainty-chart', 'Error', 'Missing required data');
+                return false;
+            }
+            
+            // Log data dimensions
+            logModelEvalDebug('Uncertainty chart data loaded:', {
+                xLength: x.length,
+                yLength: y.length,
+                errorUpperLength: error_upper.length,
+                errorLowerLength: error_lower.length
+            });
+            
+            // Create the trace for the prediction line
+            logModelEvalDebug('Creating prediction line trace...');
+            var trace1 = {
+                x: x,
+                y: y,
+                line: {color: 'rgb(0, 100, 80)'},
+                mode: 'lines',
+                name: 'Prediction',
+                type: 'scatter'
+            };
+            
+            // Create the trace for the confidence interval
+            logModelEvalDebug('Creating confidence interval trace...');
+            var trace2 = {
+                x: x.concat(x.slice().reverse()),
+                y: error_upper.concat(error_lower.slice().reverse()),
+                fill: 'toself',
+                fillcolor: 'rgba(0, 100, 80, 0.2)',
+                line: {color: 'transparent'},
+                name: '95% Confidence',
+                showlegend: true,
+                type: 'scatter'
+            };
+            
+            // Create the layout
+            logModelEvalDebug('Creating chart layout...');
+            var layout = {
+                title: 'Prediction with Uncertainty',
+                xaxis: {
+                    title: 'Time',
+                    showgrid: true
+                },
+                yaxis: {
+                    title: 'Prediction Value',
+                    showgrid: true
+                },
+                margin: {l: 40, r: 20, t: 60, b: 40},
+                showlegend: true,
+                autosize: true
+            };
+            
+            // Create the config with responsive flag
+            var config = {
+                responsive: true,
+                displayModeBar: true,
+                displaylogo: false,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d']
+            };
+            
+            // Plot the chart
+            logModelEvalDebug('Calling Plotly.newPlot for uncertainty chart...');
+            Plotly.newPlot('uncertainty-chart', [trace1, trace2], layout, config);
+            
+            // Verify the chart was created successfully
+            var chartContainer = document.getElementById('uncertainty-chart');
+            if (chartContainer && chartContainer._Plotly) {
+                logModelEvalDebug('Uncertainty chart initialized successfully', {
+                    plotlyVersion: Plotly.version,
+                    containerWidth: chartContainer.offsetWidth,
+                    containerHeight: chartContainer.offsetHeight
+                });
+                updateChartStatus('uncertainty-chart', 'Initialized', 'Chart rendered successfully');
+                return true;
+            } else {
+                logModelEvalDebug('WARNING: Plotly.newPlot completed but _Plotly property not found on container');
+                updateChartStatus('uncertainty-chart', 'Warning', 'Chart may not be fully initialized');
+                return false;
+            }
+        } catch (error) {
+            // Detailed error logging
+            logModelEvalDebug('ERROR initializing uncertainty chart:', {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            });
+            
+            // Check for specific error types
+            if (error.message.includes('undefined')) {
+                logModelEvalDebug('This appears to be a reference error - check if all variables are defined');
+            } else if (error.message.includes('null')) {
+                logModelEvalDebug('This appears to be a null reference error - check if DOM elements exist');
+            } else if (error.message.includes('Plotly')) {
+                logModelEvalDebug('This appears to be a Plotly library error - check if Plotly is loaded correctly');
+            }
+            
+            updateChartStatus('uncertainty-chart', 'Error', 'Exception: ' + error.message);
+            return false;
+        }
+    }
+    
+    // Calibration Chart (Reliability Diagram) initialization function
+    function initCalibrationChart() {
+        // Update chart status to indicate initialization is being attempted
+        updateChartStatus('calibration-chart', 'Initializing...', 'Attempting to initialize chart');
+        // Check if chart container is visible
+        var container = document.getElementById('calibration-chart');
+        if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) {
+            logModelEvalDebug('Calibration chart container not visible, skipping render');
+            return false;
+        }
+        
+        logModelEvalDebug('Initializing calibration chart...');
+        
+        try {
+            var pred_probs = {"Model A": [0.1, 0.3, 0.5, 0.7, 0.9], "Model B": [0.2, 0.4, 0.6, 0.8, 0.95], "Model C": [0.15, 0.35, 0.55, 0.75, 0.92], "Current Model": [0.18, 0.38, 0.58, 0.78, 0.94]};
+            var true_probs = {"Model A": [0.12, 0.32, 0.48, 0.72, 0.88], "Model B": [0.22, 0.42, 0.62, 0.78, 0.93], "Model C": [0.17, 0.37, 0.53, 0.73, 0.9], "Current Model": [0.2, 0.4, 0.6, 0.8, 0.95]};
+            
+            var trace1 = {
+                x: pred_probs,
+                y: true_probs,
+                mode: 'markers',
+                type: 'scatter',
+                name: 'Model',
+                marker: {
+                    size: 10,
+                    color: 'rgb(255, 127, 14)'
+                }
+            };
+            
+            var trace2 = {
+                x: [0, 1],
+                y: [0, 1],
+                mode: 'lines',
+                type: 'scatter',
+                name: 'Perfectly Calibrated',
+                line: {
+                    dash: 'dash',
+                    color: 'rgb(128, 128, 128)'
+                }
+            };
+            
+            var layout = {
+                title: 'Calibration Curve (Reliability Diagram)',
+                xaxis: {
+                    title: 'Predicted Probability',
+                    range: [0, 1]
+                },
+                yaxis: {
+                    title: 'True Probability',
+                    range: [0, 1]
+                },
+                showlegend: true,
+                margin: {l: 40, r: 20, t: 60, b: 40}
+            };
+            
+            Plotly.newPlot('calibration-chart', [trace1, trace2], layout, {responsive: true});
+            logModelEvalDebug('Calibration chart initialized successfully');
+            updateChartStatus('calibration-chart', 'Initialized', 'Chart rendered successfully');
+            return true;
+        } catch (error) {
+            logModelEvalDebug('Error initializing calibration chart', error.message);
+            updateChartStatus('calibration-chart', 'Error', error.message);
+            return false;
+        }
+    }
+    
+    // Stability Chart initialization function
+    function initStabilityChart() {
+        // Update chart status to indicate initialization is being attempted
+        updateChartStatus('stability-chart', 'Initializing...', 'Attempting to initialize chart');
+        // Check if chart container is visible
+        var container = document.getElementById('stability-chart');
+        if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) {
+            logModelEvalDebug('Stability chart container not visible, skipping render');
+            return false;
+        }
+        
+        logModelEvalDebug('Initializing stability chart...');
+        
+        try {
+            var time_periods = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"];
+            var consistency = [0.95, 0.94, 0.92, 0.88, 0.82, 0.85, 0.89, 0.91, 0.93];
+            var feature_stability = [0.98, 0.97, 0.95, 0.93, 0.91, 0.92, 0.94, 0.96, 0.97];
+            var prediction_var = [0.05, 0.07, 0.12, 0.18, 0.25, 0.22, 0.15, 0.1, 0.08];
+            
+            var trace1 = {
+                x: time_periods,
+                y: consistency,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Prediction Consistency',
+                marker: {
+                    size: 8
+                },
+                line: {
+                    width: 2
+                }
+            };
+            
+            var trace2 = {
+                x: time_periods,
+                y: feature_stability,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Feature Stability',
+                marker: {
+                    size: 8
+                },
+                line: {
+                    width: 2
+                }
+            };
+            
+            var trace3 = {
+                x: time_periods,
+                y: prediction_var,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Prediction Variance',
+                marker: {
+                    size: 8
+                },
+                line: {
+                    width: 2
+                },
+                yaxis: 'y2'
+            };
+            
+            var layout = {
+                title: 'Model Stability Metrics Over Time',
+                xaxis: {
+                    title: 'Time Period'
+                },
+                yaxis: {
+                    title: 'Stability Score',
+                    range: [0.7, 1.0],
+                    titlefont: {color: 'rgb(31, 119, 180)'},
+                    tickfont: {color: 'rgb(31, 119, 180)'}
+                },
+                yaxis2: {
+                    title: 'Prediction Variance',
+                    range: [0, 0.35],
+                    titlefont: {color: 'rgb(255, 127, 14)'},
+                    tickfont: {color: 'rgb(255, 127, 14)'},
+                    overlaying: 'y',
+                    side: 'right'
+                },
+                legend: {
+                    x: 0.05,
+                    y: 0.95
+                },
+                shapes: [{
+                    type: 'rect',
+                    xref: 'x',
+                    yref: 'paper',
+                    x0: 2.5,
+                    y0: 0,
+                    x1: 4.5,
+                    y1: 1,
+                    fillcolor: 'rgba(255, 0, 0, 0.1)',
+                    line: {
+                        width: 0
+                    }
+                }],
+                annotations: [{
+                    x: 3.5,
+                    y: 0.73,
+                    xref: 'x',
+                    yref: 'y',
+                    text: 'Drift Period',
+                    showarrow: true,
+                    arrowhead: 2,
+                    ax: 0,
+                    ay: 40
+                }],
+                margin: {l: 60, r: 60, t: 60, b: 60}
+            };
+            
+            Plotly.newPlot('stability-chart', [trace1, trace2, trace3], layout, {responsive: true});
+            logModelEvalDebug('Stability chart initialized successfully');
+            updateChartStatus('stability-chart', 'Initialized', 'Chart rendered successfully');
+            return true;
+        } catch (error) {
+            logModelEvalDebug('Error initializing stability chart', error.message);
+            updateChartStatus('stability-chart', 'Error', error.message);
+            return false;
+        }
+    }
+    
+    // Comparative Benchmark Chart initialization function
+    function initBenchmarkChart() {
+        // Update chart status to indicate initialization is being attempted
+        updateChartStatus('benchmark-chart', 'Initializing...', 'Attempting to initialize chart');
+        // Check if chart container is visible
+        var container = document.getElementById('benchmark-chart');
+        if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) {
+            logModelEvalDebug('Benchmark chart container not visible, skipping render');
+            return false;
+        }
+        
+        logModelEvalDebug('Initializing benchmark chart...');
+        
+        try {
+            var models = ["Baseline", "Baseline", "Advanced", "Current"];
+            var accuracy = [0.82, 0.85, 0.88, 0.91];
+            var f1_score = [0.805, 0.835, 0.865, 0.895];
+            var precision = [0.8, 0.83, 0.87, 0.9];
+            var recall = [0.81, 0.84, 0.86, 0.89];
+            
+            var trace1 = {
+                x: models,
+                y: accuracy,
+                name: 'Accuracy',
+                type: 'bar'
+            };
+            
+            var trace2 = {
+                x: models,
+                y: precision,
+                name: 'Precision',
+                type: 'bar'
+            };
+            
+            var trace3 = {
+                x: models,
+                y: recall,
+                name: 'Recall',
+                type: 'bar'
+            };
+            
+            var trace4 = {
+                x: models,
+                y: f1_score,
+                name: 'F1 Score',
+                type: 'bar'
+            };
+            
+            var layout = {
+                title: 'Performance Comparison',
+                barmode: 'group',
+                xaxis: {
+                    title: 'Model',
+                    tickangle: -45
+                },
+                yaxis: {
+                    title: 'Score',
+                    range: [0, 1]
+                },
+                margin: {
+                    l: 50,
+                    r: 20,
+                    t: 60,
+                    b: 80
+                }
+            };
+            
+            Plotly.newPlot('benchmark-chart', [trace1, trace2, trace3, trace4], layout, {responsive: true});
+            logModelEvalDebug('Benchmark chart initialized successfully');
+            updateChartStatus('benchmark-chart', 'Initialized', 'Chart rendered successfully');
+            return true;
+        } catch (error) {
+            logModelEvalDebug('Error initializing benchmark chart', error.message);
+            updateChartStatus('benchmark-chart', 'Error', error.message);
+            return false;
+        }
+    }
+    </script>
+    
+    <style>
+        /* Chart status indicator styles */
+        .status-success {
+            color: #28a745;
+            font-weight: bold;
+            background-color: #d4edda;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .status-error {
+            color: #dc3545;
+            font-weight: bold;
+            background-color: #f8d7da;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .status-pending {
+            color: #007bff;
+            font-weight: bold;
+            background-color: #cce5ff;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .status-warning {
+            color: #856404;
+            font-weight: bold;
+            background-color: #fff3cd;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+    </style>
+    <div class="visualization-card" id="model-eval-debug" style="margin-top: 30px; background-color: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 5px;">
+        <h3>Model Evaluation Debug Information</h3>
+        <p>This section shows debugging information for the Model Evaluation charts. Use the buttons below to troubleshoot rendering issues.</p>
+        <div style="margin-bottom: 10px;">
+            <button onclick="clearModelEvalDebug()" style="margin-right: 10px; padding: 5px 10px; background-color: #f8f9fa; border: 1px solid #ced4da; border-radius: 3px;">Clear Log</button>
+            <button onclick="reinitializeModelEvalCharts()" style="margin-right: 10px; padding: 5px 10px; background-color: #e9ecef; border: 1px solid #ced4da; border-radius: 3px;">Reinitialize Charts</button>
+            <button onclick="activateModelEvalTab()" style="padding: 5px 10px; background-color: #e9ecef; border: 1px solid #ced4da; border-radius: 3px;">Activate Tab</button>
+        </div>
+        <div>
+            <strong>Chart Status:</strong>
+            <ul id="chart-status-list" style="list-style-type: none; padding-left: 0;">
+                <li>Uncertainty Chart: <span id="uncertainty-chart-status">Not checked</span></li>
+                <li>Calibration Chart: <span id="calibration-chart-status">Not checked</span></li>
+                <li>Stability Chart: <span id="stability-chart-status">Not checked</span></li>
+                <li>Benchmark Chart: <span id="benchmark-chart-status">Not checked</span></li>
+            </ul>
+        </div>
+        <pre id="model-eval-debug-content" style="background: #f8f9fa; padding: 15px; max-height: 250px; overflow: auto; border-radius: 5px; font-size: 12px; margin-top: 10px;"></pre>
+    </div>
+    
+    <script>
+    // Function to update chart status in the debug panel
+    function updateChartStatus(chartId, status, message) {
+        var statusElem = document.getElementById(chartId + '-status');
+        if (statusElem) {
+            // Update text content
+            statusElem.textContent = status;
+            
+            // Reset all classes
+            statusElem.className = '';
+            
+            // Add appropriate status class
+            if (status === 'Initialized') {
+                statusElem.className = 'status-success';
+            } else if (status === 'Initializing...') {
+                statusElem.className = 'status-pending';
+            } else if (status === 'Error') {
+                statusElem.className = 'status-error';
+            } else {
+                statusElem.className = 'status-warning';
+            }
+            
+            // Add tooltip if message is provided
+            if (message) {
+                statusElem.title = message;
+            }
+            
+            // Log the status change
+            logModelEvalDebug(`Chart ${chartId} status updated to: ${status}`, message);
+        } else {
+            logModelEvalDebug(`ERROR: Could not find status element for chart ${chartId}`);
+        }
+    }
+    
+    // Enhanced DOM inspection function to diagnose tab and chart container issues
+    function inspectDOMState() {
+        logModelEvalDebug('--- DOM INSPECTION REPORT ---');
+        
+        // Check tab structure
+        var tabButtons = document.querySelectorAll('.tab-button');
+        logModelEvalDebug(`Found ${tabButtons.length} tab buttons:`, 
+            Array.from(tabButtons).map(btn => ({ 
+                text: btn.textContent.trim(),
+                onclick: btn.getAttribute('onclick'),
+                visible: btn.offsetWidth > 0 && btn.offsetHeight > 0
+            })));
+        
+        // Check tab content divs
+        var tabContents = document.querySelectorAll('.tab-content > div');
+        logModelEvalDebug(`Found ${tabContents.length} tab content divs:`, 
+            Array.from(tabContents).map(div => ({
+                id: div.id,
+                display: window.getComputedStyle(div).display,
+                visible: div.offsetWidth > 0 && div.offsetHeight > 0,
+                width: div.offsetWidth,
+                height: div.offsetHeight
+            })));
+        
+        // Specifically check Model Evaluation tab
+        var modelEvalTab = document.getElementById('ModelEvaluation');
+        if (modelEvalTab) {
+            var style = window.getComputedStyle(modelEvalTab);
+            logModelEvalDebug('Model Evaluation tab details:', {
+                display: style.display,
+                visibility: style.visibility,
+                position: style.position,
+                width: modelEvalTab.offsetWidth,
+                height: modelEvalTab.offsetHeight,
+                childCount: modelEvalTab.children.length
+            });
+        } else {
+            logModelEvalDebug('ERROR: Model Evaluation tab not found in DOM');
+        }
+        
+        // Check chart containers
+        var chartIds = ['uncertainty-chart', 'calibration-chart', 'stability-chart', 'benchmark-chart'];
+        chartIds.forEach(function(id) {
+            var container = document.getElementById(id);
+            if (container) {
+                var style = window.getComputedStyle(container);
+                logModelEvalDebug(`Chart container ${id} details:`, {
+                    display: style.display,
+                    visibility: style.visibility,
+                    position: style.position,
+                    width: container.offsetWidth,
+                    height: container.offsetHeight,
+                    parentVisible: container.parentElement ? 
+                        (container.parentElement.offsetWidth > 0 && container.parentElement.offsetHeight > 0) : false
+                });
+            } else {
+                logModelEvalDebug(`ERROR: Chart container ${id} not found in DOM`);
+            }
+        });
+        
+        // Check if Plotly is available
+        if (typeof Plotly !== 'undefined') {
+            logModelEvalDebug('Plotly library is available', { version: Plotly.version });
+        } else {
+            logModelEvalDebug('ERROR: Plotly library is not available');
+        }
+        
+        logModelEvalDebug('--- END DOM INSPECTION ---');
+    }
+    
+    // Function to clear the debug log
+    function clearModelEvalDebug() {
+        document.getElementById('model-eval-debug-content').innerHTML = '';
+        logModelEvalDebug('Debug log cleared');
+    }
+    
+    // Function to activate the Model Evaluation tab
+    function activateModelEvalTab() {
+        logModelEvalDebug('Manually activating Model Evaluation tab...');
+        
+        // Run DOM inspection before making any changes
+        logModelEvalDebug('DOM state before tab activation:');
+        inspectDOMState();
+        
+        // Get all tab buttons
+        var tabButtons = document.querySelectorAll('.nav-link');
+        logModelEvalDebug(`Found ${tabButtons.length} nav-link buttons`);
+        
+        // Find and click the Model Evaluation tab button
+        var buttonFound = false;
+        tabButtons.forEach(function(button) {
+            logModelEvalDebug(`Button text: "${button.textContent.trim()}", visible: ${button.offsetWidth > 0}`);
+            if (button.textContent.trim() === 'Model Evaluation') {
+                buttonFound = true;
+                try {
+                    button.click();
+                    logModelEvalDebug('Model Evaluation tab activated via click');
+                } catch (e) {
+                    logModelEvalDebug('ERROR clicking button:', e.message);
+                }
+                return;
+            }
+        });
+        
+        if (!buttonFound) {
+            logModelEvalDebug('Model Evaluation button not found by text, trying alternative selectors');
+            // Try alternative selectors
+            var altButton = document.querySelector('button[data-target="#ModelEvaluation"]');
+            if (!altButton) {
+                altButton = document.querySelector('button[onclick*="ModelEvaluation"]');
+            }
+            
+            if (altButton) {
+                try {
+                    altButton.click();
+                    logModelEvalDebug('Model Evaluation tab activated via alternative button');
+                    buttonFound = true;
+                } catch (e) {
+                    logModelEvalDebug('ERROR clicking alternative button:', e.message);
+                }
+            }
+        }
+        
+        // If button click doesn't work, try direct tab activation
+        if (!buttonFound) {
+            logModelEvalDebug('Button approach failed, trying direct tab manipulation');
+            var allTabs = document.querySelectorAll('.tab-content > div');
+            logModelEvalDebug(`Found ${allTabs.length} tab content divs`);
+            allTabs.forEach(function(tab) { 
+                tab.style.display = 'none';
+                logModelEvalDebug(`Set display:none for tab ${tab.id}`);
+            });
+            
+            var modelEvalTab = document.getElementById('ModelEvaluation');
+            if (modelEvalTab) {
+                // Apply multiple display techniques to ensure visibility
+                modelEvalTab.style.cssText = 'display: block !important; visibility: visible !important;';
+                logModelEvalDebug('Model Evaluation tab activated via direct display setting');
+                
+                // Check if tab is now visible
+                setTimeout(function() {
+                    var style = window.getComputedStyle(modelEvalTab);
+                    logModelEvalDebug('Tab style after forcing display:', {
+                        display: style.display,
+                        visibility: style.visibility,
+                        width: modelEvalTab.offsetWidth,
+                        height: modelEvalTab.offsetHeight
+                    });
+                }, 50);
+                
+                // Force resize after tab activation
+                setTimeout(function() {
+                    window.dispatchEvent(new Event('resize'));
+                    logModelEvalDebug('Dispatched resize event');
+                    reinitializeModelEvalCharts();
+                }, 200);
+            } else {
+                logModelEvalDebug('ERROR: Could not find Model Evaluation tab to activate');
+                // Last resort: try to find tab by class or partial ID match
+                var possibleTabs = document.querySelectorAll('div[id*="model"], div[id*="evaluation"], div.tab-pane');
+                logModelEvalDebug(`Found ${possibleTabs.length} possible tab elements:`, 
+                    Array.from(possibleTabs).map(t => ({ id: t.id, class: t.className })));
+            }
+        }
+        
+        // Run DOM inspection after changes to see the effect
+        setTimeout(function() {
+            logModelEvalDebug('DOM state after tab activation:');
+            inspectDOMState();
+        }, 300);
+    }
+    
+    // Function to reinitialize all charts
+    function reinitializeModelEvalCharts() {
+        logModelEvalDebug('Manually reinitializing all Model Evaluation charts...');
+        
+        // Run DOM inspection before reinitialization
+        logModelEvalDebug('DOM state before chart reinitialization:');
+        inspectDOMState();
+        
+        // Reset all chart statuses
+        var chartIds = ['uncertainty-chart', 'calibration-chart', 'stability-chart', 'benchmark-chart'];
+        chartIds.forEach(function(id) {
+            updateChartStatus(id, 'Initializing...', 'Manual reinitialization in progress');
+            
+            // Check if chart container exists and has dimensions
+            var container = document.getElementById(id);
+            if (container) {
+                logModelEvalDebug(`Chart container ${id} found:`, {
+                    width: container.offsetWidth,
+                    height: container.offsetHeight,
+                    display: window.getComputedStyle(container).display,
+                    visibility: window.getComputedStyle(container).visibility
+                });
+                
+                // Force minimum dimensions if needed
+                if (container.offsetWidth === 0 || container.offsetHeight === 0) {
+                    container.style.minHeight = '350px';
+                    container.style.width = '100%';
+                    container.style.display = 'block';
+                    logModelEvalDebug(`Forced dimensions for ${id}`);
+                }
+            } else {
+                logModelEvalDebug(`ERROR: Chart container ${id} not found in DOM`);
+            }
+        });
+        
+        // Make sure the tab is visible
+        var modelEvalTab = document.getElementById('ModelEvaluation');
+        if (!modelEvalTab) {
+            logModelEvalDebug('ERROR: Model Evaluation tab not found in DOM');
+            // Try to find it by alternative selectors
+            var possibleTabs = document.querySelectorAll('div[id*="model"], div[id*="evaluation"], div.tab-pane');
+            if (possibleTabs.length > 0) {
+                logModelEvalDebug(`Found ${possibleTabs.length} possible tab elements:`, 
+                    Array.from(possibleTabs).map(t => ({ id: t.id, class: t.className })));
+                // Try the first one that might be the Model Evaluation tab
+                modelEvalTab = possibleTabs[0];
+                logModelEvalDebug(`Using ${modelEvalTab.id} as fallback Model Evaluation tab`);
+            }
+        }
+        
+        if (modelEvalTab) {
+            var tabStyle = window.getComputedStyle(modelEvalTab);
+            logModelEvalDebug('Model Evaluation tab state:', {
+                display: tabStyle.display,
+                visibility: tabStyle.visibility,
+                width: modelEvalTab.offsetWidth,
+                height: modelEvalTab.offsetHeight
+            });
+            
+            if (tabStyle.display === 'none' || modelEvalTab.offsetWidth === 0) {
+                logModelEvalDebug('Tab is not visible, activating it first');
+                activateModelEvalTab();
+                // Return early as activateModelEvalTab will call reinitializeModelEvalCharts again
+                return;
+            }
+        } else {
+            logModelEvalDebug('ERROR: Could not find any tab element to activate');
+        }
+        
+        // Force a resize event to ensure proper rendering
+        window.dispatchEvent(new Event('resize'));
+        logModelEvalDebug('Dispatched resize event');
+        
+        // Call the initialization function with a slight delay
+        logModelEvalDebug('Scheduling chart initialization in 300ms');
+        setTimeout(function() {
+            initModelEvalCharts();
+            
+            // Check the results after initialization
+            setTimeout(function() {
+                logModelEvalDebug('DOM state after chart initialization:');
+                inspectDOMState();
+                
+                // Check if Plotly objects were created
+                chartIds.forEach(function(id) {
+                    var container = document.getElementById(id);
+                    if (container && container._Plotly) {
+                        logModelEvalDebug(`Plotly object found for ${id}`);
+                        updateChartStatus(id, 'Initialized', 'Chart successfully initialized');
+                    } else if (container) {
+                        logModelEvalDebug(`WARNING: No Plotly object found for ${id}`);
+                        updateChartStatus(id, 'Error', 'Plotly object not created');
+                    }
+                });
+            }, 500);
+        }, 300);
+    }
+    
+    // Call the init function after definition to ensure it's executed
+    document.addEventListener('DOMContentLoaded', function() {
+        // Wait for all chart containers to be ready
+        setTimeout(function() {{
+            logModelEvalDebug('DOM loaded, checking for chart containers...');
+            
+            // Check and report status for each chart container
+            ['uncertainty-chart', 'calibration-chart', 'stability-chart', 'benchmark-chart'].forEach(function(id) {{
+                var container = document.getElementById(id);
+                if (container) {{
+                    logModelEvalDebug('Found container: ' + id + ', dimensions: ' + container.offsetWidth + 'x' + container.offsetHeight);
+                    updateChartStatus(id, 'Container Found', 'Dimensions: ' + container.offsetWidth + 'x' + container.offsetHeight);
+                }} else {{
+                    logModelEvalDebug('ERROR: Container not found: ' + id);
+                    updateChartStatus(id, 'Missing', 'Container not found in DOM');
+                }}
+            }});
+            
+            // Check if Model Evaluation tab exists
+            var modelEvalTab = document.getElementById('ModelEvaluation');
+            if (modelEvalTab) {{
+                logModelEvalDebug('Model Evaluation tab found. Display: ' + window.getComputedStyle(modelEvalTab).display);
+                
+                // Check if we're already on the Model Evaluation tab
+                if (window.getComputedStyle(modelEvalTab).display !== 'none') {{
+                    logModelEvalDebug('Model Evaluation tab is already visible, initializing charts immediately');
+                    initModelEvalCharts();
+                }} else {{
+                    logModelEvalDebug('Model Evaluation tab is not visible, will initialize when activated');
+                    // Add a click handler to the tab button to ensure charts initialize when tab is clicked
+                    var tabButtons = document.querySelectorAll('.nav-link');
+                    tabButtons.forEach(function(button) {{
+                        if (button.textContent.trim() === 'Model Evaluation') {{
+                            button.addEventListener('click', function() {{
+                                logModelEvalDebug('Model Evaluation tab clicked, initializing charts...');
+                                setTimeout(function() {{
+                                    initModelEvalCharts();
+                                }}, 200);
+                            }});
+                            logModelEvalDebug('Added click handler to Model Evaluation tab button');
+                        }}
+                    }});
+                }}
+            }} else {{
+                logModelEvalDebug('ERROR: Model Evaluation tab not found');
+            }}
+        }}, 1000);
+    }});
+    </script>
+    </div>
+    <script>
+    // Function to check if an element is visible in the DOM
+    function isElementVisible(el) {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        return style.display !== 'none' && style.visibility !== 'hidden';
+    }
+    
+    // Force Plotly to resize charts when tab becomes visible
+    function resizePlotlyCharts() {
+        if (isElementVisible(document.getElementById('ModelEvaluation'))) {
+            const chartIds = ['uncertainty-chart', 'calibration-chart', 'stability-chart', 'benchmark-chart'];
+            chartIds.forEach(id => {
+                const chartDiv = document.getElementById(id);
+                if (chartDiv && chartDiv._Plotly) {
+                    console.log('Resizing chart:', id);
+                    Plotly.relayout(id, {autosize: true});
+                }
+            });
+        }
+    }
+    
+    // Watch for tab changes and resize charts as needed
+    const tabObserver = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            if (mutation.attributeName === 'style' || mutation.attributeName === 'class') {
+                resizePlotlyCharts();
+            }
+        });
+    });
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        const modelEvalTab = document.getElementById('ModelEvaluation');
+        if (modelEvalTab) {
+            tabObserver.observe(modelEvalTab, { attributes: true });
+        }
+    });
+    </script>
+    
+        <script>
+            function openTab(evt, tabName) {
+                var i, tabcontent, tablinks;
+                tabcontent = document.getElementsByClassName("tab-content");
+                for (i = 0; i < tabcontent.length; i++) {
+                    tabcontent[i].style.display = "none";
+                }
+                tablinks = document.getElementsByClassName("tab-button");
+                for (i = 0; i < tablinks.length; i++) {
+                    tablinks[i].className = tablinks[i].className.replace(" active", "");
+                }
+                document.getElementById(tabName).style.display = "block";
+                evt.currentTarget.className += " active";
+                
+                // Trigger resize event to ensure charts render correctly
+                window.dispatchEvent(new Event('resize'));
+                
+                // If Model Evaluation tab is opened, initialize its charts
+                if (tabName === 'ModelEvaluation') {
+                    setTimeout(function() {
+                        initModelEvalCharts();
+                    }, 100);
+                }
+            }
+            
+            // Open the default tab on page load
+            document.addEventListener('DOMContentLoaded', function() {
+                document.getElementById("defaultOpen").click();
+            });
+        </script>
+    </body>
+    </html>
+    

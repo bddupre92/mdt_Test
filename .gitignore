@@ -33,10 +33,11 @@ env/
 # Results and Test Data
 results/
 test_data/
-*.html
-*.png
-*.csv
-*.json
+# Temporarily allowing HTML, JSON, and CSV files for real data validation
+# *.html
+# *.png
+# *.csv
+# *.json
 env.bak/
 venv.bak/
 .python-version
@@ -121,7 +122,7 @@ plots/
 *.pdf
 
 # HTML files
-*.html
+!*.html
 # Allow specific HTML files and directories that should be tracked
 !app/templates/**/*.html
 !blast_radius_analysis/*.html
@@ -161,3 +162,10 @@ diagram.svg
 diagram-*.svg
 *.dot
 graph_cache/
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

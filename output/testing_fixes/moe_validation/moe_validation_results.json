@@ -1,0 +1,18 @@
+{
+  "drift_feature_importance": {
+    "passed": true,
+    "details": "Drift detected: True, Magnitude: 0.5594, Top drift features: feature_3, feature_0, feature_1"
+  },
+  "drift_explanation": {
+    "passed": true,
+    "details": "Drift detected: True, Magnitude: 0.5594, Explanation generated: True"
+  },
+  "temporal_feature_importance": {
+    "passed": true,
+    "details": "Feature importance shift detected: True. Top feature changed from feature_0 to feature_3."
+  },
+  "expert_drift_impact": {
+    "passed": true,
+    "details": "Expert drift impact analysis completed. Most resilient expert: time_based with performance degradation of 242132.62%."
+  }
+}

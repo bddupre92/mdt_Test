@@ -1,0 +1,18 @@
+{
+  "patient_id": "patient001",
+  "created_at": "2025-03-25T06:55:50.705511",
+  "last_updated": "2025-03-25T06:55:50.705513",
+  "expert_weights": {},
+  "domain_quality_history": {
+    "physiological": [],
+    "behavioral": [],
+    "environmental": []
+  },
+  "drift_history": {
+    "physiological": [],
+    "behavioral": [],
+    "environmental": []
+  },
+  "performance_history": [],
+  "expert_specialty_weights": {}
+}

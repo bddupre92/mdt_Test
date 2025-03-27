@@ -11,7 +11,10 @@ from typing import Optional, List
 import traceback
 
 from .argument_parser import parse_args
-from .commands import COMMAND_MAP
+from .commands import COMMAND_MAP, MoEComparisonCommand
+
+# Directly register additional commands here to avoid circular imports
+COMMAND_MAP["moe_comparison"] = MoEComparisonCommand
 
 # Configure logging
 logging.basicConfig(

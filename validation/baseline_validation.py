@@ -25,6 +25,7 @@ from meta_optimizer.optimizers.optimizer_factory import OptimizerFactory
 from meta_optimizer.meta.meta_optimizer import MetaOptimizer
 from baseline_comparison.baseline_algorithms.satzilla_inspired import SatzillaInspiredSelector
 from baseline_comparison.comparison_runner import BaselineComparison
+from baseline_comparison.moe_comparison import MoEBaselineComparison, create_moe_adapter
 
 # Import benchmark functions
 from benchmark.benchmark_functions import get_benchmark_function, get_all_benchmark_functions
@@ -47,8 +48,8 @@ def parse_arguments():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description="Run baseline algorithm comparison validation")
     
-    parser.add_argument("--dimensions", "-d", type=int, default=30, 
-                      help="Number of dimensions for test functions (default: 30)")
+    parser.add_argument("--dimensions", "-d", type=int, default=30,
+                        help="Number of dimensions for test functions (default: 30)")
     parser.add_argument("--max-evaluations", "-e", type=int, default=10000, 
                       help="Maximum number of function evaluations (default: 10000)")
     parser.add_argument("--num-trials", "-t", type=int, default=30, 
@@ -72,6 +73,18 @@ def parse_arguments():
                       help="Disable visualization generation")
     parser.add_argument("--timestamp-dir", action="store_true", default=True,
                       help="Create a timestamped subdirectory for results")
+    parser.add_argument("--moe-config-path", type=str, default=None,
+                      help="Path to MoE configuration file (JSON format)")
+    parser.add_argument("--moe-model-path", type=str, default=None,
+                      help="Path to pre-trained MoE model (optional)")
+    parser.add_argument("--use-moe", action="store_true",
+                      help="Include MoE framework in the comparison")
+    
+    # Publication report arguments
+    parser.add_argument("--generate-report", action="store_true",
+                      help="Generate a publication-ready report")
+    parser.add_argument("--report-dir", type=str, default="results/moe_publication",
+                      help="Output directory for publication report")
     
     return parser.parse_args()
 
@@ -98,6 +111,72 @@ def run_baseline_validation(args):
         output_dir = args.output_dir or os.path.join("results", "baseline_validation")
     
     os.makedirs(output_dir, exist_ok=True)
+    
+    # Run validation
+    results = {}
+    
+    try:
+        # Initialize baseline selector
+        baseline_selector = SatzillaInspiredSelector()
+        
+        # Get the benchmark functions
+        if args.all_functions:
+            logger.info("Using all available benchmark functions")
+            benchmark_functions = get_all_benchmark_functions()
+        else:
+            benchmark_functions = [get_benchmark_function(args.function)]
+            
+        # Run comparison
+        comparison = BaselineComparison(
+            benchmark_functions=benchmark_functions,
+            dimensions=args.dimensions,
+            max_evaluations=args.max_evaluations,
+            selector=baseline_selector,
+            output_dir=output_dir
+        )
+        
+        results = comparison.run()
+        
+        # Generate validation summary
+        summary_path = os.path.join(output_dir, "validation_summary.md")
+        generate_validation_summary(results, summary_path)
+        
+        # Generate publication report if requested
+        if hasattr(args, 'generate_report') and args.generate_report:
+            try:
+                from app.reporting.modules.moe_publication_report import generate_publication_report
+                
+                # Prepare data for report
+                test_results = {
+                    'validation_results': results,
+                    'timestamp': timestamp,
+                    'validation_info': {
+                        'dimensions': args.dimensions,
+                        'max_evaluations': args.max_evaluations,
+                        'benchmark_functions': [f.__name__ for f in benchmark_functions],
+                        'summary_path': summary_path
+                    }
+                }
+                
+                # Generate report
+                logger.info("Generating publication report...")
+                report_dir = args.report_dir if hasattr(args, 'report_dir') else os.path.join("results", "moe_publication")
+                os.makedirs(report_dir, exist_ok=True)
+                
+                report_path = generate_publication_report(
+                    test_results=test_results,
+                    output_dir=report_dir
+                )
+                logger.info(f"Publication report generated: {report_path}")
+                
+            except Exception as e:
+                logger.error(f"Failed to generate publication report: {e}")
+                
+    except Exception as e:
+        logger.error(f"Validation failed: {e}")
+        return 1
+    
+    return 0
     
     # Save configuration
     config = vars(args)
@@ -176,16 +255,86 @@ def run_baseline_validation(args):
     else:
         logger.warning("Meta-Optimizer does not have an optimizers attribute. Check implementation.")
     
-    # Initialize comparison runner
-    comparison = BaselineComparison(
-        baseline_selector=baseline_selector,
-        meta_optimizer=meta_optimizer,
-        max_evaluations=args.max_evaluations,
-        num_trials=args.num_trials,
-        verbose=(args.verbose > 0),
-        output_dir=output_dir,
-        model_path=args.selector_path
-    )
+    # Check if MoE should be included in the comparison
+    if args.use_moe:
+        # Initialize MoE adapter
+        logger.info("Initializing MoE adapter for comparison")
+        
+        # Load MoE config if provided
+        moe_config = None
+        if args.moe_config_path and os.path.exists(args.moe_config_path):
+            try:
+                with open(args.moe_config_path, 'r') as f:
+                    moe_config = json.load(f)
+                logger.info(f"Loaded MoE configuration from {args.moe_config_path}")
+            except Exception as e:
+                logger.error(f"Error loading MoE configuration: {e}")
+                return 1
+        else:
+            # Default configuration for MoE
+            moe_config = {
+                'target_column': 'target',
+                'time_column': 'timestamp',
+                'patient_column': 'patient_id',
+                'experts': {
+                    'expert_1': {
+                        'model_type': 'sklearn',
+                        'model_class': 'RandomForestRegressor',
+                        'model_kwargs': {'n_estimators': 100, 'random_state': 42},
+                    },
+                    'expert_2': {
+                        'model_type': 'sklearn',
+                        'model_class': 'GradientBoostingRegressor',
+                        'model_kwargs': {'n_estimators': 100, 'random_state': 42},
+                    },
+                    'expert_3': {
+                        'model_type': 'sklearn',
+                        'model_class': 'SVR',
+                        'model_kwargs': {'kernel': 'rbf', 'C': 1.0},
+                    }
+                },
+                'gating_network': {
+                    'model_type': 'sklearn',
+                    'model_class': 'RandomForestClassifier',
+                    'model_kwargs': {'n_estimators': 100, 'random_state': 42},
+                }
+            }
+            logger.info("Using default MoE configuration")
+        
+        # Create MoE adapter
+        moe_adapter = create_moe_adapter(
+            config=moe_config,
+            model_path=args.moe_model_path,
+            verbose=(args.verbose > 0)
+        )
+        
+        # Initialize MoE comparison runner
+        comparison = MoEBaselineComparison(
+            simple_baseline=None,  # Will be initialized internally
+            meta_learner=meta_optimizer,
+            enhanced_meta=None,  # Will be initialized internally
+            satzilla_selector=baseline_selector,
+            moe_adapter=moe_adapter,
+            max_evaluations=args.max_evaluations,
+            num_trials=args.num_trials,
+            verbose=(args.verbose > 0),
+            output_dir=output_dir,
+            model_path=args.selector_path,
+            moe_model_path=args.moe_model_path
+        )
+        logger.info("Initialized MoE-enabled comparison framework")
+    else:
+        # Initialize standard comparison runner
+        comparison = BaselineComparison(
+            baseline_selector=baseline_selector,
+            meta_optimizer=meta_optimizer,
+            max_evaluations=args.max_evaluations,
+            num_trials=args.num_trials,
+            verbose=(args.verbose > 0),
+            output_dir=output_dir,
+            model_path=args.selector_path
+        )
+        logger.info("Initialized standard comparison framework")
     
     # Run the comparison
     logger.info("Starting baseline algorithm comparison validation")
@@ -223,13 +372,14 @@ def run_baseline_validation(args):
     
     # Generate additional summary
     summary_path = os.path.join(output_dir, "validation_summary.md")
-    generate_validation_summary(comparison.results, summary_path)
+    generate_validation_summary(comparison.results, summary_path, include_moe=args.use_moe)
     
     logger.info(f"Validation completed. Results saved to {output_dir}")
     return 0
 
-def generate_validation_summary(results, output_path):
+def generate_validation_summary(results, output_path, include_moe=False):
     """Generate a detailed markdown summary of the validation results"""
+    # Parameter include_moe indicates whether to include MoE-specific information in the summary
     
     try:
         # Log the start of function execution
@@ -299,6 +449,38 @@ def generate_validation_summary(results, output_path):
                 if not algorithms:
                     f.write("No algorithm selection data available.\n\n")
                     continue
+                    
+            # Include MoE specific section if available
+            if include_moe:
+                f.write("\n## MoE Framework Performance\n\n")
+                for problem_name, problem_results in results.items():
+                    f.write(f"### {problem_name}\n\n")
+                    
+                    # Check if MoE results are available
+                    moe_best_fitness = problem_results.get("moe_best_fitness_avg", None)
+                    if moe_best_fitness is not None:
+                        baseline_fitness = problem_results.get("baseline_best_fitness_avg", 0)
+                        meta_fitness = problem_results.get("meta_best_fitness_avg", 0)
+                        
+                        # Calculate improvement vs baseline and meta
+                        baseline_improvement = ((baseline_fitness - moe_best_fitness) / max(abs(baseline_fitness), 1e-10)) * 100
+                        meta_improvement = ((meta_fitness - moe_best_fitness) / max(abs(meta_fitness), 1e-10)) * 100
+                        
+                        f.write(f"MoE Best Fitness: {moe_best_fitness:.6e}\n\n")
+                        f.write(f"Improvement vs Baseline: {baseline_improvement:.2f}%\n\n")
+                        f.write(f"Improvement vs Meta-Optimizer: {meta_improvement:.2f}%\n\n")
+                        
+                        # Expert contributions if available
+                        expert_contribs = problem_results.get("moe_expert_contributions", {})
+                        if expert_contribs:
+                            f.write("#### Expert Contributions\n\n")
+                            f.write("| Expert | Contribution % |\n")
+                            f.write("|--------|-----------------|\n")
+                            for expert, contrib in expert_contribs.items():
+                                f.write(f"| {expert} | {contrib:.2f}% |\n")
+                            f.write("\n")
+                    else:
+                        f.write("No MoE data available for this problem.\n\n")
                     
                 from collections import Counter
                 selection_counts = Counter(algorithms)

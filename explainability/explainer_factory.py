@@ -10,6 +10,7 @@ from .shap_explainer import ShapExplainer
 from .lime_explainer import LimeExplainer
 from .feature_importance_explainer import FeatureImportanceExplainer
 from .optimizer_explainer import OptimizerExplainer
+from .counterfactual_explainer import CounterfactualExplainer
 
 class ExplainerFactory:
     """Factory for creating explainers"""
@@ -21,7 +22,7 @@ class ExplainerFactory:
         Create an explainer of the specified type
         
         Args:
-            explainer_type: Type of explainer to create ('shap', 'lime', 'feature_importance', 'optimizer')
+            explainer_type: Type of explainer to create ('shap', 'lime', 'feature_importance', 'optimizer', 'counterfactual')
             model: Pre-trained model to explain
             feature_names: List of feature names
             **kwargs: Additional parameters for specific explainer
@@ -39,6 +40,8 @@ class ExplainerFactory:
             return FeatureImportanceExplainer(model, feature_names, **kwargs)
         elif explainer_type == 'optimizer':
             return OptimizerExplainer(model, feature_names, **kwargs)
+        elif explainer_type == 'counterfactual':
+            return CounterfactualExplainer(model, feature_names, **kwargs)
         else:
             raise ValueError(f"Unsupported explainer type: {explainer_type}")
     
@@ -50,7 +53,7 @@ class ExplainerFactory:
         Returns:
             List of explainer type names
         """
-        return ['shap', 'lime', 'feature_importance', 'optimizer']
+        return ['shap', 'lime', 'feature_importance', 'optimizer', 'counterfactual']
     
     @staticmethod
     def get_explainer_info() -> Dict[str, Dict[str, Any]]:

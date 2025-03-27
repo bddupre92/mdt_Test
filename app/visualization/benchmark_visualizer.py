@@ -88,7 +88,10 @@ class BenchmarkVisualizer:
             ax.set_yscale('log')
         
         ax.set_title(title or "Optimization Convergence")
-        ax.legend()
+        # Only add legend if there are labeled artists
+        handles, labels = ax.get_legend_handles_labels()
+        if handles and labels:
+            ax.legend()
         ax.grid(True)
         
         plt.tight_layout()
