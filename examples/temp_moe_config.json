@@ -1,0 +1,35 @@
+{
+  "moe_framework": {
+    "gating_network": {
+      "type": "confidence_based",
+      "hidden_layers": [
+        64,
+        32
+      ],
+      "activation": "relu",
+      "dropout_rate": 0.2
+    },
+    "experts": {
+      "count": 5,
+      "specialization": "function_based",
+      "types": [
+        "global",
+        "local",
+        "hybrid",
+        "exploratory",
+        "exploitative"
+      ]
+    },
+    "integration": {
+      "method": "weighted_average",
+      "confidence_threshold": 0.6,
+      "min_experts": 2
+    },
+    "training": {
+      "batch_size": 32,
+      "epochs": 50,
+      "learning_rate": 0.001,
+      "early_stopping_patience": 10
+    }
+  }
+}

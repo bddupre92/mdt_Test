@@ -1,0 +1,215 @@
+{
+  "workflow_id": "example_workflow_20250326_124429",
+  "start_time": "2025-03-26T12:44:29.166241",
+  "end_time": "2025-03-26T12:44:36.693474",
+  "success": true,
+  "events": [
+    {
+      "component": "other",
+      "event_type": "data_loaded",
+      "timestamp": "2025-03-26T12:44:29.166285",
+      "details": {
+        "path": "example_data.csv"
+      },
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "training_started",
+      "timestamp": "2025-03-26T12:44:30.172247",
+      "details": {
+        "epochs": 5
+      },
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "expert_training_started",
+      "timestamp": "2025-03-26T12:44:30.172278",
+      "details": {
+        "count": 3
+      },
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "expert_training_completed",
+      "timestamp": "2025-03-26T12:44:32.173852",
+      "details": {
+        "count": 3
+      },
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "gating_training_started",
+      "timestamp": "2025-03-26T12:44:32.173915",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "gating_training_completed",
+      "timestamp": "2025-03-26T12:44:33.679057",
+      "details": {
+        "accuracy": 0.95
+      },
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "training_completed",
+      "timestamp": "2025-03-26T12:44:33.679091",
+      "details": {
+        "success": true
+      },
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "prediction_started",
+      "timestamp": "2025-03-26T12:44:33.679392",
+      "details": {
+        "features": [
+          1,
+          2,
+          3
+        ]
+      },
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "expert_predictions_started",
+      "timestamp": "2025-03-26T12:44:33.679410",
+      "details": {
+        "count": 3
+      },
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "expert_prediction_completed",
+      "timestamp": "2025-03-26T12:44:34.680867",
+      "details": {
+        "predictions": [
+          0.1,
+          0.7,
+          0.2
+        ]
+      },
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "gating_weights_calculated",
+      "timestamp": "2025-03-26T12:44:34.680888",
+      "details": {
+        "weights": [
+          0.2,
+          0.5,
+          0.3
+        ]
+      },
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "integration_started",
+      "timestamp": "2025-03-26T12:44:34.680896",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "integration_completed",
+      "timestamp": "2025-03-26T12:44:35.185976",
+      "details": {
+        "prediction": 0.5
+      },
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "prediction_completed",
+      "timestamp": "2025-03-26T12:44:35.186014",
+      "details": {
+        "success": true
+      },
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "checkpoint_started",
+      "timestamp": "2025-03-26T12:44:36.188129",
+      "details": {
+        "path": "model_checkpoint.pt"
+      },
+      "success": true
+    },
+    {
+      "component": "other",
+      "event_type": "checkpoint_completed",
+      "timestamp": "2025-03-26T12:44:36.693257",
+      "details": {
+        "path": "model_checkpoint.pt",
+        "final": true
+      },
+      "success": true
+    }
+  ],
+  "components": [
+    {
+      "component": "data_loading",
+      "entry_time": "2025-03-26T12:44:29.166265",
+      "exit_time": "2025-03-26T12:44:30.171385",
+      "success": true,
+      "result": {
+        "features": [
+          1,
+          2,
+          3
+        ],
+        "labels": [
+          0,
+          1,
+          0
+        ]
+      }
+    },
+    {
+      "component": "expert_training",
+      "entry_time": "2025-03-26T12:44:30.172136",
+      "exit_time": "2025-03-26T12:44:33.679114",
+      "success": true,
+      "result": {
+        "experts": [
+          "expert1",
+          "expert2",
+          "expert3"
+        ],
+        "gating": "gating_network"
+      }
+    },
+    {
+      "component": "prediction",
+      "entry_time": "2025-03-26T12:44:33.679354",
+      "exit_time": "2025-03-26T12:44:35.186020",
+      "success": true,
+      "result": 0.5
+    },
+    {
+      "component": "evaluation",
+      "entry_time": "2025-03-26T12:44:35.186196",
+      "exit_time": "2025-03-26T12:44:36.187848",
+      "success": true,
+      "result": {
+        "accuracy": 0.92,
+        "f1": 0.91
+      }
+    }
+  ],
+  "results": {
+    "checkpoint_path": "model_checkpoint.pt"
+  }
+}

@@ -1,0 +1,405 @@
+{
+  "workflow_id": "ExampleMoEPipeline",
+  "start_time": "2025-03-26T13:20:21.268602",
+  "end_time": "2025-03-26T13:20:23.783427",
+  "success": true,
+  "nodes": [
+    {
+      "id": "comp_0",
+      "type": "component",
+      "label": "expert_training",
+      "success": true,
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "comp_1",
+      "type": "component",
+      "label": "prediction",
+      "success": true,
+      "component": "prediction",
+      "color": "#9932CC"
+    },
+    {
+      "id": "comp_2",
+      "type": "component",
+      "label": "evaluation",
+      "success": true,
+      "component": "evaluation",
+      "color": "#20B2AA"
+    },
+    {
+      "id": "comp_3",
+      "type": "component",
+      "label": "checkpoint",
+      "success": true,
+      "component": "checkpoint",
+      "color": "#4682B4"
+    },
+    {
+      "id": "event_0",
+      "type": "event",
+      "label": "Tracked DE optimizer performance",
+      "success": true,
+      "event_type": "Tracked DE optimizer performance",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_1",
+      "type": "event",
+      "label": "Tracked ES optimizer performance",
+      "success": true,
+      "event_type": "Tracked ES optimizer performance",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_2",
+      "type": "event",
+      "label": "Trained expert: physiological_expert_0",
+      "success": true,
+      "event_type": "Trained expert: physiological_expert_0",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_3",
+      "type": "event",
+      "label": "Trained expert: environmental_expert_1",
+      "success": true,
+      "event_type": "Trained expert: environmental_expert_1",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_4",
+      "type": "event",
+      "label": "Trained expert: medication_expert_2",
+      "success": true,
+      "event_type": "Trained expert: medication_expert_2",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_5",
+      "type": "event",
+      "label": "Trained expert: environmental_expert_3",
+      "success": true,
+      "event_type": "Trained expert: environmental_expert_3",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_6",
+      "type": "event",
+      "label": "Trained expert: physiological_expert_4",
+      "success": true,
+      "event_type": "Trained expert: physiological_expert_4",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_7",
+      "type": "event",
+      "label": "Trained expert: medication_expert_5",
+      "success": true,
+      "event_type": "Trained expert: medication_expert_5",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_8",
+      "type": "event",
+      "label": "Trained expert: physiological_expert_6",
+      "success": true,
+      "event_type": "Trained expert: physiological_expert_6",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_9",
+      "type": "event",
+      "label": "Trained expert: physiological_expert_7",
+      "success": true,
+      "event_type": "Trained expert: physiological_expert_7",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_10",
+      "type": "event",
+      "label": "Trained expert: physiological_expert_8",
+      "success": true,
+      "event_type": "Trained expert: physiological_expert_8",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_11",
+      "type": "event",
+      "label": "Trained expert: medication_expert_9",
+      "success": true,
+      "event_type": "Trained expert: medication_expert_9",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_12",
+      "type": "event",
+      "label": "Initializing model",
+      "success": true,
+      "event_type": "Initializing model",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_13",
+      "type": "event",
+      "label": "Training epoch 1",
+      "success": true,
+      "event_type": "Training epoch 1",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_14",
+      "type": "event",
+      "label": "Training epoch 2",
+      "success": true,
+      "event_type": "Training epoch 2",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_15",
+      "type": "event",
+      "label": "Training epoch 3",
+      "success": true,
+      "event_type": "Training epoch 3",
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "event_16",
+      "type": "event",
+      "label": "Generating predictions",
+      "success": true,
+      "event_type": "Generating predictions",
+      "component": "prediction",
+      "color": "#9932CC"
+    },
+    {
+      "id": "event_17",
+      "type": "event",
+      "label": "Aggregating expert outputs",
+      "success": true,
+      "event_type": "Aggregating expert outputs",
+      "component": "prediction",
+      "color": "#9932CC"
+    },
+    {
+      "id": "event_18",
+      "type": "event",
+      "label": "Expert prediction: environmental_expert_pred_0",
+      "success": true,
+      "event_type": "Expert prediction: environmental_expert_pred_0",
+      "component": "prediction",
+      "color": "#9932CC"
+    },
+    {
+      "id": "event_19",
+      "type": "event",
+      "label": "Expert prediction: medication_expert_pred_1",
+      "success": true,
+      "event_type": "Expert prediction: medication_expert_pred_1",
+      "component": "prediction",
+      "color": "#9932CC"
+    },
+    {
+      "id": "event_20",
+      "type": "event",
+      "label": "Expert prediction: physiological_expert_pred_2",
+      "success": true,
+      "event_type": "Expert prediction: physiological_expert_pred_2",
+      "component": "prediction",
+      "color": "#9932CC"
+    },
+    {
+      "id": "event_21",
+      "type": "event",
+      "label": "Expert prediction: medication_expert_pred_3",
+      "success": true,
+      "event_type": "Expert prediction: medication_expert_pred_3",
+      "component": "prediction",
+      "color": "#9932CC"
+    },
+    {
+      "id": "event_22",
+      "type": "event",
+      "label": "Expert prediction: physiological_expert_pred_4",
+      "success": true,
+      "event_type": "Expert prediction: physiological_expert_pred_4",
+      "component": "prediction",
+      "color": "#9932CC"
+    },
+    {
+      "id": "event_23",
+      "type": "event",
+      "label": "Calculating metrics",
+      "success": true,
+      "event_type": "Calculating metrics",
+      "component": "evaluation",
+      "color": "#20B2AA"
+    },
+    {
+      "id": "event_24",
+      "type": "event",
+      "label": "Comparing with baseline",
+      "success": true,
+      "event_type": "Comparing with baseline",
+      "component": "evaluation",
+      "color": "#20B2AA"
+    },
+    {
+      "id": "event_25",
+      "type": "event",
+      "label": "Saving model weights",
+      "success": true,
+      "event_type": "Saving model weights",
+      "component": "checkpoint",
+      "color": "#4682B4"
+    },
+    {
+      "id": "event_26",
+      "type": "event",
+      "label": "Saving optimizer state",
+      "success": true,
+      "event_type": "Saving optimizer state",
+      "component": "checkpoint",
+      "color": "#4682B4"
+    }
+  ],
+  "links": [
+    {
+      "source": "comp_0",
+      "target": "event_0"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_1"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_2"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_3"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_4"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_5"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_6"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_7"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_8"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_9"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_10"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_11"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_12"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_13"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_14"
+    },
+    {
+      "source": "comp_0",
+      "target": "event_15"
+    },
+    {
+      "source": "comp_0",
+      "target": "comp_1"
+    },
+    {
+      "source": "comp_1",
+      "target": "event_16"
+    },
+    {
+      "source": "comp_1",
+      "target": "event_17"
+    },
+    {
+      "source": "comp_1",
+      "target": "event_18"
+    },
+    {
+      "source": "comp_1",
+      "target": "event_19"
+    },
+    {
+      "source": "comp_1",
+      "target": "event_20"
+    },
+    {
+      "source": "comp_1",
+      "target": "event_21"
+    },
+    {
+      "source": "comp_1",
+      "target": "event_22"
+    },
+    {
+      "source": "comp_1",
+      "target": "comp_2"
+    },
+    {
+      "source": "comp_2",
+      "target": "event_23"
+    },
+    {
+      "source": "comp_2",
+      "target": "event_24"
+    },
+    {
+      "source": "comp_2",
+      "target": "comp_3"
+    },
+    {
+      "source": "comp_3",
+      "target": "event_25"
+    },
+    {
+      "source": "comp_3",
+      "target": "event_26"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "function": "example_train_model",
+  "timestamp": "20250323_230901",
+  "parameters": {
+    "dataset_path": "",
+    "model_type": "moe",
+    "epochs": "10",
+    "batch_size": "32"
+  },
+  "result_file": "framework_runs/example_train_model_20250323_230901.pkl"
+}

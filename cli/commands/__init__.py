@@ -1,7 +1,7 @@
 """
 Command classes for CLI functionality
 """
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Dict, Any, Optional
 import argparse
 import logging
@@ -19,50 +19,13 @@ from meta_optimizer.benchmark.test_functions import create_test_suite
 import matplotlib.pyplot as plt
 import numpy as np
 import json
+from cli.real_data_commands import RealDataValidationCommand
+from cli.command_base import Command
 from datetime import datetime
 from collections import Counter
 from cli.problem_wrapper import ProblemWrapper
 
 logger = logging.getLogger(__name__)
-
-class Command(ABC):
-    """
-    Base class for all CLI commands
-    """
-    def __init__(self, args: argparse.Namespace):
-        """
-        Initialize the command with parsed arguments
-        
-        Parameters:
-        -----------
-        args : argparse.Namespace
-            Parsed command-line arguments
-        """
-        self.args = args
-        self.logger = logging.getLogger(self.__class__.__name__)
-    
-    @abstractmethod
-    def execute(self) -> Dict[str, Any]:
-        """
-        Execute the command
-        
-        Returns:
-        --------
-        Dict[str, Any]
-            Results of the command execution
-        """
-        pass
-    
-    def validate_args(self) -> bool:
-        """
-        Validate command arguments before execution
-        
-        Returns:
-        --------
-        bool
-            True if arguments are valid, False otherwise
-        """
-        return True
 
 # Import all command classes
 # Note: MetaLearningCommand is implemented in core/meta_learning.py
@@ -77,6 +40,8 @@ class Command(ABC):
 # from .migraine_data_import import MigraineDataImportCommand
 # from .migraine_prediction import MigrainePredictionCommand
 from .dynamic_optimization import DynamicOptimizationCommand
+
+# Import commands directly when needed to avoid circular imports
 
 def run_baseline_comparison(args):
     """Run baseline comparison command"""
@@ -337,6 +302,176 @@ class BaselineComparisonCommand(Command):
             traceback.print_exc()
             return 1
 
+class RealDataValidationCommand(Command):
+    """Command for integrating and validating real clinical data with the MoE framework"""
+    
+    def execute(self) -> int:
+        """
+        Execute real data validation and integration with MoE
+        
+        Returns:
+            Exit code (0 for success, non-zero for failure)
+        """
+        try:
+            # Import necessary components
+            from data_integration.clinical_data_adapter import ClinicalDataAdapter
+            from data_integration.clinical_data_validator import ClinicalDataValidator
+            from data_integration.real_synthetic_comparator import RealSyntheticComparator
+            from utils.enhanced_synthetic_data import EnhancedSyntheticDataGenerator
+            import pandas as pd
+            import numpy as np
+            from datetime import datetime
+            import json
+
+            self.logger.info("Starting real data validation...")
+            
+            # Extract arguments
+            clinical_data_path = self.args.clinical_data
+            data_format = self.args.data_format
+            config_path = self.args.config
+            target_column = self.args.target_column
+            output_dir = self.args.output_dir
+            synthetic_compare = self.args.synthetic_compare
+            drift_type = self.args.drift_type
+            run_mode = self.args.run_mode
+            
+            # Create output directory structure
+            os.makedirs(output_dir, exist_ok=True)
+            os.makedirs(os.path.join(output_dir, 'reports'), exist_ok=True)
+            os.makedirs(os.path.join(output_dir, 'data'), exist_ok=True)
+            os.makedirs(os.path.join(output_dir, 'visualizations'), exist_ok=True)
+            
+            # Generate timestamp for this run
+            timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            
+            # Initialize adapter and validator
+            adapter = ClinicalDataAdapter(config_path)
+            validator = ClinicalDataValidator(config_path)
+            
+            # Load data
+            self.logger.info(f"Loading clinical data from {clinical_data_path}...")
+            try:
+                clinical_data = adapter.load_data(clinical_data_path, data_format)
+                self.logger.info(f"Loaded {len(clinical_data)} records with {len(clinical_data.columns)} features.")
+            except Exception as e:
+                self.logger.error(f"Error loading clinical data: {str(e)}")
+                return 1
+            
+            # Validate data
+            self.logger.info("Validating clinical data quality and compatibility...")
+            validation_report = validator.validate_all(
+                clinical_data, 
+                save_path=os.path.join(output_dir, 'reports', f'validation_report_{timestamp}.json')
+            )
+            
+            # Preprocess data
+            self.logger.info("Preprocessing clinical data...")
+            processed_data = adapter.preprocess(clinical_data)
+            
+            # Save processed data
+            processed_path = os.path.join(output_dir, 'data', f'processed_clinical_{timestamp}.csv')
+            processed_data.to_csv(processed_path, index=False)
+            
+            # Generate synthetic data for comparison if requested
+            synthetic_data = None
+            if synthetic_compare or run_mode in ['full', 'comparison']:
+                self.logger.info("Generating comparable synthetic data...")
+                
+                # Generate synthetic data with similar feature distributions
+                generator = EnhancedSyntheticDataGenerator(
+                    num_samples=len(clinical_data),
+                    drift_type=drift_type,
+                    data_modality='mixed'  # Generate mixed data type
+                )
+                
+                synthetic_data = generator.generate_mirrored_data(
+                    feature_stats={},  # This would be extracted from clinical_data
+                    target_column=target_column,
+                    target_ratio=0.3  # Default value
+                )
+                
+                # Save synthetic data
+                synthetic_path = os.path.join(output_dir, 'data', f'synthetic_comparison_{timestamp}.csv')
+                synthetic_data.to_csv(synthetic_path, index=False)
+            
+            # Run MoE validation if requested
+            if run_mode in ['full', 'validation']:
+                self.logger.info("Running MoE validation with real clinical data...")
+                
+                # Prepare output directory for validation
+                validation_dir = os.path.join(output_dir, 'moe_validation')
+                os.makedirs(validation_dir, exist_ok=True)
+                
+                # Import MoE validation components
+                sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'tests'))
+                
+                try:
+                    from moe_enhanced_validation_part4 import run_enhanced_validation
+                    from moe_interactive_report import generate_interactive_report
+                    
+                    # Create expert types mapping based on column names
+                    expert_mapping = {}
+                    for col in clinical_data.columns:
+                        col_lower = col.lower()
+                        if any(term in col_lower for term in ['heart', 'rate', 'temp', 'blood']):
+                            expert_mapping[col] = 'physiological'
+                        elif any(term in col_lower for term in ['weather', 'humid', 'pressure']):
+                            expert_mapping[col] = 'environmental'
+                        elif any(term in col_lower for term in ['stress', 'sleep', 'activity']):
+                            expert_mapping[col] = 'behavioral'
+                        elif any(term in col_lower for term in ['medication', 'drug', 'treatment']):
+                            expert_mapping[col] = 'medication'
+                        else:
+                            expert_mapping[col] = 'general'
+                    
+                    # Save expert mapping for reference
+                    mapping_path = os.path.join(validation_dir, f'expert_mapping_{timestamp}.json')
+                    with open(mapping_path, 'w') as f:
+                        json.dump(expert_mapping, f, indent=2)
+                    
+                    # Run enhanced validation
+                    validation_results = run_enhanced_validation(
+                        real_data=clinical_data,
+                        synthetic_data=synthetic_data,
+                        drift_type=drift_type,
+                        output_dir=validation_dir,
+                        expert_mapping=expert_mapping,
+                        target_column=target_column
+                    )
+                    
+                    # Generate interactive report
+                    if hasattr(self.args, 'interactive_report') and self.args.interactive_report:
+                        report_path = os.path.join(validation_dir, f'real_data_report_{timestamp}.html')
+                        generate_interactive_report(
+                            results=validation_results,
+                            output_path=report_path,
+                            title="Real Clinical Data MoE Validation Report",
+                            description=f"Validation results for real clinical data from {clinical_data_path}",
+                            metadata={
+                                "timestamp": timestamp,
+                                "data_source": clinical_data_path,
+                                "num_records": len(clinical_data),
+                                "num_features": len(clinical_data.columns),
+                                "target_column": target_column,
+                                "drift_type": drift_type
+                            }
+                        )
+                        
+                        self.logger.info(f"MoE validation complete. Interactive report saved to: {report_path}")
+                    
+                except Exception as e:
+                    self.logger.error(f"Error running MoE validation: {str(e)}")
+                    traceback.print_exc()
+                    return 1
+            
+            self.logger.info(f"Real data validation completed successfully.")
+            return 0
+            
+        except Exception as e:
+            self.logger.error(f"Error during real data validation: {str(e)}")
+            traceback.print_exc()
+            return 1
+
 class MoEValidationCommand(Command):
     """Command for running the MoE validation framework"""
     
@@ -406,11 +541,14 @@ class MoEValidationCommand(Command):
             return 1
 
 # Define COMMAND_MAP here, AFTER the BaselineComparisonCommand class is defined
+# Command map only includes commands defined directly in this module or already imported
 COMMAND_MAP = {
     "baseline_comparison": BaselineComparisonCommand,
     "train_satzilla": SatzillaTrainingCommand,
     "dynamic_optimization": DynamicOptimizationCommand,
     "moe_validation": MoEValidationCommand,
+    "real_data_validation": RealDataValidationCommand,
+    # The real_data_validation command is implemented in its own module to avoid circular imports
     # Add other commands as they become available
 }
 
@@ -445,43 +583,8 @@ def get_command(args: argparse.Namespace) -> Optional[Command]:
                 return run_meta_learning(self.args)
         return MetaLearningCommandWrapper(args)
     
-    # Commented out unavailable commands
-    """
-    if hasattr(args, 'enhanced_meta') and args.enhanced_meta:
-        return EnhancedMetaLearningCommand(args)
-        
-    # Optimization commands
-    if hasattr(args, 'optimize') and args.optimize:
-        return OptimizationCommand(args)
-        
-    if hasattr(args, 'compare_optimizers') and args.compare_optimizers:
-        return OptimizerComparisonCommand(args)
-        
-    # Evaluation commands
-    if hasattr(args, 'evaluate') and args.evaluate:
-        return EvaluationCommand(args)
-        
-    # Drift detection
-    if hasattr(args, 'drift') and args.drift:
-        return DriftDetectionCommand(args)
-        
-    # Explainability
-    if hasattr(args, 'explain') and args.explain:
-        return ExplainabilityCommand(args)
-        
-    if hasattr(args, 'explain_drift') and args.explain_drift:
-        return DriftExplainerCommand(args)
-        
-    # Migraine data
-    if hasattr(args, 'import_migraine_data') and args.import_migraine_data:
-        return MigraineDataImportCommand(args)
-        
-    if hasattr(args, 'predict_migraine') and args.predict_migraine:
-        return MigrainePredictionCommand(args)
-    """
-    
     # Dynamic optimization
     if hasattr(args, 'dynamic_optimization') and args.dynamic_optimization:
         return DynamicOptimizationCommand(args)
         
-    return None 
+    return None

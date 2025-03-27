@@ -1,0 +1,74 @@
+{
+  "name": "Basic MoE Configuration",
+  "description": "A basic configuration for the MoE pipeline with default experts",
+  "output_dir": "./output/moe_run",
+  "environment": "test",
+  "verbose": true,
+  "experts": {
+    "physiological_expert": {
+      "type": "physiological",
+      "params": {
+        "model_type": "random_forest",
+        "feature_columns": ["heart_rate", "blood_pressure", "sleep_quality"],
+        "confidence_estimation": true
+      }
+    },
+    "behavioral_expert": {
+      "type": "behavioral",
+      "params": {
+        "model_type": "gradient_boosting",
+        "feature_columns": ["exercise_minutes", "water_intake", "screen_time"],
+        "confidence_estimation": true
+      }
+    },
+    "environmental_expert": {
+      "type": "environmental",
+      "params": {
+        "model_type": "decision_tree",
+        "feature_columns": ["temperature", "humidity", "barometric_pressure"],
+        "confidence_estimation": true
+      }
+    },
+    "medication_expert": {
+      "type": "medication",
+      "params": {
+        "model_type": "logistic_regression",
+        "feature_columns": ["medication_adherence", "medication_type", "side_effects"],
+        "confidence_estimation": true
+      }
+    }
+  },
+  "gating_network": {
+    "type": "quality_aware",
+    "params": {
+      "quality_thresholds": {
+        "completeness": 0.6,
+        "consistency": 0.7
+      },
+      "adjustment_factors": {
+        "completeness": 0.8,
+        "consistency": 0.7
+      }
+    }
+  },
+  "data_connector": {
+    "type": "csv",
+    "params": {
+      "target_column": "migraine_risk"
+    }
+  },
+  "validation": {
+    "validation_split": 0.2,
+    "random_state": 42,
+    "metrics": ["accuracy", "precision", "recall", "f1", "roc_auc"]
+  },
+  "optimization": {
+    "optimization_metric": "f1",
+    "hyperparameter_tuning": false
+  },
+  "tracking": {
+    "enabled": true,
+    "tracking_dir": ".workflow_tracking",
+    "checkpoint_frequency": 1
+  }
+} 

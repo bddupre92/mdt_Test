@@ -1,0 +1,59 @@
+{
+    "expert_benchmarks": {
+        "expert_1": {
+            "metrics": {
+                "rmse": 0.15,
+                "mae": 0.12,
+                "r2": 0.85
+            }
+        },
+        "expert_2": {
+            "metrics": {
+                "rmse": 0.18,
+                "mae": 0.14,
+                "r2": 0.82
+            }
+        },
+        "expert_3": {
+            "metrics": {
+                "rmse": 0.16,
+                "mae": 0.13,
+                "r2": 0.84
+            }
+        }
+    },
+    "gating_network": {
+        "expert_selection": {
+            "expert_1": 0.35,
+            "expert_2": 0.30,
+            "expert_3": 0.35
+        },
+        "decision_boundaries": {
+            "expert_1": [0.2, 0.4],
+            "expert_2": [0.4, 0.6],
+            "expert_3": [0.6, 0.8]
+        }
+    },
+    "overall_performance": {
+        "rmse": 0.14,
+        "mae": 0.11,
+        "r2": 0.88,
+        "baseline_comparison": {
+            "moe": 0.14,
+            "baseline_1": 0.19,
+            "baseline_2": 0.21
+        },
+        "statistical_tests": {
+            "normality": {
+                "statistic": 0.95,
+                "p_value": 0.08,
+                "result": true
+            },
+            "significance": {
+                "statistic": 2.45,
+                "p_value": 0.02,
+                "result": true
+            }
+        }
+    }
+}

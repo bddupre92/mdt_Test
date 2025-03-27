@@ -21,7 +21,7 @@ from .optimization_history import OptimizationHistory
 from .problem_analysis import ProblemAnalyzer
 from .selection_tracker import SelectionTracker
 from visualization.live_visualization import LiveOptimizationMonitor
-from ..optimizers.base_optimizer import BaseOptimizer, OptimizationResult
+from optimizers.base_optimizer import BaseOptimizer
 
 @dataclass
 class OptimizationResult:

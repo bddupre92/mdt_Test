@@ -1,0 +1,747 @@
+{
+  "workflow_id": "ExampleMoEPipeline",
+  "start_time": "2025-03-26T13:20:21.268602",
+  "end_time": "2025-03-26T13:20:23.783427",
+  "success": true,
+  "events": [
+    {
+      "component": "expert_training",
+      "event_type": "Tracked DE optimizer performance",
+      "timestamp": "2025-03-26T13:20:21.268667",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Tracked ES optimizer performance",
+      "timestamp": "2025-03-26T13:20:21.268684",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Trained expert: physiological_expert_0",
+      "timestamp": "2025-03-26T13:20:21.268697",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Trained expert: environmental_expert_1",
+      "timestamp": "2025-03-26T13:20:21.268704",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Trained expert: medication_expert_2",
+      "timestamp": "2025-03-26T13:20:21.268708",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Trained expert: environmental_expert_3",
+      "timestamp": "2025-03-26T13:20:21.268711",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Trained expert: physiological_expert_4",
+      "timestamp": "2025-03-26T13:20:21.268714",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Trained expert: medication_expert_5",
+      "timestamp": "2025-03-26T13:20:21.268717",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Trained expert: physiological_expert_6",
+      "timestamp": "2025-03-26T13:20:21.268720",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Trained expert: physiological_expert_7",
+      "timestamp": "2025-03-26T13:20:21.268722",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Trained expert: physiological_expert_8",
+      "timestamp": "2025-03-26T13:20:21.268724",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Trained expert: medication_expert_9",
+      "timestamp": "2025-03-26T13:20:21.268726",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Initializing model",
+      "timestamp": "2025-03-26T13:20:21.268727",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Training epoch 1",
+      "timestamp": "2025-03-26T13:20:21.268728",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Training epoch 2",
+      "timestamp": "2025-03-26T13:20:21.268730",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "expert_training",
+      "event_type": "Training epoch 3",
+      "timestamp": "2025-03-26T13:20:21.268731",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "prediction",
+      "event_type": "Generating predictions",
+      "timestamp": "2025-03-26T13:20:22.272334",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "prediction",
+      "event_type": "Aggregating expert outputs",
+      "timestamp": "2025-03-26T13:20:22.272411",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "prediction",
+      "event_type": "Expert prediction: environmental_expert_pred_0",
+      "timestamp": "2025-03-26T13:20:22.272507",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "prediction",
+      "event_type": "Expert prediction: medication_expert_pred_1",
+      "timestamp": "2025-03-26T13:20:22.272524",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "prediction",
+      "event_type": "Expert prediction: physiological_expert_pred_2",
+      "timestamp": "2025-03-26T13:20:22.272532",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "prediction",
+      "event_type": "Expert prediction: medication_expert_pred_3",
+      "timestamp": "2025-03-26T13:20:22.272539",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "prediction",
+      "event_type": "Expert prediction: physiological_expert_pred_4",
+      "timestamp": "2025-03-26T13:20:22.272545",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "evaluation",
+      "event_type": "Calculating metrics",
+      "timestamp": "2025-03-26T13:20:23.278000",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "evaluation",
+      "event_type": "Comparing with baseline",
+      "timestamp": "2025-03-26T13:20:23.278038",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "checkpoint",
+      "event_type": "Saving model weights",
+      "timestamp": "2025-03-26T13:20:23.783349",
+      "details": {},
+      "success": true
+    },
+    {
+      "component": "checkpoint",
+      "event_type": "Saving optimizer state",
+      "timestamp": "2025-03-26T13:20:23.783380",
+      "details": {},
+      "success": true
+    }
+  ],
+  "components": [
+    {
+      "component": "expert_training",
+      "entry_time": "2025-03-26T13:20:21.268625",
+      "exit_time": "2025-03-26T13:20:21.268734",
+      "success": true,
+      "result": null
+    },
+    {
+      "component": "prediction",
+      "entry_time": "2025-03-26T13:20:21.268765",
+      "exit_time": "2025-03-26T13:20:22.272562",
+      "success": true,
+      "result": null
+    },
+    {
+      "component": "evaluation",
+      "entry_time": "2025-03-26T13:20:22.272945",
+      "exit_time": "2025-03-26T13:20:23.278046",
+      "success": true,
+      "result": null
+    },
+    {
+      "component": "checkpoint",
+      "entry_time": "2025-03-26T13:20:23.278280",
+      "exit_time": "2025-03-26T13:20:23.783386",
+      "success": true,
+      "result": null
+    }
+  ],
+  "results": {
+    "accuracy": 0.9151117764854776,
+    "execution_time": 3.540307245810156
+  },
+  "expert_contributions": [
+    {
+      "expert_id": "physiological_expert_0",
+      "expert_type": "physiological_expert",
+      "confidence": 0.75904780940352,
+      "weight": 0.1659083972316326,
+      "prediction": 0.5469039750571602,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.459,
+        "blood_pressure": 0.04,
+        "sleep_quality": 0.364,
+        "stress_level": 0.137
+      }
+    },
+    {
+      "expert_id": "environmental_expert_1",
+      "expert_type": "environmental_expert",
+      "confidence": 0.6760656747149842,
+      "weight": 0.36520409934309556,
+      "prediction": 0.33930198774619397,
+      "features_used": [
+        "temperature",
+        "humidity",
+        "barometric_pressure",
+        "light_level"
+      ],
+      "feature_importance": {
+        "temperature": 0.103,
+        "humidity": 0.159,
+        "barometric_pressure": 0.477,
+        "light_level": 0.261
+      }
+    },
+    {
+      "expert_id": "medication_expert_2",
+      "expert_type": "medication_expert",
+      "confidence": 0.7637792240287209,
+      "weight": 0.21500490713005244,
+      "prediction": 0.30411765363560245,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.589,
+        "medication_timing": 0.174,
+        "medication_effectiveness": 0.068,
+        "side_effects": 0.169
+      }
+    },
+    {
+      "expert_id": "environmental_expert_3",
+      "expert_type": "environmental_expert",
+      "confidence": 0.7807271737239787,
+      "weight": 0.5221060082704387,
+      "prediction": 0.5316093462283698,
+      "features_used": [
+        "temperature",
+        "humidity",
+        "barometric_pressure",
+        "light_level"
+      ],
+      "feature_importance": {
+        "temperature": 0.103,
+        "humidity": 0.159,
+        "barometric_pressure": 0.477,
+        "light_level": 0.261
+      }
+    },
+    {
+      "expert_id": "physiological_expert_4",
+      "expert_type": "physiological_expert",
+      "confidence": 0.6271319168411186,
+      "weight": 0.5369229642220659,
+      "prediction": 0.5508377816462064,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.459,
+        "blood_pressure": 0.04,
+        "sleep_quality": 0.364,
+        "stress_level": 0.137
+      }
+    },
+    {
+      "expert_id": "medication_expert_5",
+      "expert_type": "medication_expert",
+      "confidence": 0.6388947160641271,
+      "weight": 0.05770937111103849,
+      "prediction": 0.8957497581411475,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.589,
+        "medication_timing": 0.174,
+        "medication_effectiveness": 0.068,
+        "side_effects": 0.169
+      }
+    },
+    {
+      "expert_id": "physiological_expert_6",
+      "expert_type": "physiological_expert",
+      "confidence": 0.6322831798611658,
+      "weight": 0.2597522787066188,
+      "prediction": 0.7109217710595661,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.459,
+        "blood_pressure": 0.04,
+        "sleep_quality": 0.364,
+        "stress_level": 0.137
+      }
+    },
+    {
+      "expert_id": "physiological_expert_7",
+      "expert_type": "physiological_expert",
+      "confidence": 0.875910947549601,
+      "weight": 0.6263693795542784,
+      "prediction": 0.6657826017088273,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.459,
+        "blood_pressure": 0.04,
+        "sleep_quality": 0.364,
+        "stress_level": 0.137
+      }
+    },
+    {
+      "expert_id": "physiological_expert_8",
+      "expert_type": "physiological_expert",
+      "confidence": 0.7364193559779278,
+      "weight": 0.5442436437431082,
+      "prediction": 0.8268832441855711,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.459,
+        "blood_pressure": 0.04,
+        "sleep_quality": 0.364,
+        "stress_level": 0.137
+      }
+    },
+    {
+      "expert_id": "medication_expert_9",
+      "expert_type": "medication_expert",
+      "confidence": 0.8594911600137798,
+      "weight": 0.33992923243782686,
+      "prediction": 0.3704062531419261,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.589,
+        "medication_timing": 0.174,
+        "medication_effectiveness": 0.068,
+        "side_effects": 0.169
+      }
+    },
+    {
+      "expert_id": "environmental_expert_pred_0",
+      "expert_type": "environmental_expert",
+      "confidence": 0.8734391008387725,
+      "weight": 0.33665091743149334,
+      "prediction": 0.9110499113815946,
+      "features_used": [
+        "temperature",
+        "humidity",
+        "barometric_pressure",
+        "light_level"
+      ],
+      "feature_importance": {
+        "temperature": 0.103,
+        "humidity": 0.159,
+        "barometric_pressure": 0.477,
+        "light_level": 0.261
+      }
+    },
+    {
+      "expert_id": "medication_expert_pred_1",
+      "expert_type": "medication_expert",
+      "confidence": 0.7942514847498021,
+      "weight": 0.45577166851067275,
+      "prediction": 0.6611142942245074,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.589,
+        "medication_timing": 0.174,
+        "medication_effectiveness": 0.068,
+        "side_effects": 0.169
+      }
+    },
+    {
+      "expert_id": "physiological_expert_pred_2",
+      "expert_type": "physiological_expert",
+      "confidence": 0.8253758255895653,
+      "weight": 0.6075419471627392,
+      "prediction": 0.40891590845496617,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.459,
+        "blood_pressure": 0.04,
+        "sleep_quality": 0.364,
+        "stress_level": 0.137
+      }
+    },
+    {
+      "expert_id": "medication_expert_pred_3",
+      "expert_type": "medication_expert",
+      "confidence": 0.8980452827478305,
+      "weight": 0.5933377047526985,
+      "prediction": 0.4260490799020255,
+      "features_used": [
+        "medication_adherence",
+        "medication_timing",
+        "medication_effectiveness",
+        "side_effects"
+      ],
+      "feature_importance": {
+        "medication_adherence": 0.589,
+        "medication_timing": 0.174,
+        "medication_effectiveness": 0.068,
+        "side_effects": 0.169
+      }
+    },
+    {
+      "expert_id": "physiological_expert_pred_4",
+      "expert_type": "physiological_expert",
+      "confidence": 0.8198102153303134,
+      "weight": 0.7326274115228629,
+      "prediction": 0.912031320400293,
+      "features_used": [
+        "heart_rate",
+        "blood_pressure",
+        "sleep_quality",
+        "stress_level"
+      ],
+      "feature_importance": {
+        "heart_rate": 0.459,
+        "blood_pressure": 0.04,
+        "sleep_quality": 0.364,
+        "stress_level": 0.137
+      }
+    }
+  ],
+  "optimizer_performances": [
+    {
+      "optimizer_id": "DE_optimizer",
+      "optimizer_type": "differential_evolution",
+      "best_fitness": 14.956861922263503,
+      "convergence_curve": [
+        100.0,
+        90.48374180359595,
+        81.87307530779819,
+        74.08182206817179,
+        67.03200460356393,
+        60.653065971263345,
+        54.88116360940264,
+        49.65853037914095,
+        44.932896411722155,
+        40.65696597405991,
+        36.787944117144235,
+        33.28710836980795,
+        30.1194211912202,
+        27.25317930340126,
+        24.659696394160644,
+        22.313016014842983,
+        20.189651799465537,
+        18.26835240527346,
+        16.529888822158654,
+        14.956861922263503
+      ],
+      "parameters": {
+        "F": [
+          0.8,
+          0.78,
+          0.76,
+          0.74,
+          0.7200000000000001,
+          0.7000000000000001,
+          0.68,
+          0.66,
+          0.64,
+          0.6200000000000001,
+          0.6000000000000001,
+          0.5800000000000001,
+          0.56,
+          0.54,
+          0.52,
+          0.5,
+          0.48000000000000004,
+          0.46,
+          0.44000000000000006,
+          0.42000000000000004
+        ],
+        "CR": [
+          0.5,
+          0.51,
+          0.52,
+          0.53,
+          0.54,
+          0.55,
+          0.56,
+          0.5700000000000001,
+          0.58,
+          0.59,
+          0.6,
+          0.61,
+          0.62,
+          0.63,
+          0.64,
+          0.65,
+          0.66,
+          0.67,
+          0.6799999999999999,
+          0.69
+        ]
+      },
+      "diversity_history": [
+        1.0,
+        0.951229424500714,
+        0.9048374180359595,
+        0.8607079764250578,
+        0.8187307530779818,
+        0.7788007830714049,
+        0.7408182206817179,
+        0.7046880897187134,
+        0.6703200460356393,
+        0.6376281516217733,
+        0.6065306597126334,
+        0.5769498103804866,
+        0.5488116360940264,
+        0.522045776761016,
+        0.49658530379140947,
+        0.4723665527410147,
+        0.44932896411722156,
+        0.42741493194872665,
+        0.4065696597405991,
+        0.3867410234545012
+      ],
+      "exploration_exploitation_ratio": [],
+      "iterations": 20,
+      "evaluations": 1000,
+      "duration": 1.2
+    },
+    {
+      "optimizer_id": "ES_optimizer",
+      "optimizer_type": "evolution_strategy",
+      "best_fitness": 18.637397603940997,
+      "convergence_curve": [
+        100.0,
+        88.69204367171575,
+        78.66278610665535,
+        69.76763260710311,
+        61.878339180614084,
+        54.88116360940264,
+        48.67522559599717,
+        43.17105234290797,
+        38.28928859751121,
+        33.95955256449391,
+        30.119421191220212,
+        26.71353019658504,
+        23.692775868212177,
+        21.013607120076472,
+        18.637397603940997
+      ],
+      "parameters": {
+        "sigma": [
+          1.0,
+          0.95,
+          0.9,
+          0.85,
+          0.8,
+          0.75,
+          0.7,
+          0.6499999999999999,
+          0.6,
+          0.55,
+          0.5,
+          0.44999999999999996,
+          0.3999999999999999,
+          0.35,
+          0.29999999999999993
+        ],
+        "population_size": [
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50,
+          50
+        ]
+      },
+      "diversity_history": [
+        0.9,
+        0.8475880802258239,
+        0.7982283930454418,
+        0.7517431902701448,
+        0.7079650749598981,
+        0.666736398613546,
+        0.627908693463928,
+        0.591342137833551,
+        0.5569050526255268,
+        0.5244734271365907,
+        0.49393047248462374,
+        0.46516620104252937,
+        0.4380770303639745,
+        0.41256541017470116,
+        0.38853947108617176
+      ],
+      "exploration_exploitation_ratio": [
+        0.7,
+        0.6599999999999999,
+        0.62,
+        0.58,
+        0.5399999999999999,
+        0.49999999999999994,
+        0.45999999999999996,
+        0.41999999999999993,
+        0.37999999999999995,
+        0.33999999999999997,
+        0.29999999999999993,
+        0.25999999999999995,
+        0.21999999999999997,
+        0.17999999999999994,
+        0.1399999999999999
+      ],
+      "iterations": 15,
+      "evaluations": 800,
+      "duration": 0.9
+    }
+  ],
+  "meta_learner_decisions": [
+    {
+      "selection_id": "training_approach",
+      "selected_algorithm": "Ensemble",
+      "problem_features": {
+        "data_size": "large",
+        "feature_count": 50,
+        "compute_resources": "high",
+        "training_time": "limited"
+      },
+      "confidence": 0.92,
+      "alternatives": {
+        "DeepLearning": 0.85,
+        "Boosting": 0.78,
+        "SVM": 0.62
+      }
+    },
+    {
+      "selection_id": "expert_weighting",
+      "selected_algorithm": "DynamicWeight",
+      "problem_features": {
+        "expert_count": 5,
+        "conflicting_outputs": true,
+        "confidence_available": true
+      },
+      "confidence": 0.87,
+      "alternatives": {
+        "EqualWeight": 0.45,
+        "PerformanceWeight": 0.76,
+        "ConfidenceWeight": 0.83
+      }
+    }
+  ]
+}

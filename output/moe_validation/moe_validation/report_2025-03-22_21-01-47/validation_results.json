@@ -1,0 +1,126 @@
+{
+  "drift_feature_importance": {
+    "passed": true,
+    "details": "Drift detected: True, Magnitude: 0.5660, Top drift features: feature_3, feature_0, feature_1"
+  },
+  "drift_explanation": {
+    "passed": true,
+    "details": "Drift detected: True, Magnitude: 0.5660, Explanation generated: True"
+  },
+  "temporal_feature_importance": {
+    "passed": true,
+    "details": "Feature importance shift detected: True. Top feature changed from feature_0 to feature_3."
+  },
+  "expert_drift_impact": {
+    "passed": true,
+    "details": "Expert drift impact analysis completed. Most resilient expert: time_based with performance degradation of 254934.77%."
+  },
+  "data_quality": {
+    "passed": false,
+    "details": "Passed: 4, Warnings: 1, Errors: 2",
+    "metrics": {
+      "completeness": 0,
+      "consistency": 0,
+      "validation_rate": 0.8
+    }
+  },
+  "real_synthetic_comparison": {
+    "passed": false,
+    "details": "Similarity score: 0.16 (0-1 scale)",
+    "metrics": {
+      "overall_similarity": 0.15669754174571207,
+      "feature_similarity": {},
+      "distribution_similarity": {}
+    }
+  },
+  "model_performance": {
+    "passed": true,
+    "details": "Accuracy: 0.125, F1 Score: 0.15000000000000002",
+    "metrics": {
+      "accuracy": 0.125,
+      "f1_score": 0.15000000000000002
+    }
+  },
+  "feature_importance": {
+    "passed": true,
+    "details": "Top features: stress_level, medication_dose, sleep_hours",
+    "importances": [
+      {
+        "feature": "stress_level",
+        "importance": 0.15835823814861755
+      },
+      {
+        "feature": "medication_dose",
+        "importance": 0.15270156205138913
+      },
+      {
+        "feature": "sleep_hours",
+        "importance": 0.12594694698314443
+      },
+      {
+        "feature": "bp_dia",
+        "importance": 0.11279618777911385
+      },
+      {
+        "feature": "heart_rate",
+        "importance": 0.1103719661876009
+      },
+      {
+        "feature": "patient_id",
+        "importance": 0.08475792956711559
+      },
+      {
+        "feature": "bp_sys",
+        "importance": 0.08308580081316706
+      },
+      {
+        "feature": "day_of_week",
+        "importance": 0.06624301791694298
+      },
+      {
+        "feature": "weekend",
+        "importance": 0.04035317215890834
+      },
+      {
+        "feature": "weather_temp",
+        "importance": 0.037614099742629054
+      },
+      {
+        "feature": "weather_humidity",
+        "importance": 0.02777107865137095
+      },
+      {
+        "feature": "hour_of_day",
+        "importance": 0.0
+      },
+      {
+        "feature": "time_since_prev",
+        "importance": 0.0
+      },
+      {
+        "feature": "measurement_count",
+        "importance": 0.0
+      }
+    ],
+    "plot_path": "output/moe_validation/moe_validation/feature_importance.html",
+    "available": true,
+    "top_features": [
+      "stress_level",
+      "medication_dose",
+      "sleep_hours",
+      "bp_dia",
+      "heart_rate",
+      "patient_id",
+      "bp_sys",
+      "day_of_week",
+      "weekend",
+      "weather_temp"
+    ]
+  },
+  "explainability": {
+    "passed": false,
+    "details": "Error generating SHAP explainability: name 'NumpyEncoder' is not defined",
+    "available": false,
+    "error": "name 'NumpyEncoder' is not defined"
+  }
+}

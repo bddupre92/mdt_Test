@@ -1,0 +1,198 @@
+{
+  "workflow_id": "example_workflow_20250326_124429",
+  "start_time": "2025-03-26T12:44:29.166241",
+  "end_time": "2025-03-26T12:44:36.693474",
+  "success": true,
+  "nodes": [
+    {
+      "id": "comp_0",
+      "type": "component",
+      "label": "data_loading",
+      "success": true,
+      "component": "data_loading",
+      "color": "#6495ED"
+    },
+    {
+      "id": "comp_1",
+      "type": "component",
+      "label": "expert_training",
+      "success": true,
+      "component": "expert_training",
+      "color": "#FF8C00"
+    },
+    {
+      "id": "comp_2",
+      "type": "component",
+      "label": "prediction",
+      "success": true,
+      "component": "prediction",
+      "color": "#9932CC"
+    },
+    {
+      "id": "comp_3",
+      "type": "component",
+      "label": "evaluation",
+      "success": true,
+      "component": "evaluation",
+      "color": "#20B2AA"
+    },
+    {
+      "id": "event_0",
+      "type": "event",
+      "label": "data_loaded",
+      "success": true,
+      "event_type": "data_loaded",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_1",
+      "type": "event",
+      "label": "training_started",
+      "success": true,
+      "event_type": "training_started",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_2",
+      "type": "event",
+      "label": "expert_training_started",
+      "success": true,
+      "event_type": "expert_training_started",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_3",
+      "type": "event",
+      "label": "expert_training_completed",
+      "success": true,
+      "event_type": "expert_training_completed",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_4",
+      "type": "event",
+      "label": "gating_training_started",
+      "success": true,
+      "event_type": "gating_training_started",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_5",
+      "type": "event",
+      "label": "gating_training_completed",
+      "success": true,
+      "event_type": "gating_training_completed",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_6",
+      "type": "event",
+      "label": "training_completed",
+      "success": true,
+      "event_type": "training_completed",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_7",
+      "type": "event",
+      "label": "prediction_started",
+      "success": true,
+      "event_type": "prediction_started",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_8",
+      "type": "event",
+      "label": "expert_predictions_started",
+      "success": true,
+      "event_type": "expert_predictions_started",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_9",
+      "type": "event",
+      "label": "expert_prediction_completed",
+      "success": true,
+      "event_type": "expert_prediction_completed",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_10",
+      "type": "event",
+      "label": "gating_weights_calculated",
+      "success": true,
+      "event_type": "gating_weights_calculated",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_11",
+      "type": "event",
+      "label": "integration_started",
+      "success": true,
+      "event_type": "integration_started",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_12",
+      "type": "event",
+      "label": "integration_completed",
+      "success": true,
+      "event_type": "integration_completed",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_13",
+      "type": "event",
+      "label": "prediction_completed",
+      "success": true,
+      "event_type": "prediction_completed",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_14",
+      "type": "event",
+      "label": "checkpoint_started",
+      "success": true,
+      "event_type": "checkpoint_started",
+      "component": "other",
+      "color": "#D3D3D3"
+    },
+    {
+      "id": "event_15",
+      "type": "event",
+      "label": "checkpoint_completed",
+      "success": true,
+      "event_type": "checkpoint_completed",
+      "component": "other",
+      "color": "#D3D3D3"
+    }
+  ],
+  "links": [
+    {
+      "source": "comp_0",
+      "target": "comp_1"
+    },
+    {
+      "source": "comp_1",
+      "target": "comp_2"
+    },
+    {
+      "source": "comp_2",
+      "target": "comp_3"
+    }
+  ]
+}

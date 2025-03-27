@@ -1,0 +1,170 @@
+{
+  "validation_timestamp": "2025-03-23T00:06:11.409137",
+  "validation_summary": {
+    "total_validations": 5,
+    "passed_validations": 4,
+    "warnings": 1,
+    "errors": 2,
+    "overall_valid": false
+  },
+  "validation_results": [
+    {
+      "validation_type": "structure",
+      "result": {
+        "valid": true,
+        "missing_categories": [],
+        "missing_columns": [],
+        "row_count": 25,
+        "column_count": 11
+      }
+    },
+    {
+      "validation_type": "distributions",
+      "result": {
+        "valid": true,
+        "distribution_issues": [],
+        "distribution_stats": {
+          "heart_rate": {
+            "mean": 74.96,
+            "median": 75.0,
+            "min": 65,
+            "max": 85,
+            "out_of_range_count": 0,
+            "out_of_range_percent": 0.0,
+            "expected_min": 40,
+            "expected_max": 180,
+            "unit": "bpm"
+          },
+          "bp_sys": {
+            "mean": 128.24,
+            "median": 125.0,
+            "min": 110,
+            "max": 150,
+            "out_of_range_count": 0,
+            "out_of_range_percent": 0.0,
+            "expected_min": 70,
+            "expected_max": 200,
+            "unit": "mmHg"
+          },
+          "bp_dia": {
+            "mean": 82.92,
+            "median": 82.0,
+            "min": 70,
+            "max": 95,
+            "out_of_range_count": 0,
+            "out_of_range_percent": 0.0,
+            "expected_min": 40,
+            "expected_max": 120,
+            "unit": "mmHg"
+          },
+          "stress_level": {
+            "mean": 4.4,
+            "median": 5.0,
+            "min": 1,
+            "max": 8,
+            "out_of_range_count": 0,
+            "out_of_range_percent": 0.0,
+            "expected_min": 0,
+            "expected_max": 10,
+            "unit": "score"
+          },
+          "sleep_hours": {
+            "mean": 6.812,
+            "median": 7.0,
+            "min": 5.0,
+            "max": 8.5,
+            "out_of_range_count": 0,
+            "out_of_range_percent": 0.0,
+            "expected_min": 0,
+            "expected_max": 15,
+            "unit": "hours"
+          },
+          "migraine_severity": {
+            "mean": 2.12,
+            "median": 2.0,
+            "min": 0,
+            "max": 7,
+            "out_of_range_count": 0,
+            "out_of_range_percent": 0.0,
+            "expected_min": 0,
+            "expected_max": 10,
+            "unit": "score"
+          },
+          "weather_temp": {
+            "mean": 78.4,
+            "median": 78.0,
+            "min": 75,
+            "max": 82,
+            "out_of_range_count": 0,
+            "out_of_range_percent": 0.0,
+            "expected_min": -30,
+            "expected_max": 120,
+            "unit": "\u00b0F"
+          },
+          "weather_humidity": {
+            "mean": 57.6,
+            "median": 58.0,
+            "min": 50,
+            "max": 65,
+            "out_of_range_count": 0,
+            "out_of_range_percent": 0.0,
+            "expected_min": 0,
+            "expected_max": 100,
+            "unit": "%"
+          },
+          "medication_dose": {
+            "mean": 5.6,
+            "median": 5.0,
+            "min": 0,
+            "max": 15,
+            "out_of_range_count": 0,
+            "out_of_range_percent": 0.0,
+            "expected_min": 0,
+            "expected_max": 200,
+            "unit": "mg"
+          }
+        }
+      }
+    },
+    {
+      "validation_type": "data_quality",
+      "result": {
+        "valid": true,
+        "quality_issues": [],
+        "quality_stats": {
+          "time_intervals": {
+            "mean_interval_seconds": 86400.0,
+            "cv_interval": 0.0
+          }
+        }
+      }
+    },
+    {
+      "validation_type": "temporal_consistency",
+      "result": {
+        "valid": true,
+        "temporal_issues": []
+      }
+    },
+    {
+      "validation_type": "moe_compatibility",
+      "result": {
+        "valid": false,
+        "moe_compatibility_issues": [
+          {
+            "issue": "No target variable found for migraine prediction",
+            "severity": "error"
+          },
+          {
+            "issue": "Insufficient data points for reliable MoE training (25 rows)",
+            "severity": "error"
+          },
+          {
+            "issue": "Insufficient time span for drift detection (4 days)",
+            "severity": "warning"
+          }
+        ]
+      }
+    }
+  ]
+}

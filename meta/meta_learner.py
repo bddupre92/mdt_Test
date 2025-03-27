@@ -14,18 +14,55 @@ import torch
 import torch.nn as nn
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel
+from meta.patient_memory import PatientMemory
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 class MetaLearner:
+    class SimpleAlgorithm:
+        """A simple algorithm adapter for string algorithm names."""
+        def __init__(self, name):
+            self.name = name
+            
+        def suggest(self):
+            """Suggest a configuration."""
+            return np.random.rand(1, 2)  # Return a simple random configuration
+            
+        def evaluate(self, config):
+            """Evaluate a configuration."""
+            return float(np.random.rand())  # Return a random score
+    
     def __init__(self, method='bayesian', surrogate_model=None, selection_strategy=None,
-                 exploration_factor=0.2, history_weight=0.7):
-        """Initialize MetaLearner with specified method."""
-        self.algorithms = []
+                 exploration_factor=0.2, history_weight=0.7, drift_detector=None,
+                 quality_impact=0.4, drift_impact=0.3, memory_storage_dir=None,
+                 enable_personalization=True):
+        """Initialize MetaLearner with specified method.
+        
+        Args:
+            method: Optimization method ('bayesian', 'rl', etc.)
+            surrogate_model: Optional custom surrogate model
+            selection_strategy: Strategy for selecting algorithms
+            exploration_factor: Controls exploration vs. exploitation
+            history_weight: Weight given to historical performance (0-1)
+            drift_detector: Optional drift detector instance
+            quality_impact: Impact factor of quality on expert weights (0-1)
+            drift_impact: Impact factor of drift on expert weights (0-1)
+            memory_storage_dir: Directory for storing patient memory files
+            enable_personalization: Whether to enable patient-specific adaptations
+        """
+        # Initialize with default algorithms if none provided
+        self.algorithms = ['bayesian', 'random_search', 'grid_search']
         self.method = method
         self.selection_strategy = selection_strategy or method
         self.exploration_factor = max(0.3, exploration_factor)
+        self.history_weight = history_weight
+        self.drift_detector = drift_detector
+        self.quality_impact = quality_impact
+        self.drift_impact = drift_impact
+        
+        # Initialize data quality tracking
+        self.domain_data_quality = {}
         self.history_weight = history_weight
         self.best_config = None
         self.best_score = float('-inf')
@@ -33,8 +70,15 @@ class MetaLearner:
         self.X = None
         self.y = None
         self.phase_scores = {}  # Track scores per phase
-        self.drift_detector = None  # Will be set externally if needed
+        self.drift_detector = drift_detector  # Can be set at initialization
         self.logger = logger  # Add logger attribute
+        self.experts = {}  # Dictionary to store registered experts
+        self.domain_data_quality = {}  # Track data quality by domain
+        
+        # Initialize patient memory for personalization
+        self.enable_personalization = enable_personalization
+        self.patient_memory = PatientMemory(storage_dir=memory_storage_dir) if enable_personalization else None
+        self.current_patient_id = None
         
         # Initialize method-specific components
         if method == 'bayesian':
@@ -78,6 +122,249 @@ class MetaLearner:
         self.algorithm_scores = {}
         self.param_importance = {}
     
+    def register_expert(self, expert_id, expert):
+        """Register an expert with the meta-learner.
+        
+        Args:
+            expert_id: Unique identifier for the expert
+            expert: Expert object with a 'specialty' attribute
+        """
+        self.experts[expert_id] = expert
+        logger.info(f"Registered expert {expert_id} with specialty {getattr(expert, 'specialty', 'unknown')}")
+        
+    def predict_weights(self, context):
+        """Predict weights for each expert based on context, data quality, drift and patient memory.
+        
+        Args:
+            context: Dictionary with context information, including:
+                     - has_physiological, has_behavioral, has_environmental (bool)
+                     - quality_metrics (dict): data quality metrics per domain
+                     - recent_data (dict): recent data samples for drift detection
+                     - patient_id (str): optional patient identifier for personalization
+        
+        Returns:
+            Dictionary mapping expert IDs to weights that sum to 1.0
+        """
+        # Load patient memory if available and personalization is enabled
+        patient_id = context.get('patient_id')
+        if self.enable_personalization and patient_id and patient_id != self.current_patient_id:
+            self.current_patient_id = patient_id
+            self.patient_memory.select_patient(patient_id)
+            logger.info(f"Loaded memory for patient {patient_id}")
+        if not self.experts:
+            logger.warning("No experts registered, returning equal weights")
+            return {1: 1.0}  # Default single expert with full weight
+        
+        # First calculate base weights using specialty matching
+        base_weights = self._calculate_specialty_weights(context)
+        
+        # Apply patient-specific specialty weights if available
+        if self.enable_personalization and self.current_patient_id:
+            patient_specialty_weights = self.patient_memory.get_specialty_weights()
+            if patient_specialty_weights:
+                base_weights = self._apply_patient_specialty_weights(base_weights, patient_specialty_weights)
+        
+        # Apply quality-aware adjustments if quality metrics provided
+        if context.get('quality_metrics'):
+            quality_adjusted_weights = self._adjust_weights_by_quality(base_weights, context['quality_metrics'])
+            
+            # Store quality metrics in patient memory if personalization is enabled
+            if self.enable_personalization and self.current_patient_id:
+                for domain, quality in context['quality_metrics'].items():
+                    self.patient_memory.store_domain_quality(domain, quality)
+        else:
+            quality_adjusted_weights = base_weights
+            
+        # Apply drift detection adjustments if drift detector exists and recent data provided
+        if self.drift_detector and context.get('recent_data'):
+            final_weights, drift_results = self._adjust_weights_for_drift(quality_adjusted_weights, context['recent_data'], return_drift_info=True)
+            
+            # Store drift detection results in patient memory if personalization is enabled
+            if self.enable_personalization and self.current_patient_id and drift_results:
+                for domain, result in drift_results.items():
+                    drift_detected, drift_score, p_value = result
+                    self.patient_memory.store_drift_event(domain, drift_detected, drift_score, p_value)
+        else:
+            final_weights = quality_adjusted_weights
+            
+        # Normalize weights to ensure they sum to 1.0
+        total = sum(final_weights.values())
+        if total > 0:
+            final_weights = {k: v / total for k, v in final_weights.items()}
+            
+        # Store final weights in patient memory if personalization is enabled
+        if self.enable_personalization and self.current_patient_id:
+            self.patient_memory.update_expert_weights(final_weights)
+            
+        logger.info(f"Predicted weights: {final_weights}")
+        return final_weights
+        
+    def _calculate_specialty_weights(self, context):
+        """Calculate base weights based on expert specialties.
+        
+        Args:
+            context: Dictionary with context information
+            
+        Returns:
+            Dictionary of base weights per expert ID
+        """
+        # Default base weights (ensure sum is < 1.0 to leave room for adjustments)
+        base_weight = 0.1
+        weights = {expert_id: base_weight for expert_id in self.experts.keys()}
+        
+        # Weights for each data type
+        remaining_weight = 1.0 - (base_weight * len(weights))
+        type_bonus = remaining_weight / 3  # Distribute remaining weight among data types
+        
+        # Adjust weights based on context and expert specialties
+        for expert_id, expert in self.experts.items():
+            specialty = getattr(expert, 'specialty', 'general')
+            
+            # Increase weight for experts with matching specialties
+            if context.get('has_physiological', False) and specialty == 'physiological':
+                weights[expert_id] += type_bonus
+            if context.get('has_behavioral', False) and specialty == 'behavioral':
+                weights[expert_id] += type_bonus
+            if context.get('has_environmental', False) and specialty == 'environmental':
+                weights[expert_id] += type_bonus
+                
+        return weights
+    
+    def _adjust_weights_by_quality(self, weights, quality_metrics):
+        """Adjust weights based on data quality metrics.
+        
+        Args:
+            weights: Base weights dictionary
+            quality_metrics: Dictionary mapping data domains to quality scores (0-1)
+            
+        Returns:
+            Dictionary of quality-adjusted weights
+        """
+        adjusted_weights = weights.copy()
+        
+        # Use instance quality_impact attribute (or default to 0.4 for backward compatibility)
+        quality_impact = getattr(self, 'quality_impact', 0.4)
+        
+        for expert_id, expert in self.experts.items():
+            specialty = getattr(expert, 'specialty', 'general')
+            
+            # Get quality score for this domain if available
+            domain_quality = quality_metrics.get(specialty, 0.8)  # Default to 0.8 if not specified
+            
+            # Quality score ranges from 0-1, transform to adjustment factor
+            # A quality of 1.0 gives full weight, 0.0 reduces weight significantly
+            quality_factor = 0.5 + (0.5 * domain_quality)
+            
+            # Apply quality adjustment
+            adjusted_weights[expert_id] *= (1.0 - quality_impact + (quality_impact * quality_factor))
+            
+            logger.debug(f"Expert {expert_id} ({specialty}) quality adjustment: {domain_quality:.2f} → factor: {quality_factor:.2f}")
+            
+        return adjusted_weights
+    
+    def _apply_patient_specialty_weights(self, weights, patient_specialty_weights):
+        """Apply patient-specific specialty weights to modify base weights.
+        
+        Args:
+            weights: Current expert weights
+            patient_specialty_weights: Dictionary of patient-specific specialty weights
+            
+        Returns:
+            Dictionary of adjusted weights based on patient history
+        """
+        adjusted_weights = weights.copy()
+        
+        # Iterate through experts and adjust weights based on their specialty and patient history
+        for expert_id, expert in self.experts.items():
+            specialty = getattr(expert, 'specialty', 'unknown')
+            if specialty in patient_specialty_weights and expert_id in adjusted_weights:
+                # Adjust the weight based on patient-specific specialty preference
+                adjustment_factor = patient_specialty_weights[specialty]
+                adjusted_weights[expert_id] *= adjustment_factor
+                logger.debug(f"Applied patient-specific adjustment for {specialty}: factor {adjustment_factor:.2f}")
+                
+        return adjusted_weights
+    
+    def _adjust_weights_for_drift(self, weights, recent_data, return_drift_info=False):
+        """Adjust weights based on drift detection results.
+        
+        Args:
+            weights: Current weights dictionary
+            recent_data: Dictionary mapping domains to recent data samples
+            
+        Returns:
+            Dictionary of drift-adjusted weights
+        """
+        adjusted_weights = weights.copy()
+        
+        # Skip if no drift detector available
+        if not self.drift_detector:
+            logger.warning("Drift detector not configured, skipping drift adjustment")
+            return adjusted_weights
+            
+        # Use instance drift_impact attribute (or default to 0.3 for backward compatibility)
+        drift_impact = getattr(self, 'drift_impact', 0.3)
+        
+        for expert_id, expert in self.experts.items():
+            specialty = getattr(expert, 'specialty', 'general')
+            
+            # Skip if no data for this domain
+            if specialty not in recent_data or specialty == 'general':
+                continue
+                
+            # Get recent data for this domain
+            domain_data = recent_data.get(specialty)
+            
+            if domain_data is None or not isinstance(domain_data, dict):
+                continue
+                
+            # Extract reference and current windows
+            reference_window = domain_data.get('reference_window')
+            current_window = domain_data.get('current_window')
+            
+            if reference_window is None or current_window is None:
+                continue
+                
+            try:
+                # Detect drift in this domain's data
+                is_drift, drift_score, p_value = self.drift_detector.detect_drift(
+                    current_window_X=current_window
+                )
+                
+                # Store the reference window for this domain if needed
+                if self.drift_detector.reference_window is None:
+                    self.drift_detector.reference_window = reference_window
+                
+                # Apply drift adjustment - reduce weight if drift detected
+                if is_drift:
+                    # Higher drift scores mean more drift, so we reduce the weight more
+                    drift_factor = 1.0 - min(0.8, drift_score)
+                    adjusted_weights[expert_id] *= (1.0 - drift_impact + (drift_impact * drift_factor))
+                    logger.info(f"Drift detected in {specialty} domain, score={drift_score:.3f}, p-value={p_value:.3f}, adjusting weight by factor {drift_factor:.3f}")
+            except Exception as e:
+                logger.error(f"Error in drift detection for {specialty}: {str(e)}")
+        
+        # Return drift info if requested
+        if return_drift_info:
+            drift_info = {}
+            for expert_id, expert in self.experts.items():
+                specialty = getattr(expert, 'specialty', 'general')
+                if specialty in recent_data and specialty != 'general':
+                    try:
+                        # Extract data for this domain
+                        current_window = recent_data.get(specialty, {}).get('current_window')
+                        if current_window is not None:
+                            # Get drift detection result
+                            is_drift, drift_score, p_value = self.drift_detector.detect_drift(
+                                current_window_X=current_window
+                            )
+                            drift_info[specialty] = (is_drift, drift_score, p_value)
+                    except Exception as e:
+                        logger.error(f"Error getting drift info for {specialty}: {str(e)}")
+            return adjusted_weights, drift_info
+                
+        return adjusted_weights
+        
     def set_algorithms(self, algorithms: List[Any]) -> None:
         """Set optimization algorithms to use"""
         logger.info(f"Setting algorithms: {algorithms}")
@@ -102,19 +389,22 @@ class MetaLearner:
         
         # Calculate scores and uncertainties
         for algo in self.algorithms:
-            if algo.name in phase_scores and phase_scores[algo.name]:
+            # Handle both string algorithm names and algorithm objects
+            algo_name = algo if isinstance(algo, str) else algo.name
+            
+            if algo_name in phase_scores and phase_scores[algo_name]:
                 # Use only performance from current phase
-                perf = phase_scores[algo.name][-5:]  # Last 5 performances
+                perf = phase_scores[algo_name][-5:]  # Last 5 performances
                 mean_perf = np.mean(perf)
                 std_perf = np.std(perf) if len(perf) > 1 else 1.0
                 scores.append(mean_perf)
                 uncertainties.append(std_perf)
-                logger.debug(f"{algo.name} phase {phase}: mean={mean_perf:.3f}, std={std_perf:.3f}")
+                logger.debug(f"{algo_name} phase {phase}: mean={mean_perf:.3f}, std={std_perf:.3f}")
             else:
                 # No performance in current phase - start fresh
                 scores.append(0)
                 uncertainties.append(2.0)
-                logger.debug(f"{algo.name}: no data in phase {phase}")
+                logger.debug(f"{algo_name}: no data in phase {phase}")
         
         # UCB acquisition with phase-aware exploration
         phase_steps = sum(len(scores) for scores in phase_scores.values())
@@ -139,11 +429,13 @@ class MetaLearner:
         for i, (score, uncertainty) in enumerate(zip(scores, uncertainties)):
             acq = score + exploration * uncertainty + noise[i]
             acquisition_scores.append(acq)
-            logger.debug(f"{self.algorithms[i].name} acquisition: score={score:.3f} + {exploration:.3f}*{uncertainty:.3f} + {noise[i]:.3f} = {acq:.3f}")
+            algo_name = self.algorithms[i] if isinstance(self.algorithms[i], str) else self.algorithms[i].name
+            logger.debug(f"{algo_name} acquisition: score={score:.3f} + {exploration:.3f}*{uncertainty:.3f} + {noise[i]:.3f} = {acq:.3f}")
         
         best_idx = np.argmax(acquisition_scores)
         selected_algo = self.algorithms[best_idx]
-        logger.info(f"Selected {selected_algo.name} for phase {phase} (score={float(acquisition_scores[best_idx]):.3f})")
+        algo_name = selected_algo if isinstance(selected_algo, str) else selected_algo.name
+        logger.info(f"Selected {algo_name} for phase {phase} (score={float(acquisition_scores[best_idx]):.3f})")
         return selected_algo
     
     def select_algorithm_rl(self, state: torch.Tensor) -> Any:
@@ -397,6 +689,10 @@ class MetaLearner:
         for i in range(n_iter):
             # Select algorithm
             algo = self.select_algorithm(context)
+            
+            # Convert string algorithm to SimpleAlgorithm instance
+            if isinstance(algo, str):
+                algo = self.SimpleAlgorithm(algo)
             
             try:
                 # Run optimization step
@@ -783,3 +1079,178 @@ class MetaLearner:
                           f"p-value={info['p_value']:.4f}")
         
         return detected_drifts
+
+    def save(self, filepath):
+        """Save the meta learner to a file.
+        
+        Args:
+            filepath: Path to save the meta learner to
+        """
+        import pickle
+        import os
+        
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        
+        # Save meta learner state
+        state = {
+            'method': self.method,
+            'selection_strategy': self.selection_strategy,
+            'exploration_factor': self.exploration_factor,
+            'history_weight': self.history_weight,
+            'best_config': self.best_config,
+            'best_score': self.best_score,
+            'feature_names': self.feature_names,
+            'phase_scores': self.phase_scores,
+            'algorithms': self.algorithms
+        }
+        
+        with open(filepath, 'wb') as f:
+            pickle.dump(state, f)
+        
+        logger.info(f"Saved meta learner to {filepath}")
+        
+    @classmethod
+    def load(cls, filepath):
+        """Load a meta learner from a file.
+        
+        Args:
+            filepath: Path to load the meta learner from
+            
+        Returns:
+            Loaded meta learner
+        """
+        import pickle
+        
+        with open(filepath, 'rb') as f:
+            state = pickle.load(f)
+        
+        # Create a new meta learner
+        meta_learner = cls(
+            method=state.get('method', 'bayesian'),
+            selection_strategy=state.get('selection_strategy'),
+            exploration_factor=state.get('exploration_factor', 0.2),
+            history_weight=state.get('history_weight', 0.7)
+        )
+        
+        # Restore state
+        meta_learner.best_config = state.get('best_config')
+        meta_learner.best_score = state.get('best_score', float('-inf'))
+        meta_learner.feature_names = state.get('feature_names')
+        meta_learner.phase_scores = state.get('phase_scores', {})
+        meta_learner.algorithms = state.get('algorithms', [])
+        
+        logger.info(f"Loaded meta learner from {filepath}")
+        return meta_learner
+
+    def set_patient(self, patient_id):
+        """Set the current patient for personalization.
+        
+        Args:
+            patient_id: Unique identifier for the patient
+            
+        Returns:
+            Dictionary containing the patient's memory data or None if personalization is disabled
+        """
+        if not self.enable_personalization:
+            logger.warning("Personalization is disabled")
+            return None
+            
+        memory_data = self.patient_memory.select_patient(patient_id)
+        self.current_patient_id = patient_id
+        return memory_data
+    
+    def update_patient_specialty_preference(self, specialty, weight_adjustment):
+        """Update patient-specific specialty preference.
+        
+        Args:
+            specialty: Data specialty (physiological, behavioral, environmental)
+            weight_adjustment: Adjustment factor for the specialty (>1 increases importance)
+            
+        Returns:
+            True if update was successful, False otherwise
+        """
+        if not self.enable_personalization or not self.current_patient_id:
+            logger.warning("Personalization is disabled or no patient selected")
+            return False
+            
+        specialty_weights = self.patient_memory.get_specialty_weights()
+        specialty_weights[specialty] = weight_adjustment
+        return self.patient_memory.update_specialty_weights(specialty_weights)
+        
+    def get_patient_history(self, history_type=None, limit=10):
+        """Get patient historical data.
+        
+        Args:
+            history_type: Type of history to retrieve ('quality', 'drift', 'performance', or None for all)
+            limit: Maximum number of entries to return per type
+            
+        Returns:
+            Dictionary containing the requested historical data
+        """
+        if not self.enable_personalization or not self.current_patient_id:
+            logger.warning("Personalization is disabled or no patient selected")
+            return {}
+            
+        history = {}
+        
+        if history_type in (None, 'quality'):
+            history['quality'] = {
+                'physiological': self.patient_memory.get_domain_quality_history('physiological', limit),
+                'behavioral': self.patient_memory.get_domain_quality_history('behavioral', limit),
+                'environmental': self.patient_memory.get_domain_quality_history('environmental', limit)
+            }
+            
+        if history_type in (None, 'drift'):
+            history['drift'] = {
+                'physiological': self.patient_memory.get_drift_history('physiological', limit),
+                'behavioral': self.patient_memory.get_drift_history('behavioral', limit),
+                'environmental': self.patient_memory.get_drift_history('environmental', limit)
+            }
+            
+        if history_type in (None, 'performance'):
+            history['performance'] = self.patient_memory.get_performance_history(limit)
+            
+        return history
+        
+    def track_performance(self, expert_id, performance_score, context=None):
+        """Track performance of a specific expert.
+        
+        Args:
+            expert_id: ID of the expert
+            performance_score: Score of the expert's performance
+            context: Optional dictionary with additional context information
+        """
+        self.algorithm_scores[expert_id] = performance_score
+        
+        # Store performance in patient memory if personalization is enabled
+        if self.enable_personalization and self.current_patient_id:
+            details = {
+                'expert_id': expert_id,
+                'score': performance_score
+            }
+            if context:
+                details['context'] = context
+            
+            self.patient_memory.store_performance(performance_score, details)
+            
+    def clear_patient_data(self, patient_id=None):
+        """Clear patient data from memory.
+        
+        Args:
+            patient_id: Specific patient ID to clear, or None to clear current patient
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.enable_personalization:
+            logger.warning("Personalization is disabled")
+            return False
+            
+        target_id = patient_id or self.current_patient_id
+        if not target_id:
+            logger.warning("No patient ID specified or selected")
+            return False
+            
+        # Clear patient memory
+        return self.patient_memory.clear_patient_data(target_id)

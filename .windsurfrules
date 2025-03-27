@@ -1,0 +1,35 @@
+
+# Coding pattern preferences
+
+- You can @ files here
+- You can use markdown but dont have to
+- Always prefer simple solution.
+- Avoid duplication of code whenever possible, which means checking other areas of the codebase that might already have similar code and functinality.
+- Write code that takes into account the different environments: dev, test, and prod.
+- You are careful to only make changes that are requested or you are confident are well understood and related to the cahnge being requested.
+- when fixing an issue or bug, do not introduce a new pattern or technology without first exhausting all options for the existing implementation. And if you finally do this, make sure to remove the old implementation afterwards so we don't have duplicate logic.
+- Keep the codebase very clean and organised
+- avoid writing scripts in files if possible, especially if the script is likely only to be run once
+- Avoid having files over 500 lines of code. Refractor at that point. 
+- Mocking data is only needed for tests, never mock fata for dev or prod. 
+- Never add stubbing or fata data patterns to code the affects the dev or prod environments. 
+- Never overwrite my .env file without first asking and confirnming. 
+
+# Your rule content
+
+- Python for the backend
+- html/js for the frontend
+- use JSON unless necessary to switch 
+- Separate databases for dev, test, prod
+- Elasticsearch for search, using elastic.co hostin
+- Elastic.co will have dev and prod indexed
+- Python Tests
+
+
+# Your rule content
+
+- Focus on areas of the code relevant to the task
+- do not touch code that is unrelated to the task
+- Write thorough tests for all major functionality
+- Avoid making major changes to the patterns and architecture of how a feature works, after it has shown to work well, unless explicitly instructed. 
+- Always think about what other methods and areas of code might be affected by code changes. 

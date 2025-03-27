@@ -1,0 +1,58 @@
+{
+    "environment": "test",
+    "output_dir": "./results",
+    "experts": {
+        "physiological_expert": {
+            "input_features": ["heart_rate", "blood_pressure", "body_temperature"],
+            "hidden_layers": [32, 16],
+            "dropout_rate": 0.2,
+            "learning_rate": 0.001,
+            "batch_size": 32
+        },
+        "behavioral_expert": {
+            "input_features": ["steps", "sleep_hours", "activity_level", "stress_level"],
+            "hidden_layers": [32, 16],
+            "dropout_rate": 0.2,
+            "learning_rate": 0.001,
+            "batch_size": 32
+        },
+        "environmental_expert": {
+            "input_features": ["weather_temp", "humidity", "pressure", "air_quality"],
+            "hidden_layers": [32, 16],
+            "dropout_rate": 0.2,
+            "learning_rate": 0.001,
+            "batch_size": 32
+        },
+        "medication_history_expert": {
+            "input_features": ["medication_taken", "medication_type", "medication_dose"],
+            "hidden_layers": [32, 16],
+            "dropout_rate": 0.2,
+            "learning_rate": 0.001,
+            "batch_size": 32
+        }
+    },
+    "gating": {
+        "weighting_strategy": "softmax",
+        "temperature": 0.5,
+        "weight_decay": 0.005,
+        "exploration_rate": 0.2
+    },
+    "integration": {
+        "normalize_weights": true,
+        "weight_smoothing": 0.1
+    },
+    "execution": {
+        "batch_size": 32,
+        "validation_split": 0.2,
+        "random_state": 42,
+        "early_stopping": {
+            "patience": 5,
+            "min_delta": 0.001
+        }
+    },
+    "data_quality": {
+        "missing_threshold": 0.2,
+        "outlier_threshold": 3.0,
+        "quality_metrics": ["completeness", "consistency"]
+    }
+}

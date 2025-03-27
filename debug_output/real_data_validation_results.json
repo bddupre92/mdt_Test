@@ -1,0 +1,145 @@
+{
+  "model_performance": {
+    "metrics": {
+      "Accuracy": 0.89,
+      "Precision": 0.85,
+      "Recall": 0.92,
+      "F1": 0.88,
+      "AUC": 0.91
+    }
+  },
+  "feature_importance": {
+    "importances": [
+      {
+        "feature": "Heart Rate",
+        "importance": 0.28,
+        "index": 0
+      },
+      {
+        "feature": "Hours of Sleep",
+        "importance": 0.22,
+        "index": 1
+      },
+      {
+        "feature": "Stress Level",
+        "importance": 0.18,
+        "index": 2
+      },
+      {
+        "feature": "Barometric Pressure",
+        "importance": 0.11,
+        "index": 3
+      },
+      {
+        "feature": "Physical Activity",
+        "importance": 0.09,
+        "index": 4
+      },
+      {
+        "feature": "Caffeine Intake",
+        "importance": 0.05,
+        "index": 5
+      },
+      {
+        "feature": "Hours of Screen Time",
+        "importance": 0.03,
+        "index": 6
+      },
+      {
+        "feature": "Hydration Level",
+        "importance": 0.02,
+        "index": 7
+      },
+      {
+        "feature": "Ambient Light",
+        "importance": 0.01,
+        "index": 8
+      },
+      {
+        "feature": "Medication Adherence",
+        "importance": 0.01,
+        "index": 9
+      }
+    ]
+  },
+  "drift_detection": {
+    "detected": true,
+    "magnitude": 0.27,
+    "timepoint": 30,
+    "features_affected": [
+      "Heart Rate",
+      "Stress Level",
+      "Barometric Pressure"
+    ]
+  },
+  "clinical_outcomes": {
+    "baseline": {
+      "Group A": 65,
+      "Group B": 70,
+      "Group C": 62,
+      "Group D": 68
+    },
+    "moe_optimized": {
+      "Group A": 78,
+      "Group B": 85,
+      "Group C": 75,
+      "Group D": 83
+    }
+  },
+  "optimizer_performance": {
+    "DE": {
+      "Case A": 0.82,
+      "Case B": 0.75,
+      "Case C": 0.88,
+      "Case D": 0.79,
+      "Case E": 0.86
+    },
+    "PSO": {
+      "Case A": 0.78,
+      "Case B": 0.85,
+      "Case C": 0.79,
+      "Case D": 0.84,
+      "Case E": 0.81
+    },
+    "GWO": {
+      "Case A": 0.8,
+      "Case B": 0.82,
+      "Case C": 0.75,
+      "Case D": 0.88,
+      "Case E": 0.84
+    },
+    "Meta-Optimizer": {
+      "Case A": 0.85,
+      "Case B": 0.86,
+      "Case C": 0.89,
+      "Case D": 0.88,
+      "Case E": 0.87
+    }
+  },
+  "meta_learner_weights": {
+    "Physiological Dominant": {
+      "Physiological Expert": 0.65,
+      "Environmental Expert": 0.15,
+      "Behavioral Expert": 0.1,
+      "Medical History Expert": 0.1
+    },
+    "Environmental Dominant": {
+      "Physiological Expert": 0.2,
+      "Environmental Expert": 0.6,
+      "Behavioral Expert": 0.1,
+      "Medical History Expert": 0.1
+    },
+    "Behavioral Dominant": {
+      "Physiological Expert": 0.15,
+      "Environmental Expert": 0.1,
+      "Behavioral Expert": 0.65,
+      "Medical History Expert": 0.1
+    },
+    "Mixed": {
+      "Physiological Expert": 0.3,
+      "Environmental Expert": 0.25,
+      "Behavioral Expert": 0.25,
+      "Medical History Expert": 0.2
+    }
+  }
+}

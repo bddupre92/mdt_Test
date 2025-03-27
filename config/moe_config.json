@@ -1,0 +1,53 @@
+{
+  "experts": {
+    "behavioral": {
+      "behavior_cols": ["sleep_hours", "activity_level", "stress_level"],
+      "patient_id_col": "patient_id",
+      "timestamp_col": "date",
+      "include_sleep": true,
+      "include_activity": true,
+      "include_stress": true
+    },
+    "environmental": {
+      "env_cols": ["temperature", "humidity", "pressure", "air_quality"],
+      "location_col": "location",
+      "timestamp_col": "date"
+    },
+    "medication_history": {
+      "medication_cols": ["medication_name", "dosage", "frequency"],
+      "patient_id_col": "patient_id",
+      "timestamp_col": "date"
+    },
+    "physiological": {
+      "vital_cols": ["heart_rate", "blood_pressure", "body_temperature"],
+      "patient_id_col": "patient_id",
+      "timestamp_col": "date",
+      "normalize_vitals": true
+    }
+  },
+  "gating": {
+    "type": "quality_aware",
+    "params": {
+      "quality_thresholds": {"completeness": 0.5, "consistency": 0.6},
+      "adjustment_factors": {"completeness": 0.8, "consistency": 0.7}
+    }
+  },
+  "integration": {
+    "strategy": "weighted_average",
+    "params": {
+      "confidence_threshold": 0.7,
+      "smooth_weights": true
+    }
+  },
+  "training": {
+    "batch_size": 32,
+    "epochs": 10,
+    "learning_rate": 0.001,
+    "validation_split": 0.2
+  },
+  "environment": "dev",
+  "logging": {
+    "level": "INFO",
+    "save_metrics": true
+  }
+}

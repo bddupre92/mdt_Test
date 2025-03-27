@@ -97,6 +97,193 @@ class PersonalizationLayer:
             json.dump(self.patient_profiles[patient_id], f, cls=NumpyEncoder, indent=2)
         logger.info(f"Saved profile for patient {patient_id}")
     
+    def has_patient_profile(self, patient_id: str) -> bool:
+        """Check if a patient profile exists.
+        
+        Parameters:
+        -----------
+        patient_id : str
+            Patient identifier
+            
+        Returns:
+        --------
+        bool
+            True if the patient profile exists, False otherwise
+        """
+        return patient_id in self.patient_profiles
+    
+    def register_patient_profile(self, patient_id: str, profile_data: Dict[str, Any]) -> None:
+        """Register a patient profile for personalized adaptations.
+        
+        Parameters:
+        -----------
+        patient_id : str
+            Patient identifier
+        profile_data : Dict[str, Any]
+            Patient profile data including demographics and preferences
+        """
+        if patient_id in self.patient_profiles:
+            # Update existing profile
+            self.patient_profiles[patient_id].update(profile_data)
+            logger.info(f"Updated existing profile for patient {patient_id}")
+        else:
+            # Create new profile
+            self.patient_profiles[patient_id] = {
+                "patient_id": patient_id,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                **profile_data
+            }
+            logger.info(f"Created new profile for patient {patient_id}")
+        
+        # Save the profile
+        self._save_patient_profile(patient_id)
+    
+    def adapt_quality_scores(self, quality_scores: Dict[str, float], patient_id: str, data: pd.DataFrame) -> Dict[str, float]:
+        """Adapt quality scores based on patient-specific characteristics.
+        
+        Parameters:
+        -----------
+        quality_scores : Dict[str, float]
+            Original quality scores
+        patient_id : str
+            Patient identifier
+        data : pd.DataFrame
+            Input data for the current prediction
+            
+        Returns:
+        --------
+        Dict[str, float]
+            Adapted quality scores
+        """
+        if not self.has_patient_profile(patient_id):
+            logger.warning(f"No profile exists for patient {patient_id}, returning original scores")
+            return quality_scores
+        
+        profile = self.patient_profiles[patient_id]
+        adapted_scores = quality_scores.copy()
+        
+        # Apply adaptations based on patient profile
+        if 'response_patterns' in profile:
+            patterns = profile['response_patterns']
+            
+            # Apply adaptations based on known response patterns
+            if 'completeness_sensitivity' in patterns:
+                if 'completeness' in adapted_scores:
+                    factor = patterns['completeness_sensitivity']
+                    adapted_scores['completeness'] = min(1.0, adapted_scores['completeness'] * factor)
+            
+            if 'consistency_sensitivity' in patterns:
+                if 'consistency' in adapted_scores:
+                    factor = patterns['consistency_sensitivity']
+                    adapted_scores['consistency'] = min(1.0, adapted_scores['consistency'] * factor)
+            
+            if 'timeliness_sensitivity' in patterns:
+                if 'timeliness' in adapted_scores:
+                    factor = patterns['timeliness_sensitivity']
+                    adapted_scores['timeliness'] = min(1.0, adapted_scores['timeliness'] * factor)
+        
+        # Record adaptation in history
+        if 'adaptation_history' not in profile:
+            profile['adaptation_history'] = []
+        
+        profile['adaptation_history'].append({
+            'timestamp': datetime.now().isoformat(),
+            'original_scores': quality_scores,
+            'adapted_scores': adapted_scores
+        })
+        
+        # Trim history if it gets too long
+        if len(profile['adaptation_history']) > 100:
+            profile['adaptation_history'] = profile['adaptation_history'][-100:]
+        
+        # Update profile's updated_at timestamp
+        profile['updated_at'] = datetime.now().isoformat()
+        
+        # Save the updated profile
+        self._save_patient_profile(patient_id)
+        
+        return adapted_scores
+    
+    def get_quality_adaptation_factors(self, patient_id: str, data: pd.DataFrame) -> Dict[str, float]:
+        """Get quality adaptation factors for a specific patient.
+        
+        Parameters:
+        -----------
+        patient_id : str
+            Patient identifier
+        data : pd.DataFrame
+            Input data for the current prediction
+            
+        Returns:
+        --------
+        Dict[str, float]
+            Dictionary of adaptation factors for each quality metric
+        """
+        if not self.has_patient_profile(patient_id):
+            # Return default factors (no adaptation)
+            return {'completeness': 1.0, 'consistency': 1.0, 'timeliness': 1.0}
+        
+        profile = self.patient_profiles[patient_id]
+        adaptation_factors = {'completeness': 1.0, 'consistency': 1.0, 'timeliness': 1.0}
+        
+        # Apply adaptations based on patient profile
+        if 'response_patterns' in profile:
+            patterns = profile['response_patterns']
+            
+            # Get adaptation factors from response patterns
+            if 'completeness_sensitivity' in patterns:
+                adaptation_factors['completeness'] = patterns['completeness_sensitivity']
+            
+            if 'consistency_sensitivity' in patterns:
+                adaptation_factors['consistency'] = patterns['consistency_sensitivity']
+            
+            if 'timeliness_sensitivity' in patterns:
+                adaptation_factors['timeliness'] = patterns['timeliness_sensitivity']
+        
+        # Apply additional context-specific adaptations based on current data
+        # This could analyze the current data and adjust factors accordingly
+        # For example, if we detect that the patient has more missing values than usual,
+        # we might increase the completeness factor to make the system more sensitive to completeness issues
+        
+        # For demonstration, we'll just use a simple heuristic based on data characteristics
+        if data is not None and not data.empty:
+            # Check for missing values
+            missing_rate = data.isnull().mean().mean()
+            if missing_rate > 0.2:  # If more than 20% missing values
+                adaptation_factors['completeness'] *= 1.2  # Increase completeness sensitivity
+            
+            # Check for data consistency (using standard deviation as a proxy)
+            try:
+                numeric_cols = data.select_dtypes(include=['number']).columns
+                if len(numeric_cols) > 0:
+                    avg_std = data[numeric_cols].std().mean()
+                    if avg_std > 1.5:  # If high standard deviation
+                        adaptation_factors['consistency'] *= 1.2  # Increase consistency sensitivity
+            except Exception:
+                pass  # Ignore errors in consistency calculation
+        
+        # Record this adaptation in the profile
+        if 'adaptation_factors_history' not in profile:
+            profile['adaptation_factors_history'] = []
+        
+        profile['adaptation_factors_history'].append({
+            'timestamp': datetime.now().isoformat(),
+            'factors': adaptation_factors
+        })
+        
+        # Trim history if it gets too long
+        if len(profile['adaptation_factors_history']) > 100:
+            profile['adaptation_factors_history'] = profile['adaptation_factors_history'][-100:]
+        
+        # Update profile's updated_at timestamp
+        profile['updated_at'] = datetime.now().isoformat()
+        
+        # Save the updated profile
+        self._save_patient_profile(patient_id)
+        
+        return adaptation_factors
+    
     def create_patient_profile(self, 
                               patient_id: str, 
                               demographic_data: Dict[str, Any] = None,

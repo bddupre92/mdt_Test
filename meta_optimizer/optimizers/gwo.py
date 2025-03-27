@@ -8,7 +8,11 @@ import numpy as np
 from typing import Dict, Any, Optional, List, Tuple, Callable
 from .base_optimizer import BaseOptimizer
 import time
+import logging
 from tqdm.auto import tqdm
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class GreyWolfOptimizer(BaseOptimizer):
     def __init__(self,
@@ -216,6 +220,39 @@ class GreyWolfOptimizer(BaseOptimizer):
             objective_func: Function to minimize
             context: Optional problem context
         """
+        # Check if alpha, beta, and delta wolves are initialized
+        if self.alpha_wolf is None or self.beta_wolf is None or self.delta_wolf is None:
+            # Initialize population if not already done
+            if len(self.population) == 0:
+                self.population = self._init_population()
+                
+            # Evaluate all individuals
+            scores = np.array([objective_func(ind) for ind in self.population])
+            self.evaluations += len(self.population)
+            
+            # Sort population by scores
+            indices = np.argsort(scores)
+            self.population = self.population[indices]
+            sorted_scores = scores[indices]
+            
+            # Initialize alpha, beta, and delta wolves
+            self.alpha_wolf = self.population[0].copy()
+            self.alpha_score = sorted_scores[0]
+            
+            self.beta_wolf = self.population[1].copy() if len(self.population) > 1 else self.alpha_wolf.copy()
+            self.beta_score = sorted_scores[1] if len(sorted_scores) > 1 else self.alpha_score
+            
+            self.delta_wolf = self.population[2].copy() if len(self.population) > 2 else self.beta_wolf.copy()
+            self.delta_score = sorted_scores[2] if len(sorted_scores) > 2 else self.beta_score
+            
+            # Initialize best solution
+            self.best_solution = self.alpha_wolf.copy()
+            self.best_score = self.alpha_score
+            
+            # Log initialization
+            logger.debug(f"Initialized wolves: alpha={self.alpha_score:.6f}, beta={self.beta_score:.6f}, delta={self.delta_score:.6f}")
+            return
+        
         # Update a parameter
         self.a = self.a_init - self.a_init * (self.evaluations / self.max_evals)
         
@@ -253,35 +290,42 @@ class GreyWolfOptimizer(BaseOptimizer):
             self.evaluations += 1
             
             # Update position if better
-            if score_new < self.population_scores[i]:
+            # Ensure we're comparing scalar values, not arrays
+            population_score = float(self.population_scores[i]) if isinstance(self.population_scores[i], np.ndarray) else self.population_scores[i]
+            score_new_scalar = float(score_new) if isinstance(score_new, np.ndarray) else score_new
+            best_score_scalar = float(self.best_score) if isinstance(self.best_score, np.ndarray) else self.best_score
+            beta_score_scalar = float(self.beta_score) if isinstance(self.beta_score, np.ndarray) else self.beta_score
+            delta_score_scalar = float(self.delta_score) if isinstance(self.delta_score, np.ndarray) else self.delta_score
+            
+            if score_new_scalar < population_score:
                 self.population[i] = X_new
-                self.population_scores[i] = score_new
+                self.population_scores[i] = score_new_scalar
                 
                 # Update alpha, beta, delta wolves if needed
-                if score_new < self.best_score:
+                if score_new_scalar < best_score_scalar:
                     # Update delta to beta, beta to alpha, and alpha to new best
                     self.delta_wolf = self.beta_wolf.copy()
-                    self.delta_score = self.beta_score
+                    self.delta_score = beta_score_scalar
                     
                     self.beta_wolf = self.alpha_wolf.copy()
-                    self.beta_score = self.alpha_score
+                    self.beta_score = best_score_scalar
                     
                     self.alpha_wolf = X_new.copy()
-                    self.alpha_score = score_new
+                    self.alpha_score = score_new_scalar
                     
                     self.best_solution = X_new.copy()
-                    self.best_score = score_new
-                elif score_new < self.beta_score:
+                    self.best_score = score_new_scalar
+                elif score_new_scalar < beta_score_scalar:
                     # Update delta to beta and beta to new
                     self.delta_wolf = self.beta_wolf.copy()
-                    self.delta_score = self.beta_score
+                    self.delta_score = beta_score_scalar
                     
                     self.beta_wolf = X_new.copy()
-                    self.beta_score = score_new
-                elif score_new < self.delta_score:
+                    self.beta_score = score_new_scalar
+                elif score_new_scalar < delta_score_scalar:
                     # Update delta to new
                     self.delta_wolf = X_new.copy()
-                    self.delta_score = score_new
+                    self.delta_score = score_new_scalar
     
     def _record_history(self):
         """
@@ -366,7 +410,94 @@ class GreyWolfOptimizer(BaseOptimizer):
         
         self.end_time = time.time()
         return self.best_solution, self.best_score
+        
+    def _check_convergence(self) -> bool:
+        """Check if optimization should stop.
+        
+        Overrides the base class method to handle array comparisons properly.
+        """
+        # Check if we've reached the maximum number of evaluations
+        if self.max_evals and self.evaluations >= self.max_evals:
+            return True
+            
+        # Check if we've found an optimal solution
+        if isinstance(self.best_score, (int, float)) and self.best_score < 1e-8:
+            return True
+            
+        # Check for stagnation
+        if len(self.convergence_curve) > 50:
+            recent_improvement = (self.convergence_curve[-50] - 
+                                self.convergence_curve[-1])
+            if isinstance(recent_improvement, (int, float)) and recent_improvement < 1e-8:
+                return True
+                
+        return False
 
+    def run(self, objective_func: Optional[Callable] = None, max_evals: Optional[int] = None, record_history: bool = True) -> Dict[str, Any]:
+        """
+        Run Grey Wolf optimization with proper error handling.
+        
+        Args:
+            objective_func: Optional objective function to use
+            max_evals: Maximum number of function evaluations
+            record_history: Whether to record convergence history
+            
+        Returns:
+            Dictionary containing optimization results
+        """
+        if objective_func is not None:
+            self.set_objective(objective_func)
+            
+        if max_evals is not None:
+            self.max_evals = max_evals
+            
+        self.start_time = time.time()
+        
+        try:
+            # Run the optimize method which contains the main optimization logic
+            best_solution, best_score = self.optimize(self.objective_func, max_evals, record_history)
+            
+            # Ensure best_solution and best_score are scalar values, not arrays
+            if isinstance(best_solution, np.ndarray):
+                best_solution = best_solution.tolist()
+                
+            if isinstance(best_score, np.ndarray):
+                best_score = float(best_score)
+            
+            self.end_time = time.time()
+            runtime = self.end_time - self.start_time
+            
+            # Prepare results
+            results = {
+                'solution': best_solution,
+                'score': best_score,
+                'best_score': best_score,
+                'evaluations': self.evaluations,
+                'runtime': runtime,
+                'convergence': self.convergence_curve,
+                'history': self.history if hasattr(self, 'history') else [],
+                'success_rate': float(np.mean(self.success_history)) if len(self.success_history) > 0 else 0.0,
+                'final_diversity': self.diversity_history[-1] if len(self.diversity_history) > 0 else 0.0
+            }
+            
+            return results
+            
+        except Exception as e:
+            self.end_time = time.time()
+            runtime = self.end_time - self.start_time
+            
+            # Log the error and return partial results
+            logger.error(f"Error in GWO optimization: {str(e)}")
+            
+            return {
+                'solution': None,
+                'score': float('inf'),
+                'best_score': float('inf'),
+                'evaluations': self.evaluations,
+                'runtime': runtime,
+                'error': str(e)
+            }
+    
     def get_parameters(self) -> Dict[str, Any]:
         """
         Get optimizer parameters.

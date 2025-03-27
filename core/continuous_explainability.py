@@ -30,7 +30,8 @@ class ContinuousExplainabilityPipeline:
                 explainer_types: List[str] = ['shap'], 
                 update_interval: int = 60,  # seconds
                 max_history: int = 100,
-                results_dir: str = 'results/continuous_explainability'):
+                results_dir: str = 'results/continuous_explainability',
+                counterfactual_method: str = 'alibi'):
         """
         Initialize the continuous explainability pipeline
         
@@ -49,6 +50,7 @@ class ContinuousExplainabilityPipeline:
         self.update_interval = update_interval
         self.max_history = max_history
         self.results_dir = Path(results_dir)
+        self.counterfactual_method = counterfactual_method
         self.results_dir.mkdir(parents=True, exist_ok=True)
         
         # Explanation history
@@ -85,7 +87,14 @@ class ContinuousExplainabilityPipeline:
             
             for explainer_type in self.explainer_types:
                 try:
-                    explainers[explainer_type] = factory.create_explainer(explainer_type)
+                    # Add counterfactual method parameter for counterfactual explainer
+                    if explainer_type == 'counterfactual':
+                        explainers[explainer_type] = factory.create_explainer(
+                            explainer_type, 
+                            method=self.counterfactual_method
+                        )
+                    else:
+                        explainers[explainer_type] = factory.create_explainer(explainer_type)
                     logger.info(f"Loaded {explainer_type} explainer for continuous monitoring")
                 except Exception as e:
                     logger.warning(f"Could not load {explainer_type} explainer: {str(e)}")
@@ -292,51 +301,124 @@ class ContinuousExplainabilityPipeline:
             Explanations to visualize
         """
         try:
+            # Prepare visualizations for interactive report
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_data = {}
+            
             for explainer_type, explanation in explanations.items():
-                # Skip if no feature importance
-                if 'feature_importance' not in explanation:
-                    continue
+                # Handle different explainer types
+                if explainer_type == 'counterfactual':
+                    # Handle counterfactual explanations
+                    if 'raw_explanation' in explanation:
+                        cf_data = explanation['raw_explanation']
+                        
+                        # Create counterfactual visualization
+                        plt.figure(figsize=(12, 8))
+                        
+                        # Extract counterfactual data for visualization
+                        if isinstance(cf_data, dict) and 'counterfactuals' in cf_data:
+                            # Process counterfactual data
+                            cf_instances = cf_data['counterfactuals']
+                            original = cf_data.get('original_instance', [])
+                            
+                            # Create feature comparison plot
+                            if cf_instances and original:
+                                # Prepare data for plotting
+                                feature_names = list(cf_instances[0].keys()) if isinstance(cf_instances[0], dict) else [f'Feature {i}' for i in range(len(cf_instances[0]))]
+                                
+                                # Plot original vs counterfactual
+                                plt.subplot(1, 1, 1)
+                                plt.title('Original vs Counterfactual')
+                                
+                                # Save for interactive report
+                                report_data[f'counterfactual_{timestamp}'] = {
+                                    'type': 'counterfactual',
+                                    'original': original,
+                                    'counterfactuals': cf_instances,
+                                    'feature_names': feature_names
+                                }
+                        
+                        # Save visualization
+                        viz_path = self.results_dir / f"explanation_{explainer_type}_{timestamp}.png"
+                        plt.savefig(viz_path)
+                        plt.close()
+                        
+                        logger.info(f"Saved {explainer_type} explanation visualization to {viz_path}")
+                else:
+                    # Handle other explainer types (SHAP, etc.)
+                    if 'feature_importance' not in explanation:
+                        continue
+                        
+                    feature_importance = explanation['feature_importance']
                     
-                feature_importance = explanation['feature_importance']
-                
-                # Skip if feature importance is empty
-                if not feature_importance:
-                    continue
-                
-                # Create visualization
-                plt.figure(figsize=(10, 6))
-                
-                if isinstance(feature_importance, dict):
-                    # Sort features by absolute importance
-                    features = [(k, v) for k, v in feature_importance.items()]
-                    features.sort(key=lambda x: abs(x[1]), reverse=True)
+                    # Skip if feature importance is empty
+                    if not feature_importance:
+                        continue
                     
-                    # Plot top 10 features
-                    top_features = features[:10]
-                    names = [f[0] for f in top_features]
-                    values = [f[1] for f in top_features]
+                    # Create visualization
+                    plt.figure(figsize=(10, 6))
                     
-                    # Create horizontal bar chart
-                    plt.barh(names, values)
-                    plt.xlabel('Feature Importance')
-                    plt.title(f'Top Features - {explainer_type} ({datetime.now().strftime("%Y-%m-%d %H:%M:%S")})')
-                    plt.grid(axis='x', linestyle='--', alpha=0.6)
+                    if isinstance(feature_importance, dict):
+                        # Sort features by absolute importance
+                        features = [(k, v) for k, v in feature_importance.items()]
+                        features.sort(key=lambda x: abs(x[1]), reverse=True)
+                        
+                        # Plot top 10 features
+                        top_features = features[:10]
+                        names = [f[0] for f in top_features]
+                        values = [f[1] for f in top_features]
+                        
+                        # Create horizontal bar chart
+                        plt.barh(names, values)
+                        plt.xlabel('Feature Importance')
+                        plt.title(f'Top Features - {explainer_type} ({datetime.now().strftime("%Y-%m-%d %H:%M:%S")})')
+                        plt.grid(axis='x', linestyle='--', alpha=0.6)
+                        
+                        # Save for interactive report
+                        report_data[f'{explainer_type}_{timestamp}'] = {
+                            'type': 'feature_importance',
+                            'features': names,
+                            'values': values
+                        }
+                        
+                    elif isinstance(feature_importance, (list, np.ndarray)):
+                        # Plot feature importance as bar chart
+                        plt.bar(range(len(feature_importance)), feature_importance)
+                        plt.xlabel('Feature Index')
+                        plt.ylabel('Feature Importance')
+                        plt.title(f'Feature Importance - {explainer_type} ({datetime.now().strftime("%Y-%m-%d %H:%M:%S")})')
+                        plt.grid(axis='y', linestyle='--', alpha=0.6)
+                        
+                        # Save for interactive report
+                        report_data[f'{explainer_type}_{timestamp}'] = {
+                            'type': 'feature_importance',
+                            'features': [f'Feature {i}' for i in range(len(feature_importance))],
+                            'values': feature_importance.tolist() if isinstance(feature_importance, np.ndarray) else feature_importance
+                        }
                     
-                elif isinstance(feature_importance, (list, np.ndarray)):
-                    # Plot feature importance as bar chart
-                    plt.bar(range(len(feature_importance)), feature_importance)
-                    plt.xlabel('Feature Index')
-                    plt.ylabel('Feature Importance')
-                    plt.title(f'Feature Importance - {explainer_type} ({datetime.now().strftime("%Y-%m-%d %H:%M:%S")})')
-                    plt.grid(axis='y', linestyle='--', alpha=0.6)
-                
-                # Save visualization
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                viz_path = self.results_dir / f"explanation_{explainer_type}_{timestamp}.png"
-                plt.savefig(viz_path)
-                plt.close()
-                
-                logger.info(f"Saved {explainer_type} explanation visualization to {viz_path}")
+                    # Save visualization
+                    viz_path = self.results_dir / f"explanation_{explainer_type}_{timestamp}.png"
+                    plt.savefig(viz_path)
+                    plt.close()
+                    
+                    logger.info(f"Saved {explainer_type} explanation visualization to {viz_path}")
+            
+            # Generate interactive HTML report if we have data
+            if report_data:
+                try:
+                    # Import the interactive report generator
+                    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'tests'))
+                    from moe_interactive_report import generate_interactive_report
+                    
+                    # Generate the report
+                    report_path = generate_interactive_report(
+                        {'explanations': report_data},
+                        str(self.results_dir)
+                    )
+                    
+                    logger.info(f"Generated interactive explanation report at {report_path}")
+                except Exception as e:
+                    logger.error(f"Could not generate interactive report: {str(e)}")
                 
         except Exception as e:
             logger.error(f"Could not visualize explanations: {str(e)}")

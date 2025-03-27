@@ -1,0 +1,10 @@
+{
+  "function": "example_generate_report",
+  "timestamp": "20250323_231000",
+  "parameters": {
+    "results_path": "",
+    "output_format": "html",
+    "include_plots": "True"
+  },
+  "result_file": "framework_runs/example_generate_report_20250323_231000.pkl"
+}

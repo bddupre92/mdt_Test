@@ -1,0 +1,76 @@
+{
+  "patient_id": "patient002",
+  "created_at": "2025-03-25T06:54:59.080109",
+  "last_updated": "2025-03-25T06:55:50.705322",
+  "expert_weights": {
+    "expert1": 0.23396880415944543,
+    "expert2": 0.4562391681109185,
+    "expert3": 0.22746967071057195,
+    "expert4": 0.08232235701906414
+  },
+  "domain_quality_history": {
+    "physiological": [
+      {
+        "timestamp": "2025-03-25T06:54:59.080284",
+        "score": 0.6
+      },
+      {
+        "timestamp": "2025-03-25T06:54:59.080718",
+        "score": 0.6
+      },
+      {
+        "timestamp": "2025-03-25T06:55:50.704572",
+        "score": 0.6
+      },
+      {
+        "timestamp": "2025-03-25T06:55:50.705030",
+        "score": 0.6
+      }
+    ],
+    "behavioral": [
+      {
+        "timestamp": "2025-03-25T06:54:59.080369",
+        "score": 0.9
+      },
+      {
+        "timestamp": "2025-03-25T06:54:59.080794",
+        "score": 0.9
+      },
+      {
+        "timestamp": "2025-03-25T06:55:50.704648",
+        "score": 0.9
+      },
+      {
+        "timestamp": "2025-03-25T06:55:50.705152",
+        "score": 0.9
+      }
+    ],
+    "environmental": [
+      {
+        "timestamp": "2025-03-25T06:54:59.080449",
+        "score": 0.5
+      },
+      {
+        "timestamp": "2025-03-25T06:54:59.080869",
+        "score": 0.5
+      },
+      {
+        "timestamp": "2025-03-25T06:55:50.704723",
+        "score": 0.5
+      },
+      {
+        "timestamp": "2025-03-25T06:55:50.705240",
+        "score": 0.5
+      }
+    ]
+  },
+  "drift_history": {
+    "physiological": [],
+    "behavioral": [],
+    "environmental": []
+  },
+  "performance_history": [],
+  "expert_specialty_weights": {
+    "behavioral": 1.8
+  }
+}

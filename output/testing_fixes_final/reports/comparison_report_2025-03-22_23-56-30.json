@@ -1,0 +1,175 @@
+{
+  "report_timestamp": "2025-03-22T23:56:30.923326",
+  "report_summary": {
+    "total_comparisons": 3,
+    "features_compared": [
+      "heart_rate",
+      "stress_level",
+      "migraine_severity"
+    ],
+    "overall_similarity_score": 0.18200575094390628
+  },
+  "comparison_results": {
+    "distributions": {
+      "heart_rate": {
+        "real_stats": {
+          "mean": 74.96,
+          "median": 75.0,
+          "std": 5.623462752907085,
+          "min": 65.0,
+          "max": 85.0
+        },
+        "synthetic_stats": {
+          "mean": 75.33148429550366,
+          "median": 74.64700573691341,
+          "std": 5.274839026681839,
+          "min": 66.69163438750465,
+          "max": 88.36251657469381
+        },
+        "test_results": {
+          "ks_test": {
+            "statistic": 0.16,
+            "p_value": 0.914993219397903,
+            "significant_difference": false
+          },
+          "t_test": {
+            "statistic": -0.24090429423626947,
+            "p_value": 0.8106595290904202,
+            "significant_difference": false
+          }
+        }
+      },
+      "stress_level": {
+        "real_stats": {
+          "mean": 4.4,
+          "median": 5.0,
+          "std": 1.8027756377319946,
+          "min": 1.0,
+          "max": 8.0
+        },
+        "synthetic_stats": {
+          "mean": 4.113318446738534,
+          "median": 3.8796132381338992,
+          "std": 2.1539741317573253,
+          "min": 1.10395214513114,
+          "max": 8.347723379438882
+        },
+        "test_results": {
+          "ks_test": {
+            "statistic": 0.2,
+            "p_value": 0.7102038997076623,
+            "significant_difference": false
+          },
+          "t_test": {
+            "statistic": 0.5103194664422702,
+            "p_value": 0.612238856314216,
+            "significant_difference": false
+          }
+        }
+      },
+      "migraine_severity": {
+        "real_stats": {
+          "mean": 2.12,
+          "median": 2.0,
+          "std": 2.047763007121022,
+          "min": 0.0,
+          "max": 7.0
+        },
+        "synthetic_stats": {
+          "mean": 0.48,
+          "median": 0.0,
+          "std": 0.5099019513592785,
+          "min": 0.0,
+          "max": 1.0
+        },
+        "test_results": {
+          "ks_test": {
+            "statistic": 0.56,
+            "p_value": 0.0005909905798671092,
+            "significant_difference": true
+          },
+          "t_test": {
+            "statistic": 3.8857177451803655,
+            "p_value": 0.0005993830443213284,
+            "significant_difference": true
+          }
+        }
+      }
+    },
+    "correlations": {
+      "correlation_mse": 1.4245593273802906,
+      "correlation_similarity": -0.6852234277729607,
+      "correlation_p_value": 0.5194090998859777,
+      "features_used": [
+        "heart_rate",
+        "stress_level",
+        "migraine_severity"
+      ]
+    },
+    "model_performance": {
+      "synthetic_to_real": {
+        "success": true,
+        "metrics": {
+          "mse": 8.328759999999999,
+          "r2": -1.068948728139905
+        }
+      },
+      "real_to_synthetic": {
+        "success": true,
+        "metrics": {
+          "mse": 6.269717263333333,
+          "r2": -24.119059548611105
+        }
+      },
+      "synthetic_only": {
+        "success": true,
+        "metrics": {
+          "mse": 0.021552,
+          "r2": 0.9136538461538461
+        }
+      },
+      "real_only": {
+        "success": true,
+        "metrics": {
+          "mse": 0.21989303707482996,
+          "r2": 0.9453763322051794
+        }
+      },
+      "features_used": [
+        "heart_rate",
+        "stress_level"
+      ],
+      "target_column": "migraine_severity",
+      "task_type": "regression"
+    }
+  },
+  "comparison_history": [
+    {
+      "comparison_type": "feature_distributions",
+      "features_compared": [
+        "heart_rate",
+        "stress_level",
+        "migraine_severity"
+      ],
+      "timestamp": "2025-03-22T23:56:30.588727"
+    },
+    {
+      "comparison_type": "correlation_structure",
+      "features_compared": [
+        "heart_rate",
+        "stress_level",
+        "migraine_severity"
+      ],
+      "timestamp": "2025-03-22T23:56:30.752688"
+    },
+    {
+      "comparison_type": "model_performance",
+      "features_compared": [
+        "heart_rate",
+        "stress_level"
+      ],
+      "target_column": "migraine_severity",
+      "timestamp": "2025-03-22T23:56:30.923295"
+    }
+  ]
+}

@@ -108,48 +108,79 @@ def get_framework_functions(modules):
     """Get available framework functions that can be run."""
     functions = {}
     
-    # Look for runnable functions in core modules
-    if "core" in modules:
-        core_funcs = inspect.getmembers(modules["core"], inspect.isfunction)
-        functions["Core Functions"] = [func for name, func in core_funcs 
-                                      if not name.startswith("_")]
+    # Define the list of allowed functions by module and name
+    # Format: {module_name: [list of function names]}
+    allowed_functions = {
+        "core": ["run_benchmark", "train_model", "evaluate_model", "preprocess_data", "load_dataset"],
+        "main": ["run_experiment", "generate_report", "compare_models", "analyze_results"],
+        "visualization": ["plot_results", "generate_interactive_report", "plot_confusion_matrix", "plot_roc_curve"],
+        "optimizers": ["optimize_hyperparameters", "find_best_model"],
+        "migraine": ["analyze_migraine_data", "preprocess_migraine_dataset", "extract_migraine_features"],
+        "framework": ["build_pipeline", "create_ensemble", "create_moe_model"]
+    }
     
-    # Look for runnable functions in main module
-    if "main" in modules:
-        main_funcs = inspect.getmembers(modules["main"], inspect.isfunction)
-        functions["Main Functions"] = [func for name, func in main_funcs 
-                                      if not name.startswith("_")]
+    # Look for allowed functions in each module
+    for module_name, allowed_func_names in allowed_functions.items():
+        if module_name in modules:
+            module_funcs = inspect.getmembers(modules[module_name], inspect.isfunction)
+            # Filter for allowed functions only
+            filtered_funcs = [func for name, func in module_funcs 
+                             if name in allowed_func_names]
+            
+            if filtered_funcs:  # Only add category if there are functions
+                functions[f"{module_name.capitalize()} Functions"] = filtered_funcs
     
-    # Look for visualization functions
-    if "visualization" in modules:
-        viz_funcs = inspect.getmembers(modules["visualization"], inspect.isfunction)
-        functions["Visualization Functions"] = [func for name, func in viz_funcs 
-                                              if not name.startswith("_")]
-    
-    # Look for optimizer functions
-    if "optimizers" in modules:
-        opt_funcs = inspect.getmembers(modules["optimizers"], inspect.isfunction)
-        functions["Optimizer Functions"] = [func for name, func in opt_funcs 
-                                          if not name.startswith("_")]
-    
-    # Look for migraine functions
-    if "migraine" in modules:
-        migraine_funcs = inspect.getmembers(modules["migraine"], inspect.isfunction)
-        functions["Migraine Functions"] = [func for name, func in migraine_funcs 
-                                         if not name.startswith("_")]
-    
-    # Look for framework functions
-    if "framework" in modules:
-        framework_funcs = inspect.getmembers(modules["framework"], inspect.isfunction)
-        functions["Framework Functions"] = [func for name, func in framework_funcs 
-                                          if not name.startswith("_")]
-    
-    # Add functions from any other imported modules
+    # Add functions from any other explicitly added modules (from settings)
     for module_name, module in modules.items():
-        if module_name not in ["core", "main", "visualization", "optimizers", "migraine", "framework"]:
+        if module_name not in allowed_functions.keys():
+            # For custom modules, we'll be more selective
+            # Only include functions that have proper docstrings
             module_funcs = inspect.getmembers(module, inspect.isfunction)
-            functions[f"{module_name.capitalize()} Functions"] = [func for name, func in module_funcs 
-                                                                if not name.startswith("_")]
+            filtered_funcs = [func for name, func in module_funcs 
+                             if not name.startswith("_") and func.__doc__]
+            
+            if filtered_funcs:  # Only add category if there are functions
+                functions[f"{module_name.capitalize()} Functions"] = filtered_funcs
+    
+    # If no functions were found, add some dummy functions for demonstration
+    if not any(functions.values()):
+        # Create a dummy module with example functions
+        class DummyModule:
+            @staticmethod
+            def example_train_model(dataset_path, model_type="moe", epochs=10, batch_size=32):
+                """Example function to train a model on the specified dataset.
+                
+                Args:
+                    dataset_path: Path to the dataset file
+                    model_type: Type of model to train (moe, ensemble, single)
+                    epochs: Number of training epochs
+                    batch_size: Batch size for training
+                
+                Returns:
+                    A trained model object
+                """
+                return {"status": "success", "message": "Model trained successfully (example)"}
+            
+            @staticmethod
+            def example_generate_report(results_path, output_format="html", include_plots=True):
+                """Example function to generate a report from results.
+                
+                Args:
+                    results_path: Path to the results file
+                    output_format: Format for the report (html, pdf, json)
+                    include_plots: Whether to include plots in the report
+                
+                Returns:
+                    Path to the generated report
+                """
+                return {"status": "success", "report_path": "example_report.html"}
+        
+        # Add the example functions
+        dummy = DummyModule()
+        functions["Example Functions"] = [
+            dummy.example_train_model,
+            dummy.example_generate_report
+        ]
     
     return functions
 

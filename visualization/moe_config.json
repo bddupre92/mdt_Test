@@ -1,0 +1,71 @@
+{
+    "experts": [
+        {
+            "type": "physiological",
+            "name": "PhysiologicalExpert",
+            "vital_cols": ["heart_rate", "blood_pressure", "temperature"],
+            "patient_id_col": "patient_id",
+            "timestamp_col": "date",
+            "normalize_vitals": true,
+            "extract_variability": true,
+            "metadata": {
+                "description": "Expert for physiological data analysis"
+            }
+        },
+        {
+            "type": "environmental",
+            "name": "EnvironmentalExpert",
+            "env_cols": ["env_temperature", "humidity", "air_quality"],
+            "location_col": "location",
+            "timestamp_col": "date",
+            "include_weather": true,
+            "include_pollution": true,
+            "metadata": {
+                "description": "Expert for environmental data analysis"
+            }
+        },
+        {
+            "type": "behavioral",
+            "name": "BehavioralExpert",
+            "behavior_cols": ["sleep_hours", "activity_level", "stress_level"],
+            "patient_id_col": "patient_id",
+            "timestamp_col": "date",
+            "include_sleep": true,
+            "include_activity": true,
+            "include_stress": true,
+            "metadata": {
+                "description": "Expert for behavioral data analysis"
+            }
+        },
+        {
+            "type": "medication_history",
+            "name": "MedicationHistoryExpert",
+            "medication_cols": ["medication_name", "dosage", "frequency"],
+            "patient_id_col": "patient_id",
+            "timestamp_col": "date",
+            "include_dosage": true,
+            "include_frequency": true,
+            "include_interactions": true,
+            "metadata": {
+                "description": "Expert for medication history analysis"
+            }
+        }
+    ],
+    "gating": {
+        "type": "quality_aware",
+        "confidence_threshold": 0.7,
+        "quality_weight": 0.5
+    },
+    "data_preprocessing": {
+        "handle_missing_values": true,
+        "normalize_features": true,
+        "remove_outliers": false
+    },
+    "output_dir": "results",
+    "environment": "dev",
+    "logging": {
+        "level": "INFO",
+        "file": "moe_pipeline.log",
+        "console": true
+    }
+} 

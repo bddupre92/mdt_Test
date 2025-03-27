@@ -1,0 +1,32 @@
+{
+  "expert_benchmarks": {
+    "clinical_expert": {
+      "rmse": 0.156,
+      "mae": 0.124,
+      "r2": 0.763,
+      "auc": 0.812
+    },
+    "environmental_expert": {
+      "rmse": 0.183,
+      "mae": 0.149,
+      "r2": 0.704,
+      "auc": 0.776
+    }
+  },
+  "gating_evaluation": {
+    "selection_accuracy": 0.78,
+    "selection_entropy": 0.62,
+    "expert_utilization": {
+      "clinical_expert": 0.45,
+      "environmental_expert": 0.55
+    }
+  },
+  "end_to_end_metrics": {
+    "overall": {
+      "rmse": 0.135,
+      "mae": 0.109,
+      "r2": 0.821,
+      "auc": 0.845
+    }
+  }
+}

@@ -134,6 +134,103 @@ The visualization system is designed to be extensible:
    - Generate standalone visualization files
    - Create API endpoints for dynamic visualization updates
 
+## Running Visualizations with MoE Validation
+
+### Generating Interactive Reports
+
+The MoE validation framework can generate comprehensive interactive HTML reports with visualizations through several methods:
+
+#### 1. Synthetic Data Visualization
+
+To generate visualizations using synthetic data:
+
+```bash
+python -m tests.moe_validation_runner --drift_type sudden --output_dir ./output/moe_validation --interactive
+```
+
+This command will:
+- Generate synthetic data with sudden drift patterns
+- Run the MoE validation framework
+- Create an interactive HTML report with visualizations in the specified output directory
+
+#### 2. Real Data Visualization
+
+To generate visualizations using real clinical data:
+
+```bash
+python -m tests.test_real_data_validation
+```
+
+Or with more control over the process:
+
+```bash
+python -m cli.real_data_commands --clinical_data ./data/clinical_data.csv \
+  --data_format csv --target_column migraine_severity \
+  --output_dir ./output/real_data_validation --synthetic_compare
+```
+
+### Visualization Components and Files
+
+The visualization system is composed of several key files:
+
+| File | Purpose |
+|------|--------|
+| `tests/moe_interactive_report.py` | Main report generator that integrates all visualization components |
+| `tests/enhanced_data_report.py` | Generates visualizations for enhanced data features |
+| `tests/expert_performance_report.py` | Creates expert model performance visualizations |
+| `tests/model_evaluation_report.py` | Produces model evaluation metric visualizations |
+| `tests/clinical_metrics_report.py` | Generates clinical data metric visualizations |
+| `tests/real_data_validation_report.py` | Creates visualizations specific to real data validation |
+
+### Integrating Real Data
+
+To integrate real clinical data into the visualization system:
+
+1. **Prepare Your Data**:
+   - Ensure your data is in CSV, JSON, or Excel format
+   - Verify that required columns are present (patient_id, timestamp, features, target)
+   - Clean and preprocess data as needed
+
+2. **Run the Integration Command**:
+   ```bash
+   python -m cli.real_data_commands --clinical_data [path_to_data] \
+     --data_format [format] --target_column [target] \
+     --output_dir [output_directory]
+   ```
+
+3. **Enable Synthetic Comparison** (optional):
+   - Add the `--synthetic_compare` flag to compare real data with synthetic data
+   - Specify drift type with `--drift_type [type]` for synthetic comparison
+
+4. **View the Generated Report**:
+   - Open the HTML file generated in the output directory
+   - Navigate through the tabs to view different visualization sections
+
+### Customizing Visualizations
+
+To customize the visualizations in the reports:
+
+1. **Modify Chart Parameters**:
+   - Edit the relevant report module (e.g., `enhanced_data_report.py`)
+   - Adjust chart parameters, colors, and layouts
+
+2. **Add New Visualization Types**:
+   - Create a new function in the appropriate report module
+   - Add the function call to the report generation sequence
+
+3. **Change Report Structure**:
+   - Modify the tab structure in `moe_interactive_report.py`
+   - Adjust the HTML template structure as needed
+
+### Troubleshooting Visualizations
+
+If you encounter issues with visualizations:
+
+1. **Check Browser Console**: Most visualization issues can be diagnosed in the browser's developer console
+2. **Verify Data Format**: Ensure your data is in the expected format for each visualization
+3. **Update Plotly.js**: Some visualizations may require specific versions of Plotly.js
+4. **Check for Syntax Errors**: Ensure JavaScript code in HTML templates is correctly formatted
+
 ## Dashboard Integration
 
 The interactive HTML reports are designed to serve as a foundation for a comprehensive dashboard:
